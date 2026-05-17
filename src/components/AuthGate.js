@@ -31,21 +31,6 @@ const ShieldIcon = () => (
   </svg>
 );
 
-const CameraIcon = () => (
-  <svg viewBox="0 0 24 24" aria-hidden="true" className="h-7 w-7 text-indigo-600">
-    <path
-      fill="currentColor"
-      d="M9 4l-2 2H4a2 2 0 00-2 2v10a2 2 0 002 2h16a2 2 0 002-2V8a2 2 0 00-2-2h-3l-2-2H9zm3 4a5 5 0 110 10 5 5 0 010-10zm0 2a3 3 0 100 6 3 3 0 000-6z"
-    />
-  </svg>
-);
-
-const SparkIcon = () => (
-  <svg viewBox="0 0 24 24" aria-hidden="true" className="h-7 w-7 text-amber-500">
-    <path fill="currentColor" d="M12 2l1.8 5.2L19 9l-5.2 1.8L12 16l-1.8-5.2L5 9l5.2-1.8L12 2z" />
-  </svg>
-);
-
 /* ------------------------------------------------------------------ */
 /*  Small subcomponents                                                */
 /* ------------------------------------------------------------------ */
@@ -198,19 +183,19 @@ export default function AuthGate({ children }) {
   const viewCopy = useMemo(() => {
     if (mode === 'register') {
       return {
-        eyebrow: 'Create account ✨',
+        eyebrow: 'Start your workspace',
         title: 'Create your studio',
         subtitle: 'Set up your Photuna workspace and start running booth events in minutes.',
-        submitLabel: loading ? 'Creating account…' : 'Create account',
+        submitLabel: loading ? 'Creating account...' : 'Create account',
         switchPrompt: 'Already have an account?',
         switchAction: 'Sign in',
       };
     }
     return {
-      eyebrow: 'Login ✨',
+      eyebrow: 'Studio access',
       title: 'Welcome back',
       subtitle: 'Sign in to manage your booths, events, and licensed templates.',
-      submitLabel: loading ? 'Signing in…' : 'Login',
+      submitLabel: loading ? 'Signing in...' : 'Login',
       switchPrompt: 'New to Photuna?',
       switchAction: 'Create an account',
     };
@@ -324,39 +309,38 @@ export default function AuthGate({ children }) {
     }
   };
 
-  /* -------------------- LOGGED OUT — new SaaS layout -------------------- */
+  /* -------------------- LOGGED OUT - full-page auth layout -------------------- */
 
   if (!isLoggedIn) {
     return (
-      <div className="min-h-screen bg-sky-50 font-sans" style={{ fontFamily: '"Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif' }}>
+      <div className="min-h-screen bg-[#f6f5f1] font-sans text-slate-950" style={{ fontFamily: '"Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif' }}>
         {/* Web font loader */}
         <link
           rel="stylesheet"
           href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap"
         />
 
-        <div className="mx-auto flex min-h-screen max-w-7xl items-center justify-center px-4 py-8 sm:px-6 lg:px-10">
+        <div className="flex min-h-screen w-full">
           <div
             className={[
-              'grid w-full overflow-hidden rounded-[36px] bg-white shadow-[0_40px_120px_-30px_rgba(79,70,229,0.35)] transition-all duration-700 lg:grid-cols-2',
+              'grid min-h-screen w-full overflow-hidden bg-[#f6f5f1] transition-all duration-700 lg:grid-cols-[minmax(420px,0.92fr)_minmax(520px,1.08fr)]',
               mounted ? 'translate-y-0 opacity-100' : 'translate-y-3 opacity-0',
             ].join(' ')}
-            style={{ minHeight: '720px' }}
+            style={{ minHeight: '100vh' }}
           >
-            {/* ============ LEFT — form panel ============ */}
-            <section className="flex flex-col justify-between p-8 sm:p-12 lg:p-14">
-              <div>
+            <section className="flex min-h-screen flex-col justify-between bg-[#f6f5f1] px-6 py-8 sm:px-10 lg:px-14 xl:px-20">
+              <div className="m-auto w-full max-w-[520px] py-10">
                 {/* Brand */}
               
                 <div className="">
                   <h1
-                    className="text-4xl font-bold tracking-tight text-slate-900 sm:text-5xl"
-                    style={{ fontFamily: '"Fraunces", ui-serif, Georgia, serif', letterSpacing: '-0.02em' }}
+                    className="text-4xl font-semibold leading-tight text-slate-950 sm:text-5xl"
+                    style={{ fontFamily: '"Fraunces", ui-serif, Georgia, serif' }}
                   >
                     {viewCopy.eyebrow.split(' ')[0]}{' '}
                     <span className="inline-block">{viewCopy.eyebrow.split(' ').slice(1).join(' ')}</span>
                   </h1>
-                  <p className="mt-3 max-w-md text-base text-slate-500">
+                  <p className="mt-4 max-w-md text-base leading-7 text-slate-600">
                     {viewCopy.subtitle}
                   </p>
                 </div>
@@ -367,7 +351,7 @@ export default function AuthGate({ children }) {
                     type="button"
                     onClick={() => handleSocialLogin('google')}
                     disabled={loading}
-                    className="inline-flex w-full items-center justify-center gap-3 rounded-full border border-slate-200 bg-white px-5 py-3.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60"
+                    className="inline-flex w-full items-center justify-center gap-3 rounded-full border border-slate-300 bg-white px-5 py-3.5 text-sm font-semibold text-slate-700 transition hover:border-slate-400 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     <GoogleIcon />
                     Sign in with Google
@@ -377,7 +361,7 @@ export default function AuthGate({ children }) {
                     type="button"
                     onClick={() => handleSocialLogin('apple')}
                     disabled={loading}
-                    className="inline-flex w-full items-center justify-center gap-3 rounded-full border border-slate-200 bg-white px-5 py-3.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60"
+                    className="inline-flex w-full items-center justify-center gap-3 rounded-full border border-slate-300 bg-white px-5 py-3.5 text-sm font-semibold text-slate-700 transition hover:border-slate-400 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     <AppleIcon />
                     Sign in with Apple
@@ -387,7 +371,7 @@ export default function AuthGate({ children }) {
                 {/* Divider */}
                 <div className="my-7 flex items-center gap-4">
                   <div className="h-px flex-1 bg-slate-200" />
-                  <span className="text-xs font-medium text-slate-400">or Sign in with Email</span>
+                  <span className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">or continue with email</span>
                   <div className="h-px flex-1 bg-slate-200" />
                 </div>
 
@@ -427,7 +411,7 @@ export default function AuthGate({ children }) {
                     <div className="flex justify-end">
                       <button
                         type="button"
-                        className="text-sm font-semibold text-indigo-600 transition hover:text-indigo-700"
+                        className="text-sm font-semibold text-slate-700 transition hover:text-slate-950"
                         onClick={handleForgotPassword}
                       >
                         Forgot Password?
@@ -438,7 +422,7 @@ export default function AuthGate({ children }) {
                   <button
                     type="submit"
                     disabled={loading}
-                    className="inline-flex w-full items-center justify-center rounded-full bg-indigo-600 px-5 py-3.5 text-sm font-semibold text-white shadow-lg shadow-indigo-200 transition hover:-translate-y-0.5 hover:bg-indigo-700 hover:shadow-xl hover:shadow-indigo-300 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="inline-flex w-full items-center justify-center rounded-full bg-slate-950 px-5 py-4 text-sm font-semibold text-white shadow-[0_18px_42px_rgba(15,23,42,0.16)] transition hover:-translate-y-0.5 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {viewCopy.submitLabel}
                   </button>
@@ -451,7 +435,7 @@ export default function AuthGate({ children }) {
                         setMsg('');
                         setMode((c) => (c === 'login' ? 'register' : 'login'));
                       }}
-                      className="font-semibold text-indigo-600 transition hover:text-indigo-700"
+                      className="font-semibold text-slate-950 underline decoration-slate-300 underline-offset-4 transition hover:decoration-slate-950"
                     >
                       {viewCopy.switchAction}
                     </button>
@@ -462,24 +446,14 @@ export default function AuthGate({ children }) {
               </div>
 
               <p className="mt-10 text-xs text-slate-400">
-                © {new Date().getFullYear()} Studio Photuna. All Rights Reserved.
+                &copy; {new Date().getFullYear()} Studio Photuna. All Rights Reserved.
               </p>
             </section>
 
-            {/* ============ RIGHT — marketing panel ============ */}
-            <section className="relative hidden overflow-hidden bg-gradient-to-br from-indigo-500 via-indigo-600 to-violet-700 p-8 lg:block lg:p-10">
+            <section className="relative hidden min-h-screen overflow-hidden bg-[#121418] p-10 text-white lg:block xl:p-14">
               <WavePattern />
 
-              {/* Floating accent badges */}
-              <div className="absolute right-8 top-24 z-20 flex h-20 w-20 items-center justify-center rounded-full bg-white shadow-2xl">
-                <SparkIcon />
-              </div>
-              <div className="absolute bottom-32 left-6 z-20 flex h-16 w-16 items-center justify-center rounded-full bg-white text-2xl shadow-2xl">
-                📸
-              </div>
-
-              {/* Glass card */}
-              <div className="relative z-10 flex h-full flex-col justify-between rounded-[28px] border border-white/20 bg-white/10 p-8 backdrop-blur-md sm:p-10">
+              <div className="relative z-10 flex h-full flex-col justify-between p-2 sm:p-4">
                 <div className="max-w-md">
                   <div className="inline-flex items-center gap-2 rounded-full border border-white/25 bg-white/15 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.2em] text-white/90">
                     <ShieldIcon />
@@ -487,29 +461,27 @@ export default function AuthGate({ children }) {
                   </div>
 
                   <h2
-                    className="mt-6 text-4xl font-bold leading-tight text-white xl:text-5xl"
-                    style={{ fontFamily: '"Fraunces", ui-serif, Georgia, serif', letterSpacing: '-0.01em' }}
+                    className="mt-16 max-w-xl text-5xl font-semibold leading-[1.03] text-white xl:text-6xl"
+                    style={{ fontFamily: '"Fraunces", ui-serif, Georgia, serif' }}
                   >
-                    Capture the moment.<br />
-                    <span className="italic">Print the magic.</span> 🎉
+                    A focused workspace for modern photo booth studios.
                   </h2>
-                  <p className="mt-5 max-w-sm text-base leading-7 text-white/85">
-                    Run beautifully branded photo booth experiences — events, kiosks, templates, and licensing all in one workspace.
+                  <p className="mt-6 max-w-md text-base leading-7 text-white/70">
+                    Manage events, templates, galleries, and licensed booth access from one clean production-ready account.
                   </p>
                 </div>
 
-                {/* Feature pills at the bottom of the glass card */}
-                <div className="mt-10 grid grid-cols-1 gap-2.5">
+                <div className="mt-10 grid grid-cols-1 gap-3">
                   {[
-                    { icon: '🎨', text: 'Custom-branded templates per event' },
-                    { icon: '🔐', text: 'Operator access with secure auth' },
-                    { icon: '⚡', text: 'License-aware kiosks, ready in minutes' },
+                    { text: 'Secure operator access' },
+                    { text: 'Subscription-aware entitlements' },
+                    { text: 'Event and template management' },
                   ].map((item) => (
                     <div
                       key={item.text}
-                      className="flex items-center gap-3 rounded-2xl border border-white/15 bg-white/10 px-4 py-3 text-sm text-white/95 backdrop-blur-sm"
+                      className="flex items-center gap-3 border-t border-white/10 pt-3 text-sm text-white/78"
                     >
-                      <span className="text-lg">{item.icon}</span>
+                      <span className="h-1.5 w-1.5 rounded-full bg-[#d7ff60]" />
                       <span>{item.text}</span>
                     </div>
                   ))}
