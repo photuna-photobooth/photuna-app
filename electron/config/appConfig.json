@@ -1,0 +1,6 @@
+{
+  "mode": "business",
+  "pricePerCopy": 200,
+  "defaultMaxShots": 4,
+  "countdownSeconds": 3
+}
