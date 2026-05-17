@@ -878,6 +878,7 @@ app.get('/billing/prices', (_req, res) => {
     galleryAddon: {
       display: DISPLAY_PRICE_GALLERY_ADDON_PHP,
       amount: parseInt(process.env.DISPLAY_PRICE_GALLERY_ADDON_AMOUNT || '499', 10),
+      configured: Boolean(STRIPE_PRICE_GALLERY_ADDON_MONTHLY),
     },
   });
 });

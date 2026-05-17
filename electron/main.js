@@ -40,23 +40,28 @@ const APP_IS_DEV = isDev;
 function loadPrivateEnvironment() {
   const dotenv = require("dotenv");
   const candidates = [
-    path.join(__dirname, "..", ".env"),
-    path.join(process.resourcesPath || "", ".env"),
     path.join(path.dirname(process.execPath || ""), ".env"),
     path.join(process.cwd(), ".env"),
+    path.join(process.resourcesPath || "", ".env"),
+    path.join(__dirname, "..", ".env"),
   ];
 
+  const loaded = [];
   for (const envPath of candidates) {
     if (!envPath || !fs.existsSync(envPath)) continue;
-    const result = dotenv.config({ path: envPath, override: false });
+    const result = dotenv.config({ path: envPath, override: true });
     if (!result.error) {
       console.log("[env] loaded private environment from", envPath);
-      return envPath;
+      loaded.push(envPath);
     }
   }
 
-  console.warn("[env] no .env file found for private app configuration");
-  return null;
+  if (!loaded.length) {
+    console.warn("[env] no .env file found for private app configuration");
+    return null;
+  }
+
+  return loaded[0];
 }
 
 loadPrivateEnvironment();
@@ -2460,6 +2465,7 @@ function startBillingApiServer() {
         id: getPrivateConfigValue("STRIPE_PRICE_GALLERY_ADDON_MONTHLY"),
         display: getPrivateConfigValue("DISPLAY_PRICE_GALLERY_ADDON_PHP") || "PHP 499 / mo",
         amount: Number(getPrivateConfigValue("DISPLAY_PRICE_GALLERY_ADDON_AMOUNT") || 499),
+        configured: Boolean(getPrivateConfigValue("STRIPE_PRICE_GALLERY_ADDON_MONTHLY")),
       },
     });
   });

@@ -2516,6 +2516,11 @@ This cannot be undone.`
 
   // Save from TemplateEditor (persists multi-frame selection + optional apply)
   const handleSaveTemplatePayload = async (payload) => {
+    if (!editingTemplate && Number.isFinite(templateLimit) && templateLimit > 0 && templates.length >= templateLimit) {
+      showToast(`Template limit reached for your current plan (${templateLimit}).`);
+      return;
+    }
+
     const pm = payload?.previewMeta ?? {};
     const nextPreviewMeta = {
       ...pm,
