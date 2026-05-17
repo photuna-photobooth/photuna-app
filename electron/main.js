@@ -1701,6 +1701,17 @@ ipcMain.handle("print-photo", async (event, {
 
 ipcMain.handle("gallery:create", async (_event, payload) => {
   try {
+    if (!payload?.galleryEnabled && !payload?.galleryAddon) {
+      return {
+        ok: true,
+        skipped: true,
+        reason: "gallery_addon_disabled",
+        qrUrl: null,
+        finalUrl: payload?.composedImageUrl || null,
+        finalVideoUrl: null,
+      };
+    }
+
     return await createOnlineGalleryInMain(payload);
   } catch (err) {
     console.error("[gallery:create] failed:", err);
@@ -2215,6 +2226,45 @@ async function upsertLicense(userId, plan, state = "active", extra = {}) {
   return license;
 }
 
+async function setGalleryAddonEntitlement(userId, enabled, extra = {}) {
+  const { data: existing, error: readError } = await getSupabaseAdmin().from("licenses")
+    .select("*")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (readError) throw readError;
+
+  const base = existing || {
+    user_id: userId,
+    plan: "free",
+    state: "active",
+    expires_at: null,
+    ...PLAN_ENTITLEMENTS.free,
+    trial_redeemed: false,
+  };
+
+  const { error } = await getSupabaseAdmin().from("licenses").upsert(
+    {
+      user_id: userId,
+      plan: base.plan || "free",
+      state: base.state || "active",
+      expires_at: base.expires_at || null,
+      max_events: base.max_events ?? PLAN_ENTITLEMENTS.free.max_events,
+      templates: base.templates ?? PLAN_ENTITLEMENTS.free.templates,
+      watermark: base.watermark ?? PLAN_ENTITLEMENTS.free.watermark,
+      priority_support: base.priority_support ?? PLAN_ENTITLEMENTS.free.priority_support,
+      trial_redeemed: Boolean(base.trial_redeemed),
+      gallery_addon: Boolean(enabled),
+      ...extra,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "user_id" }
+  );
+
+  if (error) throw error;
+  return { ok: true, galleryAddon: Boolean(enabled), galleryEnabled: Boolean(enabled) };
+}
+
 function startBillingApiServer() {
   if (apiServer) return;
 
@@ -2256,6 +2306,14 @@ function startBillingApiServer() {
         if (event.type === "checkout.session.completed") {
           const userId = obj.metadata?.userId;
           const plan = obj.metadata?.plan;
+          const addon = obj.metadata?.addon;
+
+          if (userId && addon === "gallery") {
+            await setGalleryAddonEntitlement(userId, true, {
+              stripe_customer_id: obj.customer || null,
+              stripe_gallery_subscription_id: obj.subscription || null,
+            });
+          }
 
           if (userId && plan) {
             await upsertLicense(userId, plan, "active", {
@@ -2271,6 +2329,14 @@ function startBillingApiServer() {
         ) {
           const subscription = obj;
           const userId = subscription.metadata?.userId;
+          const addon = subscription.metadata?.addon;
+
+          if (userId && addon === "gallery") {
+            await setGalleryAddonEntitlement(userId, false, {
+              stripe_gallery_subscription_id: subscription.id || null,
+            });
+            return res.json({ received: true });
+          }
 
           if (userId) {
             await upsertLicense(userId, "free", "canceled", {
@@ -2295,6 +2361,16 @@ function startBillingApiServer() {
 
             const userId = subscription.metadata?.userId;
             const plan = subscription.metadata?.plan;
+            const addon = subscription.metadata?.addon;
+
+            if (userId && addon === "gallery") {
+              const galleryActive = ["active", "trialing"].includes(subscription.status);
+              await setGalleryAddonEntitlement(userId, galleryActive, {
+                stripe_customer_id: subscription.customer || null,
+                stripe_gallery_subscription_id: subscription.id || null,
+              });
+              return res.json({ received: true });
+            }
 
             if (userId && plan) {
               const periodEnd = subscription.current_period_end
@@ -2380,6 +2456,11 @@ function startBillingApiServer() {
         display: "₱10,000 / yr",
         amount: 10000,
       },
+      galleryAddon: {
+        id: getPrivateConfigValue("STRIPE_PRICE_GALLERY_ADDON_MONTHLY"),
+        display: getPrivateConfigValue("DISPLAY_PRICE_GALLERY_ADDON_PHP") || "PHP 499 / mo",
+        amount: Number(getPrivateConfigValue("DISPLAY_PRICE_GALLERY_ADDON_AMOUNT") || 499),
+      },
     });
   });
 
@@ -2427,6 +2508,46 @@ function startBillingApiServer() {
     } catch (err) {
       console.error("create-checkout-session failed:", err);
       return res.status(500).json({ error: err.message || "Checkout failed" });
+    }
+  });
+
+  apiApp.post("/billing/create-gallery-addon-session", requireSupabaseUser, async (req, res) => {
+    try {
+      const stripe = getStripeClient();
+      if (!stripe) {
+        return res.status(500).json({ error: "Stripe secret key is missing" });
+      }
+
+      const price = getPrivateConfigValue("STRIPE_PRICE_GALLERY_ADDON_MONTHLY");
+      if (!price) {
+        return res.status(400).json({ error: "Gallery add-on Stripe price is missing" });
+      }
+
+      const userId = req.supabaseUser.id;
+      const email = req.supabaseUser.email;
+
+      const session = await stripe.checkout.sessions.create({
+        mode: "subscription",
+        customer_email: email,
+        line_items: [{ price, quantity: 1 }],
+        success_url: getPrivateConfigValue("STRIPE_SUCCESS_URL") || "http://localhost:3000?billing=success",
+        cancel_url: getPrivateConfigValue("STRIPE_CANCEL_URL") || "http://localhost:3000?billing=cancelled",
+        metadata: {
+          userId,
+          addon: "gallery",
+        },
+        subscription_data: {
+          metadata: {
+            userId,
+            addon: "gallery",
+          },
+        },
+      });
+
+      return res.json({ url: session.url });
+    } catch (err) {
+      console.error("create-gallery-addon-session failed:", err);
+      return res.status(500).json({ error: err.message || "Gallery add-on checkout failed" });
     }
   });
 
@@ -2522,17 +2643,32 @@ function startBillingApiServer() {
       // Retry up to 3 times (2 s apart) in case Stripe hasn't activated the
       // subscription yet by the time the user switches back to the app.
       let sub = null;
+      let gallerySub = null;
       for (let attempt = 0; attempt <= 3 && !sub; attempt++) {
         if (attempt > 0) await new Promise(r => setTimeout(r, 2000));
         const [activeSubs, trialingSubs] = await Promise.all([
-          stripe.subscriptions.list({ customer: customerId, status: "active",   limit: 1 }),
-          stripe.subscriptions.list({ customer: customerId, status: "trialing", limit: 1 }),
+          stripe.subscriptions.list({ customer: customerId, status: "active",   limit: 10 }),
+          stripe.subscriptions.list({ customer: customerId, status: "trialing", limit: 10 }),
         ]);
-        sub = activeSubs.data[0] || trialingSubs.data[0] || null;
+        const allSubs = [...activeSubs.data, ...trialingSubs.data];
+        gallerySub = allSubs.find((item) => item.metadata?.addon === "gallery") || gallerySub;
+        sub = allSubs.find((item) => item.metadata?.addon !== "gallery") || null;
         if (!sub && attempt > 0) console.log(`[billing/sync] retry ${attempt}: no active sub yet`);
       }
 
-      if (!sub) return res.json({ synced: false, reason: "no_active_subscription" });
+      if (gallerySub) {
+        await setGalleryAddonEntitlement(userId, true, {
+          stripe_customer_id: customerId,
+          stripe_gallery_subscription_id: gallerySub.id,
+        });
+      }
+
+      if (!sub) {
+        return res.json({
+          synced: Boolean(gallerySub),
+          reason: gallerySub ? "gallery_addon_synced" : "no_active_subscription",
+        });
+      }
 
       const interval = sub.items?.data?.[0]?.price?.recurring?.interval;
       const plan  = interval === "year" ? "yearly" : "monthly";
@@ -2557,6 +2693,7 @@ function startBillingApiServer() {
               expires_at: expiresAt,
               stripe_subscription_id: sub.id,
               ...mapPlanToLicense(plan, state),
+              ...(gallerySub ? { stripe_gallery_subscription_id: gallerySub.id } : {}),
               updated_at: new Date().toISOString(),
             },
             { onConflict: "user_id" }
@@ -2590,6 +2727,8 @@ function startBillingApiServer() {
         ? Math.min(sub.current_period_end, Math.floor(Date.now() / 1000) + 7 * 24 * 3600)
         : Math.floor(Date.now() / 1000) + 7 * 24 * 3600;
       const entitlements = mapLicenseEntitlements(mapped);
+      entitlements.galleryAddon = Boolean(gallerySub);
+      entitlements.galleryEnabled = Boolean(gallerySub);
 
       let signedLicense = null;
       try {

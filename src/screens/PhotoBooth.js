@@ -588,6 +588,7 @@ export default function PhotoBooth({ frames = [], onShortcut, initialEvent = nul
             countdownStart={filterTimer}
             templateSelection={templateSelection}
             watermark={Boolean(gating?.watermark)}
+            galleryEnabled={Boolean(gating?.galleryEnabled || gating?.galleryAddon)}
             photos={photos.map((p) => {
               if (!p) return null;
               if (typeof p === "string") return p;
@@ -646,6 +647,7 @@ export default function PhotoBooth({ frames = [], onShortcut, initialEvent = nul
             frameOverlayDataUrl={frameOverlayDataUrl}
             motionBackgroundColor={motionBackgroundColor}
             watermark={Boolean(gating?.watermark)}
+            galleryEnabled={Boolean(gating?.galleryEnabled || gating?.galleryAddon)}
             onPrintComplete={() => { }}
             onNextPage={() => { recordSession(true); setScreen("THANK_YOU"); }}
           />

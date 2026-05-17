@@ -26,6 +26,7 @@ ALTER TABLE public.licenses ADD COLUMN IF NOT EXISTS priority_support   boolean 
 ALTER TABLE public.licenses ADD COLUMN IF NOT EXISTS gallery_addon      boolean not null default false;
 ALTER TABLE public.licenses ADD COLUMN IF NOT EXISTS trial_redeemed     boolean not null default false;
 ALTER TABLE public.licenses ADD COLUMN IF NOT EXISTS stripe_subscription_id text;
+ALTER TABLE public.licenses ADD COLUMN IF NOT EXISTS stripe_gallery_subscription_id text;
 ALTER TABLE public.licenses ADD COLUMN IF NOT EXISTS stripe_customer_id   text;
 ALTER TABLE public.licenses ADD COLUMN IF NOT EXISTS expires_at         timestamptz;
 

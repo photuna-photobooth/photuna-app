@@ -17,6 +17,7 @@ const LOCALES = {
     remainingSuffix: "secs",
     qrFallback: "QR",
     posterFallback: "Poster",
+    localSaved: "Your photos are saved locally by the booth operator.",
   },
   tl: {
     printingTitle1: "Kasalukuyan kaming",
@@ -28,6 +29,7 @@ const LOCALES = {
     remainingSuffix: "seg",
     qrFallback: "QR",
     posterFallback: "Poster",
+    localSaved: "Naka-save ang mga larawan sa lokal na storage ng booth operator.",
   },
 };
 function resolveLocale(code) {
@@ -72,6 +74,7 @@ export default function PrintPreviewScreen({
   frameOverlayDataUrl = null,
   motionBackgroundColor = "#ffffff",
   watermark = false,
+  galleryEnabled = false,
 }) {
   // IMPORTANT: prefer window.api (preload exposes printPhoto here). Fall back to window.electron only if needed.
   const api =
@@ -106,6 +109,13 @@ export default function PrintPreviewScreen({
     let mounted = true;
 
     async function prepareGallery() {
+      if (!galleryEnabled) {
+        setResolvedQrUrl(null);
+        setGalleryError("");
+        setIsPreparing(false);
+        return;
+      }
+
       try {
         setIsPreparing(true);
         setGalleryError("");
@@ -121,6 +131,7 @@ export default function PrintPreviewScreen({
           frameOverlayDataUrl,
           motionBackgroundColor,
           watermark,
+          galleryEnabled,
           sessionId,
           eventId,
         });
@@ -162,6 +173,7 @@ export default function PrintPreviewScreen({
     frameOverlayDataUrl,
     motionBackgroundColor,
     watermark,
+    galleryEnabled,
     sessionId,
     eventId,
   ]);
@@ -427,7 +439,7 @@ export default function PrintPreviewScreen({
   // Left-side remaining time
   const remaining = Math.max(0, printingSeconds - Math.floor(pageProgress * printingSeconds));
 
-  if (isPreparing) {
+  if (galleryEnabled && isPreparing) {
     return (
       <div
         className="w-full h-full flex items-center justify-center overflow-hidden px-10"
@@ -507,29 +519,30 @@ export default function PrintPreviewScreen({
         </div>
 
 
-        {/* QR block */}
-        <div className="mt-12 border rounded-xl p-4 bg-white text-black border-black">
-          {resolvedQrUrl ? (
-            <div className="bg-white p-2 rounded-lg">
-              <QRCode value={resolvedQrUrl} size={256} bgColor="#ffffff" fgColor="#000000" />
-            </div>
-          ) : qrSrc ? (
-            <img
-              src={qrSrc}
-              alt="QR"
-              className="w-64 h-64 object-contain bg-gray-100 rounded-lg"
-            />
-          ) : (
-            <div className="w-64 h-64 flex items-center justify-center text-gray-400 bg-gray-100 rounded-lg">
-              {isPreparing ? "Preparing" : i18n.qrFallback}
-            </div>
-          )}
-          {galleryError ? (
-            <div className="mt-2 max-w-64 text-center text-xs text-red-600">
-              Gallery upload failed
-            </div>
-          ) : null}
-        </div>
+        {galleryEnabled ? (
+          <div className="mt-12 border rounded-xl p-4 bg-white text-black border-black">
+            {resolvedQrUrl ? (
+              <div className="bg-white p-2 rounded-lg">
+                <QRCode value={resolvedQrUrl} size={256} bgColor="#ffffff" fgColor="#000000" />
+              </div>
+            ) : qrSrc ? (
+              <img
+                src={qrSrc}
+                alt="QR"
+                className="w-64 h-64 object-contain bg-gray-100 rounded-lg"
+              />
+            ) : (
+              <div className="w-64 h-64 flex items-center justify-center text-gray-400 bg-gray-100 rounded-lg">
+                {isPreparing ? "Preparing" : i18n.qrFallback}
+              </div>
+            )}
+            {galleryError ? (
+              <div className="mt-2 max-w-64 text-center text-xs text-red-600">
+                Gallery upload failed
+              </div>
+            ) : null}
+          </div>
+        ) : null}
 
         {/* Thank you copy */}
         <p
@@ -540,7 +553,7 @@ export default function PrintPreviewScreen({
           <span className="font-semibold" style={{ color: headerFontColor }}>
             {boothName ?? i18n.thanksBold}
           </span>
-          {i18n.thanksTail}
+          {galleryEnabled ? i18n.thanksTail : ` ${i18n.localSaved}`}
         </p>
       </div>
 

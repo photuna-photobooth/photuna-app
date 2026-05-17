@@ -89,6 +89,11 @@ export const createCheckoutSession = (plan) =>
     body: { plan },
   });
 
+export const createGalleryAddonCheckoutSession = () =>
+  request('/billing/create-gallery-addon-session', {
+    method: 'POST',
+  });
+
 // Call this after Stripe checkout redirects back to pull live subscription state
 // from Stripe directly and write it to Supabase — does not depend on webhooks.
 export const billingSync = () => request('/billing/sync', { method: 'POST' });

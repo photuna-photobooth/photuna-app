@@ -626,6 +626,7 @@ export default function FrameFilterScreen({
   templateSelection,
   photos: photosProp,
   watermark = false,
+  galleryEnabled = false,
   onNext,
   event = null,
 }) {
@@ -1232,7 +1233,7 @@ export default function FrameFilterScreen({
       savedFinal = await saveComposedOutput(composed);
 
       if (isAuto) {
-        const qr = await api?.getDownloadQr?.(eventId);
+        const qr = galleryEnabled ? await api?.getDownloadQr?.(eventId) : null;
 
         hasAutoProceededRef.current = true;
         isAutoProceedingRef.current = false;
@@ -1278,7 +1279,7 @@ export default function FrameFilterScreen({
         return;
       }
 
-      const qr = await api?.getDownloadQr?.(eventId);
+      const qr = galleryEnabled ? await api?.getDownloadQr?.(eventId) : null;
 
       hasAutoProceededRef.current = true;
       isAutoProceedingRef.current = false;
@@ -1370,7 +1371,7 @@ export default function FrameFilterScreen({
         await new Promise((r) => setTimeout(r, 700));
       }
 
-      const qr = await api?.getDownloadQr?.(eventId);
+      const qr = galleryEnabled ? await api?.getDownloadQr?.(eventId) : null;
 
       setPopupOpen(false);
 

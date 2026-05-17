@@ -80,6 +80,7 @@ create table if not exists public.licenses (
   gallery_addon         boolean not null default false,
   trial_redeemed        boolean not null default false,
   stripe_subscription_id text unique,
+  stripe_gallery_subscription_id text unique,
   created_at            timestamptz not null default now(),
   updated_at            timestamptz not null default now()
 );

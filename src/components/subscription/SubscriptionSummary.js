@@ -81,6 +81,7 @@ export default function SubscriptionSummary({ license, gating, prices }) {
           <li>Max events: <b>{ent.maxEvents ?? 0}</b></li>
           <li>Templates: <b>{ent.templates ?? 0}</b></li>
           <li>Priority support: <b>{ent.prioritySupport ? "Yes" : "No"}</b></li>
+          <li>Gallery add-on: <b>{ent.galleryEnabled || ent.galleryAddon ? "Enabled" : "Disabled"}</b></li>
         </ul>
       </div>
     </div>

@@ -2236,6 +2236,9 @@ This cannot be undone.`
   const plan = license?.plan ?? gating?.plan ?? null; // null | 'trial' | 'monthly' | 'yearly'
   const ent = license?.entitlements ?? {};
   const expiresAt = license?.expiresAt ?? 0;
+  const eventLimit = Number(gating?.maxEvents ?? ent?.maxEvents ?? 1);
+  const templateLimit = Number(gating?.templates ?? ent?.templates ?? 1);
+  const galleryAddonEnabled = Boolean(gating?.galleryEnabled || gating?.galleryAddon || ent?.galleryEnabled || ent?.galleryAddon);
   const settingsToSave = sanitizeSettings({
     selectedCameraId,
     mirrorCamera,
@@ -3137,6 +3140,32 @@ This cannot be undone.`
                 }}
                 onManageBilling={openCustomerPortal}
               />
+            </div>
+          </div>
+
+          <div className={`${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_CARD} p-5`}>
+            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+              <div>
+                <h4 className="text-sm font-semibold text-gray-900">Gallery add-on</h4>
+                <p className="mt-1 text-xs text-gray-500 max-w-xl">
+                  Enables Supabase gallery upload, guest QR access, downloadable images, and hosted final-motion sharing.
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                  <span className={`rounded-full px-3 py-1 font-medium ${galleryAddonEnabled ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-600"}`}>
+                    {galleryAddonEnabled ? "Gallery enabled" : "Gallery disabled"}
+                  </span>
+                  <span className="rounded-full bg-indigo-50 px-3 py-1 font-medium text-indigo-700">
+                    {prices?.galleryAddon?.display ?? "PHP 499 / mo"}
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={galleryAddonEnabled ? openCustomerPortal : openGalleryAddonCheckout}
+                className="rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800"
+              >
+                {galleryAddonEnabled ? "Manage add-on" : "Add gallery"}
+              </button>
             </div>
           </div>
 
@@ -4668,6 +4697,10 @@ This cannot be undone.`
       showToast("Please enter an event name");
       return;
     }
+    if (Number.isFinite(eventLimit) && eventLimit > 0 && events.length >= eventLimit) {
+      showToast(`Event limit reached for your current plan (${eventLimit}).`);
+      return;
+    }
     const nextId = makeId();
 
     const appearanceClone = JSON.parse(JSON.stringify(DEFAULT_APPEARANCE));  // fresh defaults
@@ -4854,6 +4887,24 @@ This cannot be undone.`
       console.error("openCheckout failed:", err);
       showToast?.(`Checkout failed: ${err?.message || "Unknown error"}`);
       return { ok: false, error: err?.message || "Checkout failed" };
+    }
+  };
+
+  const openGalleryAddonCheckout = async () => {
+    try {
+      const res = await licensingApi.createGalleryAddonCheckoutSession();
+      if (!res?.url) throw new Error("No checkout URL returned from backend");
+
+      window.system?.openExternal?.(res.url) ??
+        window.open(res.url, "_blank", "noopener,noreferrer");
+
+      checkoutPendingRef.current = true;
+      showToast?.("Gallery add-on checkout opened. Return here after payment to apply access.");
+      return { ok: true };
+    } catch (err) {
+      console.error("openGalleryAddonCheckout failed:", err);
+      showToast?.(`Gallery add-on checkout failed: ${err?.message || "Unknown error"}`);
+      return { ok: false, error: err?.message || "Gallery add-on checkout failed" };
     }
   };
 
@@ -5374,6 +5425,10 @@ This cannot be undone.`
   const saveTemplate = async () => {
     if (!templateName.trim()) {
       setTemplateError("Template name required");
+      return;
+    }
+    if (!editingTemplate && Number.isFinite(templateLimit) && templateLimit > 0 && templates.length >= templateLimit) {
+      setTemplateError(`Template limit reached for your current plan (${templateLimit}).`);
       return;
     }
 

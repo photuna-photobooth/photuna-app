@@ -52,9 +52,11 @@ const {
   STRIPE_WEBHOOK_SECRET,
   STRIPE_PRICE_MONTHLY,
   STRIPE_PRICE_YEARLY,
+  STRIPE_PRICE_GALLERY_ADDON_MONTHLY,
   BILLING_SUCCESS_URL,
   BILLING_CANCEL_URL,
-  BILLING_PORTAL_RETURN_URL
+  BILLING_PORTAL_RETURN_URL,
+  DISPLAY_PRICE_GALLERY_ADDON_PHP = '₱499 / mo'
 } = process.env;
 
 if (!ACCESS_TOKEN_SECRET || !REFRESH_TOKEN_SECRET) {
@@ -167,6 +169,7 @@ function sbRowToInternal(row) {
 // Hard 9 s timeout prevents a paused/slow Supabase project from blocking responses.
 async function upsertSupabaseLicense(userId, { plan, state, expires, entitlements, trialRedeemed }) {
   try {
+    const existing = await getSupabaseLicense(userId);
     const { error } = await sbQuery(
       supabaseAdmin.from('licenses').upsert(
         {
@@ -178,6 +181,8 @@ async function upsertSupabaseLicense(userId, { plan, state, expires, entitlement
           max_events: entitlements.maxEvents,
           templates: entitlements.templates,
           priority_support: entitlements.prioritySupport,
+          gallery_addon: Boolean(existing?.gallery_addon),
+          stripe_gallery_subscription_id: existing?.stripe_gallery_subscription_id || null,
           ...(trialRedeemed !== undefined ? { trial_redeemed: trialRedeemed } : {}),
         },
         { onConflict: 'user_id' }
@@ -199,6 +204,46 @@ async function upsertSupabaseLicense(userId, { plan, state, expires, entitlement
     return { ok: true };
   } catch (e) {
     console.error('[sb] upsertSupabaseLicense exception:', e.message, '| userId:', userId);
+    return { ok: false, error: e.message };
+  }
+}
+
+async function setSupabaseGalleryAddon(userId, enabled, extra = {}) {
+  try {
+    const existing = await getSupabaseLicense(userId);
+    const baseEntitlements = existing
+      ? {
+          max_events: existing.max_events ?? planEntitlements('free').maxEvents,
+          templates: existing.templates ?? planEntitlements('free').templates,
+          watermark: existing.watermark ?? planEntitlements('free').watermark,
+          priority_support: existing.priority_support ?? planEntitlements('free').prioritySupport,
+        }
+      : {
+          max_events: planEntitlements('free').maxEvents,
+          templates: planEntitlements('free').templates,
+          watermark: planEntitlements('free').watermark,
+          priority_support: planEntitlements('free').prioritySupport,
+        };
+
+    const { error } = await sbQuery(
+      supabaseAdmin.from('licenses').upsert(
+        {
+          user_id: userId,
+          plan: existing?.plan || 'free',
+          state: existing?.state || 'active',
+          expires_at: existing?.expires_at || null,
+          trial_redeemed: Boolean(existing?.trial_redeemed),
+          ...baseEntitlements,
+          gallery_addon: Boolean(enabled),
+          ...extra,
+        },
+        { onConflict: 'user_id' }
+      )
+    );
+
+    if (error) return { ok: false, error: error.message };
+    return { ok: true };
+  } catch (e) {
     return { ok: false, error: e.message };
   }
 }
@@ -622,6 +667,55 @@ app.post('/billing/create-checkout-session', authMiddleware, async (req, res) =>
   }
 });
 
+app.post('/billing/create-gallery-addon-session', authMiddleware, async (req, res) => {
+  try {
+    if (!stripe) return res.status(501).json({ error: 'stripe_not_configured' });
+    if (!STRIPE_PRICE_GALLERY_ADDON_MONTHLY) {
+      return res.status(400).json({ error: 'gallery_addon_price_not_set' });
+    }
+
+    let subRow = get(`SELECT * FROM subscriptions WHERE user_id = ?`, [req.user.id]);
+    if (!subRow) {
+      run(`INSERT INTO subscriptions (id, user_id) VALUES (?, ?)`, [nanoid(), req.user.id]);
+      subRow = get(`SELECT * FROM subscriptions WHERE user_id = ?`, [req.user.id]);
+    }
+
+    let customerId = subRow.stripe_customer_id;
+    if (!customerId) {
+      const customer = await stripe.customers.create({
+        email: req.user.email,
+        metadata: { userId: req.user.id },
+      });
+      customerId = customer.id;
+      run(`UPDATE subscriptions SET stripe_customer_id = ? WHERE id = ?`, [customerId, subRow.id]);
+    }
+
+    const session = await stripe.checkout.sessions.create({
+      mode: 'subscription',
+      customer: customerId,
+      line_items: [{ price: STRIPE_PRICE_GALLERY_ADDON_MONTHLY, quantity: 1 }],
+      success_url: BILLING_SUCCESS_URL || 'http://localhost:3000?billing=success',
+      cancel_url: BILLING_CANCEL_URL || 'http://localhost:3000?billing=cancelled',
+      allow_promotion_codes: true,
+      metadata: {
+        userId: req.user.id,
+        addon: 'gallery',
+      },
+      subscription_data: {
+        metadata: {
+          userId: req.user.id,
+          addon: 'gallery',
+        },
+      },
+    });
+
+    return res.json({ url: session.url });
+  } catch (err) {
+    console.error('create-gallery-addon-session error', err);
+    return res.status(500).json({ error: err.message || 'server_error' });
+  }
+});
+
 app.get('/billing/subscription', authMiddleware, async (req, res) => {
   const userId = req.user.id;
 
@@ -701,29 +795,46 @@ app.post('/billing/sync', authMiddleware, async (req, res) => {
 
     // Fetch all non-canceled subscriptions for this customer
     const [activeSubs, trialing] = await Promise.all([
-      stripe.subscriptions.list({ customer: customerId, status: 'active', limit: 1 }),
-      stripe.subscriptions.list({ customer: customerId, status: 'trialing', limit: 1 }),
+      stripe.subscriptions.list({ customer: customerId, status: 'active', limit: 10 }),
+      stripe.subscriptions.list({ customer: customerId, status: 'trialing', limit: 10 }),
     ]);
 
     // Retry up to 3 times (2 s apart) — Stripe can take a moment to mark the
     // subscription active after checkout, especially under load.
-    let sub = activeSubs.data[0] || trialing.data[0] || null;
+    let allSubs = [...activeSubs.data, ...trialing.data];
+    let gallerySub = allSubs.find((item) => item.metadata?.addon === 'gallery') || null;
+    let sub = allSubs.find((item) => item.metadata?.addon !== 'gallery') || null;
     if (!sub) {
       for (let attempt = 1; attempt <= 3 && !sub; attempt++) {
         await new Promise(r => setTimeout(r, 2000));
         const [retryActive, retryTrialing] = await Promise.all([
-          stripe.subscriptions.list({ customer: customerId, status: 'active', limit: 1 }),
-          stripe.subscriptions.list({ customer: customerId, status: 'trialing', limit: 1 }),
+          stripe.subscriptions.list({ customer: customerId, status: 'active', limit: 10 }),
+          stripe.subscriptions.list({ customer: customerId, status: 'trialing', limit: 10 }),
         ]);
-        sub = retryActive.data[0] || retryTrialing.data[0] || null;
+        allSubs = [...retryActive.data, ...retryTrialing.data];
+        gallerySub = allSubs.find((item) => item.metadata?.addon === 'gallery') || gallerySub;
+        sub = allSubs.find((item) => item.metadata?.addon !== 'gallery') || null;
         console.log(`[billing/sync] retry ${attempt}: sub=${sub?.id || 'none'}`);
       }
     }
-    if (!sub) return res.json({ synced: false, reason: 'no_active_subscription' });
+    if (gallerySub) {
+      await setSupabaseGalleryAddon(userId, true, {
+        stripe_customer_id: customerId,
+        stripe_gallery_subscription_id: gallerySub.id,
+      });
+    }
+    if (!sub) {
+      return res.json({
+        synced: Boolean(gallerySub),
+        reason: gallerySub ? 'gallery_addon_synced' : 'no_active_subscription',
+      });
+    }
 
     const interval = sub.items?.data?.[0]?.price?.recurring?.interval;
     const plan = interval === 'year' ? 'yearly' : 'monthly';
     const entitlements = planEntitlements(plan);
+    entitlements.galleryAddon = Boolean(gallerySub);
+    entitlements.galleryEnabled = Boolean(gallerySub);
     const state = sub.status === 'trialing' ? 'trialing' : 'active';
     const expires = sub.current_period_end || 0;
 
@@ -764,6 +875,10 @@ app.get('/billing/prices', (_req, res) => {
     currency: 'PHP',
     monthly: { display: monthlyPhp },
     yearly: { display: yearlyPhp },
+    galleryAddon: {
+      display: DISPLAY_PRICE_GALLERY_ADDON_PHP,
+      amount: parseInt(process.env.DISPLAY_PRICE_GALLERY_ADDON_AMOUNT || '499', 10),
+    },
   });
 });
 
@@ -787,6 +902,7 @@ app.post('/webhooks/stripe', express.raw({ type: 'application/json' }), (req, re
         const customerId = sess.customer;
         const metaUserId = sess.metadata?.userId;
         const metaPlan = sess.metadata?.plan; // 'monthly' or 'yearly'
+        const metaAddon = sess.metadata?.addon;
         const custEmail = sess.customer_details?.email?.toLowerCase();
 
         const user = metaUserId
@@ -803,7 +919,14 @@ app.post('/webhooks/stripe', express.raw({ type: 'application/json' }), (req, re
 
           // Write the license immediately from checkout metadata so we don't
           // have to wait for customer.subscription.created to arrive.
-          if (metaPlan === 'monthly' || metaPlan === 'yearly') {
+          if (metaAddon === 'gallery') {
+            setSupabaseGalleryAddon(user.id, true, {
+              stripe_customer_id: customerId,
+              stripe_gallery_subscription_id: sess.subscription || null,
+            })
+              .then(r => !r.ok && console.error('[webhook] gallery addon upsert failed:', r.error))
+              .catch((e) => console.error('[webhook] gallery addon upsert exception:', e.message));
+          } else if (metaPlan === 'monthly' || metaPlan === 'yearly') {
             const entitlements = planEntitlements(metaPlan);
             // expires=0 now; subscription.created/updated will set the correct period end
             upsertSupabaseLicense(user.id, { plan: metaPlan, state: 'active', expires: 0, entitlements })
@@ -826,6 +949,17 @@ app.post('/webhooks/stripe', express.raw({ type: 'application/json' }), (req, re
         // Find user by subscription record
         const row = get(`SELECT * FROM subscriptions WHERE stripe_customer_id = ?`, [customerId]);
         if (row) {
+          if (sub.metadata?.addon === 'gallery') {
+            const enabled = status === 'active' || status === 'trialing';
+            setSupabaseGalleryAddon(row.user_id, enabled, {
+              stripe_customer_id: customerId,
+              stripe_gallery_subscription_id: stripeSubId,
+            })
+              .then(r => !r.ok && console.error('[webhook] gallery subscription upsert failed:', r.error))
+              .catch((e) => console.error('[webhook] gallery subscription upsert exception:', e.message));
+            break;
+          }
+
           const userId = row.user_id
           run(`UPDATE subscriptions SET stripe_subscription_id = ?, status = ?, current_period_end = ?, plan = ? WHERE id = ?`, [
             stripeSubId, status, currentPeriodEnd, sub.items?.data?.[0]?.price?.recurring?.interval === 'year' ? 'yearly' : 'monthly', row.id
@@ -855,6 +989,8 @@ app.post('/webhooks/stripe', express.raw({ type: 'application/json' }), (req, re
         if (!subRow) break;
 
         const interval = inv.lines?.data?.[0]?.price?.recurring?.interval;
+        const priceId = inv.lines?.data?.[0]?.price?.id;
+        if (priceId && priceId === STRIPE_PRICE_GALLERY_ADDON_MONTHLY) break;
         if (!interval) break; // one-time charge, not a subscription invoice
 
         const plan = interval === 'year' ? 'yearly' : 'monthly';
