@@ -17,10 +17,10 @@ if (!TARGET_USER_ID) {
 }
 
 const ENTITLEMENTS = {
-  free:    { watermark: true,  maxEvents: 1,    templates: 3,   prioritySupport: false, plan: 'free' },
-  trial:   { watermark: true,  maxEvents: 1,    templates: 5,   prioritySupport: false, plan: 'trial' },
-  monthly: { watermark: false, maxEvents: 100,  templates: 999, prioritySupport: true,  plan: 'monthly' },
-  yearly:  { watermark: false, maxEvents: 1000, templates: 999, prioritySupport: true,  plan: 'yearly' },
+  free:    { watermark: true,  maxEvents: 1,    templates: 3,   prioritySupport: false, galleryAddon: false, galleryEnabled: false, plan: 'free' },
+  trial:   { watermark: true,  maxEvents: 3,    templates: 5,   prioritySupport: false, galleryAddon: false, galleryEnabled: false, plan: 'trial' },
+  monthly: { watermark: false, maxEvents: 100,  templates: 25,  prioritySupport: false, galleryAddon: false, galleryEnabled: false, plan: 'monthly' },
+  yearly:  { watermark: false, maxEvents: 1200, templates: 100, prioritySupport: true,  galleryAddon: false, galleryEnabled: false, plan: 'yearly' },
 };
 
 if (!ENTITLEMENTS[PLAN]) {

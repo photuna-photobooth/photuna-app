@@ -24,9 +24,9 @@ const {
 
 // Entitlements map
 const ENTITLEMENTS = {
-  yearly: { watermark: false, maxEvents: 999, templates: 999, prioritySupport: true },
-  monthly: { watermark: false, maxEvents: 999, templates: 999, prioritySupport: false },
-  trial: { watermark: true, maxEvents: 3, templates: 3, prioritySupport: false },
+  yearly: { watermark: false, maxEvents: 1200, templates: 100, prioritySupport: true, galleryAddon: false, galleryEnabled: false },
+  monthly: { watermark: false, maxEvents: 100, templates: 25, prioritySupport: false, galleryAddon: false, galleryEnabled: false },
+  trial: { watermark: true, maxEvents: 3, templates: 5, prioritySupport: false, galleryAddon: false, galleryEnabled: false },
 };
 
 const expiresAt = dayjs(EXPIRY_DATE).startOf('day').unix();

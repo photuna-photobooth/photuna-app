@@ -71,6 +71,7 @@ export default function PrintPreviewScreen({
   slotVideoMap = [],
   frameOverlayDataUrl = null,
   motionBackgroundColor = "#ffffff",
+  watermark = false,
 }) {
   // IMPORTANT: prefer window.api (preload exposes printPhoto here). Fall back to window.electron only if needed.
   const api =
@@ -119,6 +120,7 @@ export default function PrintPreviewScreen({
           slotVideoMap,
           frameOverlayDataUrl,
           motionBackgroundColor,
+          watermark,
           sessionId,
           eventId,
         });
@@ -159,6 +161,7 @@ export default function PrintPreviewScreen({
     slotVideoMap,
     frameOverlayDataUrl,
     motionBackgroundColor,
+    watermark,
     sessionId,
     eventId,
   ]);

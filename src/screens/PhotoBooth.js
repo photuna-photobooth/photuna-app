@@ -13,6 +13,7 @@ import SelectRetakeScreen from "../PhotoBooth/SelectRetakeScreen";
 import FrameFilterScreen from "../PhotoBooth/FrameFilterScreen";
 import PrintPreviewScreen from "../PhotoBooth/PrintPreviewScreen";
 import ThankYouScreen from "../PhotoBooth/ThankYouScreen";
+import { useLicense } from "../context/LicenseContext";
 
 /** Local defaults matching AdminDashboard */
 const DEFAULT_SCREEN_TIMERS = {
@@ -26,6 +27,7 @@ const DEFAULT_SCREEN_TIMERS = {
 };
 
 export default function PhotoBooth({ frames = [], onShortcut, initialEvent = null }) {
+  const { gating } = useLicense();
   const [screen, setScreen] = useState("WELCOME");
   const [session, setSession] = useState(null);
   const [photos, setPhotos] = useState([]);
@@ -585,6 +587,7 @@ export default function PhotoBooth({ frames = [], onShortcut, initialEvent = nul
             sessionId={session?.sessionId || activeSessionId || "default"}
             countdownStart={filterTimer}
             templateSelection={templateSelection}
+            watermark={Boolean(gating?.watermark)}
             photos={photos.map((p) => {
               if (!p) return null;
               if (typeof p === "string") return p;
@@ -642,6 +645,7 @@ export default function PhotoBooth({ frames = [], onShortcut, initialEvent = nul
             slotVideoMap={slotVideoMap}
             frameOverlayDataUrl={frameOverlayDataUrl}
             motionBackgroundColor={motionBackgroundColor}
+            watermark={Boolean(gating?.watermark)}
             onPrintComplete={() => { }}
             onNextPage={() => { recordSession(true); setScreen("THANK_YOU"); }}
           />

@@ -330,6 +330,7 @@ async function createAnimatedComposite({
   frameOverlayDataUrl = null,
   slotVideoMap = null,
   backgroundColor = "#ffffff",
+  watermark = false,
 }) {
   const { burstDir, finalDir, metaFile } = resolveBoothOutputDirs({
     userId,
@@ -575,6 +576,15 @@ async function createAnimatedComposite({
     last = dividerOut;
   }
 
+  if (watermark) {
+    const watermarkedOut = "[watermarkedOut]";
+    const fontSize = Math.max(36, Math.round(Math.min(canvasW, canvasH) * 0.045));
+    filters.push(
+      `${last}drawtext=text='STUDIO PHOTUNA TRIAL':fontcolor=white@0.70:bordercolor=black@0.45:borderw=3:fontsize=${fontSize}:x=(w-text_w)/2:y=h-(text_h*2.2)${watermarkedOut}`
+    );
+    last = watermarkedOut;
+  }
+
   await new Promise((resolve, reject) => {
     command
       .complexFilter(filters, last.replace(/^\[|\]$/g, ""))
@@ -724,6 +734,7 @@ async function createOnlineGalleryInMain(payload = {}) {
         frameOverlayDataUrl: payload?.frameOverlayDataUrl || null,
         slotVideoMap: payload?.slotVideoMap || [],
         backgroundColor: payload?.motionBackgroundColor || "#ffffff",
+        watermark: Boolean(payload?.watermark),
       });
 
       console.log("[gallery:create] motionResult:", motionResult);
@@ -2122,39 +2133,61 @@ async function requireSupabaseUser(req, res, next) {
   }
 }
 
-function mapPlanToLicense(plan, state = "active") {
-  if (plan === "yearly") {
-    return {
-      plan: "yearly",
-      state,
-      expires_at: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
-      max_events: 9999,
-      templates: 9999,
-      watermark: false,
-      priority_support: true,
-    };
-  }
-
-  if (plan === "monthly") {
-    return {
-      plan: "monthly",
-      state,
-      expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-      max_events: 100,
-      templates: 999,
-      watermark: false,
-      priority_support: false,
-    };
-  }
-
-  return {
-    plan: "free",
-    state: "active",
-    expires_at: null,
+const PLAN_ENTITLEMENTS = {
+  free: {
     max_events: 1,
-    templates: 1,
+    templates: 3,
     watermark: true,
     priority_support: false,
+  },
+  trial: {
+    max_events: 3,
+    templates: 5,
+    watermark: true,
+    priority_support: false,
+  },
+  monthly: {
+    max_events: 100,
+    templates: 25,
+    watermark: false,
+    priority_support: false,
+  },
+  yearly: {
+    max_events: 1200,
+    templates: 100,
+    watermark: false,
+    priority_support: true,
+  },
+};
+
+function mapPlanToLicense(plan, state = "active") {
+  const normalizedPlan = ["trial", "monthly", "yearly"].includes(plan) ? plan : "free";
+  const entitlement = PLAN_ENTITLEMENTS[normalizedPlan] || PLAN_ENTITLEMENTS.free;
+  const expiresAt =
+    normalizedPlan === "yearly"
+      ? new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString()
+      : normalizedPlan === "monthly"
+        ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+        : normalizedPlan === "trial"
+          ? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+          : null;
+
+  return {
+    plan: normalizedPlan,
+    state: normalizedPlan === "free" ? "active" : state,
+    expires_at: expiresAt,
+    ...entitlement,
+  };
+}
+
+function mapLicenseEntitlements(row = {}) {
+  return {
+    watermark: row.watermark ?? true,
+    maxEvents: row.max_events ?? 1,
+    templates: row.templates ?? 1,
+    prioritySupport: row.priority_support ?? false,
+    galleryAddon: Boolean(row.gallery_addon),
+    galleryEnabled: Boolean(row.gallery_addon),
   };
 }
 
@@ -2416,12 +2449,7 @@ function startBillingApiServer() {
         expiresAt: data?.expires_at || null,
         stripeCustomerId: data?.stripe_customer_id || null,
         stripeSubscriptionId: data?.stripe_subscription_id || null,
-        entitlements: {
-          watermark: data?.watermark ?? true,
-          maxEvents: data?.max_events ?? 1,
-          templates: data?.templates ?? 1,
-          prioritySupport: data?.priority_support ?? false,
-        },
+        entitlements: mapLicenseEntitlements(data || {}),
       });
     } catch (err) {
       console.error("billing/subscription failed:", err);
@@ -2561,12 +2589,7 @@ function startBillingApiServer() {
       const expSeconds = sub.current_period_end
         ? Math.min(sub.current_period_end, Math.floor(Date.now() / 1000) + 7 * 24 * 3600)
         : Math.floor(Date.now() / 1000) + 7 * 24 * 3600;
-      const entitlements = {
-        watermark: mapped.watermark,
-        maxEvents: mapped.max_events,
-        templates: mapped.templates,
-        prioritySupport: mapped.priority_support,
-      };
+      const entitlements = mapLicenseEntitlements(mapped);
 
       let signedLicense = null;
       try {
@@ -2613,10 +2636,7 @@ function startBillingApiServer() {
         plan: "free",
         state: "active",
         expires_at: null,
-        max_events: 1,
-        templates: 1,
-        watermark: true,
-        priority_support: false,
+        ...PLAN_ENTITLEMENTS.free,
         trial_redeemed: false,
       };
 
@@ -2637,12 +2657,7 @@ function startBillingApiServer() {
         exp: effectiveLicense.expires_at
           ? Math.floor(new Date(effectiveLicense.expires_at).getTime() / 1000)
           : Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 30,
-        entitlements: {
-          watermark: effectiveLicense.watermark,
-          maxEvents: effectiveLicense.max_events,
-          templates: effectiveLicense.templates,
-          prioritySupport: effectiveLicense.priority_support,
-        },
+        entitlements: mapLicenseEntitlements(effectiveLicense),
       };
 
       // Detect trial expiry so the UI can show "Trial Expired" vs "Trial Unavailable"
@@ -2718,7 +2733,7 @@ function startBillingApiServer() {
           trial_redeemed: true,
           max_events: 3,
           templates: 5,
-          watermark: false,
+          watermark: PLAN_ENTITLEMENTS.trial.watermark,
           priority_support: false,
           updated_at: new Date().toISOString(),
         },
@@ -2815,10 +2830,7 @@ function startBillingApiServer() {
         plan: "free",
         state: "active",
         expires_at: null,
-        max_events: 1,
-        templates: 1,
-        watermark: true,
-        priority_support: false,
+        ...PLAN_ENTITLEMENTS.free,
         trial_redeemed: false,
       };
 
@@ -2842,12 +2854,7 @@ function startBillingApiServer() {
         exp: effectiveLicense.expires_at
           ? Math.floor(new Date(effectiveLicense.expires_at).getTime() / 1000)
           : Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 30,
-        entitlements: {
-          watermark: effectiveLicense.watermark,
-          maxEvents: effectiveLicense.max_events,
-          templates: effectiveLicense.templates,
-          prioritySupport: effectiveLicense.priority_support,
-        },
+        entitlements: mapLicenseEntitlements(effectiveLicense),
       };
 
       let signedLicense = null;

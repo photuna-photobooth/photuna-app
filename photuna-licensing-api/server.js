@@ -108,13 +108,13 @@ function sbQuery(queryPromise, ms = 9000) {
 function planEntitlements(plan) {
   switch (plan) {
     case 'trial':
-      return { watermark: true, maxEvents: 1, templates: 5, prioritySupport: false, plan: 'trial' };
+      return { watermark: true, maxEvents: 3, templates: 5, prioritySupport: false, galleryAddon: false, galleryEnabled: false, plan: 'trial' };
     case 'monthly':
-      return { watermark: false, maxEvents: 100, templates: 999, prioritySupport: true, plan: 'monthly' };
+      return { watermark: false, maxEvents: 100, templates: 25, prioritySupport: false, galleryAddon: false, galleryEnabled: false, plan: 'monthly' };
     case 'yearly':
-      return { watermark: false, maxEvents: 1000, templates: 999, prioritySupport: true, plan: 'yearly' };
+      return { watermark: false, maxEvents: 1200, templates: 100, prioritySupport: true, galleryAddon: false, galleryEnabled: false, plan: 'yearly' };
     default:
-      return { watermark: true, maxEvents: 1, templates: 3, prioritySupport: false, plan: 'free' };
+      return { watermark: true, maxEvents: 1, templates: 3, prioritySupport: false, galleryAddon: false, galleryEnabled: false, plan: 'free' };
   }
 }
 
@@ -156,6 +156,8 @@ function sbRowToInternal(row) {
       maxEvents: row.max_events,
       templates: row.templates,
       prioritySupport: row.priority_support,
+      galleryAddon: Boolean(row.gallery_addon),
+      galleryEnabled: Boolean(row.gallery_addon),
       plan: row.plan,
     },
   };

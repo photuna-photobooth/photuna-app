@@ -1,5 +1,6 @@
 // src/components/FrameFilterScreen.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { drawTrialWatermark } from "../utils/watermark";
 import { motion } from "framer-motion";
 import { normalizeToFileUrl } from "../utils/mediaUrl";
 import { loadGoogleFont } from "../utils/fontLoader";
@@ -225,6 +226,7 @@ async function composePrintImage({
   tone,     // "normal" | "bw" | etc. (id used with TONE_FILTERS)
   slots,
   photos,
+  watermark = false,
 }) {
   function loadImage(src) {
     return new Promise((resolve, reject) => {
@@ -525,6 +527,10 @@ async function composePrintImage({
       }
     }
 
+    if (watermark) {
+      drawTrialWatermark(ctx, areaW, areaH);
+    }
+
     return canvas;
   }
 
@@ -559,6 +565,10 @@ async function composePrintImage({
     fctx.lineTo(midX, STRIP_2x6.h);
     fctx.stroke();
 
+    if (watermark) {
+      drawTrialWatermark(fctx, final.width, final.height);
+    }
+
     return final.toDataURL("image/png");
   }
 
@@ -590,6 +600,10 @@ async function composePrintImage({
     fctx.lineTo(STRIP_6x2.w, midY);
     fctx.stroke();
 
+    if (watermark) {
+      drawTrialWatermark(fctx, final.width, final.height);
+    }
+
     return final.toDataURL("image/png");
   }
 
@@ -611,6 +625,7 @@ export default function FrameFilterScreen({
   countdownStart = 45,
   templateSelection,
   photos: photosProp,
+  watermark = false,
   onNext,
   event = null,
 }) {
@@ -1201,6 +1216,7 @@ export default function FrameFilterScreen({
         tone,
         slots: template.slots,
         photos,
+        watermark,
       });
 
       composedBurst = await composeBurstPrintImage({

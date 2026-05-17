@@ -69,8 +69,10 @@ async function fetchLicenseViaIpc(userId) {
       entitlements: {
         watermark:       data.watermark       ?? (isPaid ? false : true),
         maxEvents:       data.max_events      ?? (isPaid ? 100   : 1),
-        templates:       data.templates       ?? (isPaid ? 999   : 3),
-        prioritySupport: data.priority_support ?? isPaid,
+        templates:       data.templates       ?? (isPaid ? 25    : 3),
+        prioritySupport: data.priority_support ?? (data.plan === 'yearly'),
+        galleryAddon:    Boolean(data.gallery_addon),
+        galleryEnabled:  Boolean(data.gallery_addon),
       },
     };
   } catch {
@@ -304,6 +306,8 @@ export function LicenseProvider({ children }) {
       maxEvents: ent.maxEvents ?? 0,
       templates: ent.templates ?? 0,
       prioritySupport: Boolean(ent.prioritySupport),
+      galleryAddon: Boolean(ent.galleryAddon),
+      galleryEnabled: Boolean(ent.galleryEnabled || ent.galleryAddon),
       expiresAt: license?.expiresAt || null,
     };
   }, [usable, ent, license, licenseActive, profile?.subscription_plan]);

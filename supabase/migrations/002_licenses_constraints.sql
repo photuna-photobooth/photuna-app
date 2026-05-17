@@ -23,10 +23,35 @@ ALTER TABLE public.licenses ADD COLUMN IF NOT EXISTS watermark          boolean 
 ALTER TABLE public.licenses ADD COLUMN IF NOT EXISTS max_events         int     not null default 1;
 ALTER TABLE public.licenses ADD COLUMN IF NOT EXISTS templates          int     not null default 1;
 ALTER TABLE public.licenses ADD COLUMN IF NOT EXISTS priority_support   boolean not null default false;
+ALTER TABLE public.licenses ADD COLUMN IF NOT EXISTS gallery_addon      boolean not null default false;
 ALTER TABLE public.licenses ADD COLUMN IF NOT EXISTS trial_redeemed     boolean not null default false;
 ALTER TABLE public.licenses ADD COLUMN IF NOT EXISTS stripe_subscription_id text;
 ALTER TABLE public.licenses ADD COLUMN IF NOT EXISTS stripe_customer_id   text;
 ALTER TABLE public.licenses ADD COLUMN IF NOT EXISTS expires_at         timestamptz;
+
+-- Normalize legacy entitlement values from earlier development builds.
+UPDATE public.licenses
+SET max_events = 100,
+    templates = 25,
+    watermark = false,
+    priority_support = false
+WHERE plan = 'monthly'
+  AND (max_events > 100 OR templates > 25);
+
+UPDATE public.licenses
+SET max_events = 1200,
+    templates = 100,
+    watermark = false,
+    priority_support = true
+WHERE plan = 'yearly'
+  AND (max_events > 1200 OR templates > 100);
+
+UPDATE public.licenses
+SET max_events = 3,
+    templates = 5,
+    watermark = true,
+    priority_support = false
+WHERE plan = 'trial';
 
 -- Ensure profiles has subscription_plan column
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS subscription_plan text not null default 'free';

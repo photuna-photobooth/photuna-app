@@ -77,6 +77,7 @@ create table if not exists public.licenses (
   max_events            int not null default 1,
   templates             int not null default 1,
   priority_support      boolean not null default false,
+  gallery_addon         boolean not null default false,
   trial_redeemed        boolean not null default false,
   stripe_subscription_id text unique,
   created_at            timestamptz not null default now(),
