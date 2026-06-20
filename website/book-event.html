@@ -1,0 +1,1484 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Book Event | Studio Photuna</title>
+    <link rel="icon" type="image/png" href="./favicon.png" />
+    <link rel="apple-touch-icon" href="./favicon.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+      :root {
+        --title: #111827;
+        --body: #5f6678;
+        --muted: #8b92a6;
+        --grey: #f4f5f8;
+        --line: #dedfe6;
+        --purple: #6f4dff;
+        --purple-dark: #4b32c3;
+        --green: #12833d;
+        --red: #dc2626;
+        --yellow: #f7d54a;
+        --white: #ffffff;
+        --shadow: 0 30px 90px rgba(17, 24, 39, 0.12);
+      }
+
+      * { box-sizing: border-box; }
+      html { scroll-behavior: smooth; }
+
+      body {
+        margin: 0;
+        color: var(--body);
+        background: var(--white);
+        font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      a { color: inherit; text-decoration: none; }
+      button, input, select, textarea { font: inherit; }
+
+      .container {
+        width: min(1230px, calc(100% - 40px));
+        margin: 0 auto;
+      }
+
+      .site-header {
+        position: sticky;
+        top: 0;
+        z-index: 50;
+        padding: 10px 0;
+        border-bottom: 1px solid rgba(222, 223, 230, 0.7);
+        background: rgba(255, 255, 255, 0.92);
+        backdrop-filter: blur(18px);
+      }
+
+      .header-row {
+        display: flex;
+        min-height: 64px;
+        align-items: center;
+        justify-content: space-between;
+        gap: 20px;
+      }
+
+      .logo img {
+        display: block;
+        height: 44px;
+        width: auto;
+      }
+
+      .nav-links {
+        display: flex;
+        align-items: center;
+        gap: 28px;
+        color: var(--title);
+        font-size: 15px;
+        font-weight: 800;
+      }
+
+      .nav-links a:hover { color: var(--purple); }
+
+      .btn {
+        display: inline-flex;
+        min-height: 52px;
+        align-items: center;
+        justify-content: center;
+        border: 0;
+        border-radius: 999px;
+        background: var(--purple);
+        color: var(--white);
+        padding: 0 28px;
+        font-size: 15px;
+        font-weight: 900;
+        cursor: pointer;
+        transition: background 0.18s ease, transform 0.18s ease, opacity 0.18s ease;
+      }
+
+      .btn:hover {
+        background: var(--purple-dark);
+        transform: translateY(-1px);
+      }
+
+      .btn:disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+        transform: none;
+      }
+
+      .btn.secondary {
+        border: 1px solid var(--line);
+        background: var(--white);
+        color: var(--title);
+      }
+
+      .hero {
+        position: relative;
+        overflow: clip;
+        padding: 78px 0 46px;
+        text-align: center;
+      }
+
+      .hero::before {
+        position: absolute;
+        left: -130px;
+        top: 60px;
+        width: 330px;
+        height: 250px;
+        border-radius: 60px;
+        background: radial-gradient(circle at 30% 30%, rgba(111, 77, 255, 0.18), transparent 48%), var(--grey);
+        content: "";
+        transform: rotate(-10deg);
+      }
+
+      .badge {
+        display: inline-flex;
+        width: fit-content;
+        border-radius: 999px;
+        background: #ece8ff;
+        color: var(--purple);
+        padding: 8px 12px;
+        font-size: 12px;
+        font-weight: 900;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      h1 {
+        position: relative;
+        z-index: 2;
+        max-width: 900px;
+        margin: 18px auto;
+        color: var(--title);
+        font-size: clamp(44px, 7vw, 86px);
+        line-height: 1.02;
+        letter-spacing: -0.065em;
+      }
+
+      .hero p {
+        position: relative;
+        z-index: 2;
+        max-width: 760px;
+        margin: 0 auto;
+        font-size: 18px;
+        line-height: 1.75;
+      }
+
+      .booking-shell {
+        position: relative;
+        overflow: hidden;
+        margin: 18px 0 88px;
+        border-radius: 34px;
+        background: var(--title);
+        color: var(--white);
+        padding: clamp(28px, 5vw, 58px);
+        box-shadow: var(--shadow);
+      }
+
+      .booking-shell::before,
+      .booking-shell::after {
+        position: absolute;
+        border-radius: 50%;
+        content: "";
+      }
+
+      .booking-shell::before {
+        inset: -28% auto auto -10%;
+        width: 480px;
+        height: 480px;
+        background: radial-gradient(circle, rgba(111, 77, 255, 0.38), transparent 62%);
+      }
+
+      .booking-shell::after {
+        right: -140px;
+        bottom: -180px;
+        width: 430px;
+        height: 430px;
+        background: radial-gradient(circle, rgba(247, 213, 74, 0.18), transparent 64%);
+      }
+
+      .booking-grid {
+        position: relative;
+        z-index: 2;
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 22px;
+        align-items: start;
+        max-width: 920px;
+        margin: 0 auto;
+      }
+
+      .booking-copy h2,
+      .booking-copy h3,
+      .booking-copy p,
+      .booking-copy li { color: var(--white); }
+
+      .booking-copy h2 {
+        margin: 18px 0;
+        font-size: clamp(38px, 5vw, 68px);
+        line-height: 1.02;
+        letter-spacing: -0.06em;
+      }
+
+      .booking-copy p {
+        max-width: 590px;
+        font-size: 18px;
+        line-height: 1.72;
+        opacity: 0.82;
+      }
+
+      .booking-highlights {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 12px;
+        margin: 28px 0;
+      }
+
+      .booking-highlight,
+      .event-package {
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.08);
+        padding: 16px;
+      }
+
+      .booking-highlight strong {
+        display: block;
+        color: var(--white);
+        font-size: 20px;
+        letter-spacing: -0.03em;
+      }
+
+      .booking-highlight span {
+        display: block;
+        margin-top: 4px;
+        color: rgba(255, 255, 255, 0.68);
+        font-size: 13px;
+        font-weight: 800;
+      }
+
+      .event-package-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 12px;
+      }
+
+      .event-package.featured {
+        border-color: rgba(247, 213, 74, 0.8);
+        background: rgba(247, 213, 74, 0.12);
+      }
+
+      .event-package h3 {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        margin: 0 0 10px;
+        font-size: 19px;
+      }
+
+      .event-package h3 span {
+        color: var(--yellow);
+        white-space: nowrap;
+      }
+
+      .event-package ul {
+        display: grid;
+        gap: 6px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .event-package li {
+        color: rgba(255, 255, 255, 0.78);
+        font-size: 14px;
+      }
+
+      .event-package.is-disabled {
+        opacity: 0.62;
+      }
+
+      .flow-step {
+        display: none;
+        border: 1px solid var(--line);
+        border-radius: 22px;
+        background: var(--white);
+        padding: clamp(18px, 3vw, 24px);
+      }
+
+      .flow-step.active {
+        display: grid;
+        gap: 14px;
+      }
+
+      .flow-step h4 {
+        margin: 0 0 12px;
+        color: var(--title);
+        font-size: 18px;
+        letter-spacing: -0.03em;
+      }
+
+      .policy-grid,
+      .booking-faq-grid {
+        display: grid;
+        gap: 12px;
+      }
+
+      .policy-item,
+      .booking-faq-item,
+      .package-breakdown,
+      .quote-summary {
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: var(--grey);
+        padding: 14px;
+      }
+
+      .policy-item strong,
+      .booking-faq-item strong,
+      .quote-summary strong {
+        display: block;
+        color: var(--title);
+        font-size: 14px;
+      }
+
+      .policy-item span,
+      .booking-faq-item span {
+        display: block;
+        margin-top: 5px;
+        color: var(--body);
+        font-size: 13px;
+        line-height: 1.55;
+      }
+
+      .package-breakdown {
+        display: grid;
+        gap: 10px;
+      }
+
+      .package-breakdown h4,
+      .quote-summary h4 {
+        margin: 0;
+        color: var(--title);
+        font-size: 18px;
+      }
+
+      .package-breakdown p {
+        margin: 0;
+      }
+
+      .package-breakdown ul,
+      .quote-summary ul {
+        display: grid;
+        gap: 8px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .package-breakdown li,
+      .quote-summary li {
+        display: flex;
+        justify-content: space-between;
+        gap: 14px;
+        color: var(--body);
+        font-size: 13px;
+        line-height: 1.45;
+      }
+
+      .package-breakdown li::before,
+      .quote-summary li::before {
+        display: none;
+      }
+
+      .quote-summary {
+        display: none;
+        margin-top: 16px;
+        z-index: 5;
+        background: #111827;
+        color: var(--white);
+        box-shadow: 0 24px 70px rgba(17, 24, 39, 0.22);
+      }
+
+      .quote-summary.active {
+        display: grid;
+      }
+
+      .quote-summary h4,
+      .quote-summary strong,
+      .quote-summary li {
+        color: var(--white);
+      }
+
+      .quote-summary span {
+        color: rgba(255, 255, 255, 0.72);
+      }
+
+      .quote-total {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 12px;
+        border-top: 1px solid rgba(255, 255, 255, 0.16);
+        margin-top: 12px;
+        padding-top: 12px;
+      }
+
+      .quote-total strong {
+        font-size: 28px;
+        letter-spacing: -0.05em;
+      }
+
+      .booking-form-card {
+        display: grid;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 28px;
+        background: rgba(255, 255, 255, 0.96);
+        color: var(--body);
+        padding: clamp(22px, 3vw, 32px);
+        box-shadow: 0 30px 90px rgba(0, 0, 0, 0.2);
+      }
+
+      .booking-form-card h3 {
+        margin: 0 0 8px;
+        color: var(--title);
+        font-size: 30px;
+        letter-spacing: -0.045em;
+      }
+
+      .booking-form-card p {
+        margin: 0;
+        line-height: 1.6;
+      }
+
+      .booking-intro {
+        margin-bottom: 18px;
+      }
+
+      .wizard-progress {
+        display: grid;
+        grid-template-columns: repeat(7, 1fr);
+        gap: 8px;
+        margin: 0 0 18px;
+      }
+
+      .wizard-dot {
+        height: 6px;
+        border-radius: 999px;
+        background: #e7e8ef;
+      }
+
+      .wizard-dot.active {
+        background: var(--purple);
+      }
+
+      .availability-card {
+        margin: 0;
+        border: 1px solid var(--line);
+        border-radius: 22px;
+        background: var(--grey);
+        padding: 16px;
+      }
+
+      .availability-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 14px;
+      }
+
+      .availability-head strong {
+        color: var(--title);
+        font-size: 16px;
+      }
+
+      .calendar-controls {
+        display: inline-flex;
+        gap: 8px;
+      }
+
+      .calendar-controls button,
+      .calendar-day {
+        border: 1px solid var(--line);
+        background: var(--white);
+        color: var(--title);
+        cursor: pointer;
+      }
+
+      .calendar-controls button {
+        display: grid;
+        width: 34px;
+        height: 34px;
+        place-items: center;
+        border-radius: 50%;
+      }
+
+      .calendar-weekdays,
+      .calendar-grid {
+        display: grid;
+        grid-template-columns: repeat(7, 1fr);
+        gap: 6px;
+      }
+
+      .calendar-weekdays {
+        margin-bottom: 8px;
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 900;
+        text-align: center;
+        text-transform: uppercase;
+      }
+
+      .calendar-day {
+        display: grid;
+        min-height: 42px;
+        place-items: center;
+        border-color: transparent;
+        border-radius: 12px;
+        font-size: 13px;
+        font-weight: 900;
+      }
+
+      .calendar-day.empty {
+        background: transparent;
+        cursor: default;
+      }
+
+      .calendar-day.past {
+        color: var(--muted);
+        opacity: 0.42;
+        cursor: not-allowed;
+      }
+
+      .calendar-day.unavailable {
+        background: #fee2e2;
+        color: #991b1b;
+        cursor: not-allowed;
+      }
+
+      .calendar-day.selected {
+        background: var(--purple);
+        color: var(--white);
+      }
+
+      .calendar-legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-top: 14px;
+        color: var(--body);
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .calendar-legend span {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+      }
+
+      .calendar-legend i {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: var(--white);
+      }
+
+      .calendar-legend .blocked i { background: #fca5a5; }
+
+      .calendar-status,
+      .booking-message {
+        margin-top: 12px;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .booking-form {
+        display: grid;
+        gap: 0;
+      }
+
+      .form-row {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 14px;
+      }
+
+      .field {
+        display: grid;
+        gap: 7px;
+      }
+
+      .field label,
+      .terms-row {
+        color: var(--title);
+        font-size: 13px;
+        font-weight: 900;
+      }
+
+      .field input,
+      .field select,
+      .field textarea {
+        width: 100%;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: var(--white);
+        color: var(--title);
+        padding: 13px 14px;
+        outline: none;
+      }
+
+      .field input[readonly] {
+        background: #f7f7fb;
+        cursor: default;
+      }
+
+      .field textarea {
+        min-height: 104px;
+        resize: vertical;
+      }
+
+      .field input:focus,
+      .field select:focus,
+      .field textarea:focus {
+        border-color: var(--purple);
+        box-shadow: 0 0 0 4px rgba(111, 77, 255, 0.12);
+      }
+
+      .terms-row {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        line-height: 1.5;
+      }
+
+      .terms-row input { margin-top: 3px; }
+
+      .booking-note {
+        border-radius: 16px;
+        background: var(--grey);
+        padding: 14px;
+        color: var(--body);
+        font-size: 13px;
+        line-height: 1.55;
+      }
+
+      .booking-form .btn { width: 100%; }
+
+      .wizard-actions {
+        display: grid;
+        grid-template-columns: 0.8fr 1.2fr;
+        gap: 10px;
+        margin-top: 18px;
+      }
+
+      .wizard-actions .btn {
+        width: 100%;
+      }
+
+      .wizard-actions .submit-booking {
+        display: none;
+        grid-column: 1 / -1;
+      }
+
+      .wizard-actions.final-step {
+        grid-template-columns: 1fr;
+      }
+
+      .wizard-actions.final-step .next-step {
+        display: none;
+      }
+
+      .wizard-actions.final-step .submit-booking {
+        display: inline-flex;
+      }
+
+      .booking-form-card > .flow-step.active,
+      .booking-form .flow-step.active {
+        margin-bottom: 18px;
+      }
+
+      .booking-message {
+        min-height: 20px;
+        text-align: center;
+      }
+
+      .booking-message:empty {
+        display: none;
+      }
+
+      .footer {
+        border-top: 1px solid var(--line);
+        padding: 30px 0;
+        text-align: center;
+      }
+
+      @media (max-width: 980px) {
+        .booking-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .nav-links {
+          display: none;
+        }
+      }
+
+      @media (max-width: 640px) {
+        .container {
+          width: min(100% - 28px, 1230px);
+        }
+
+        .booking-highlights,
+        .event-package-grid,
+        .form-row {
+          grid-template-columns: 1fr;
+        }
+
+        .event-package h3 {
+          display: grid;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="container header-row">
+        <a class="logo" href="./index.html#top" aria-label="Studio Photuna">
+          <img src="./logo-dark.png" alt="Studio Photuna" />
+        </a>
+        <nav class="nav-links" aria-label="Primary navigation">
+          <a href="./index.html#top">Home</a>
+          <a href="./index.html#features">Features</a>
+          <a href="./index.html#pricing">Pricing</a>
+          <a href="./download.html">Download</a>
+          <a href="./index.html#faq">FAQ</a>
+        </nav>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="container">
+          <span class="badge">Metro Manila Events</span>
+          <h1>Book Studio Photuna for your event</h1>
+          <p>Review the booking terms, choose an available date from the calendar, select your booth package, and send your details in one continuous flow.</p>
+        </div>
+      </section>
+
+      <section class="container">
+        <div class="booking-shell">
+          <div class="booking-grid">
+            <div class="booking-copy">
+              <span class="badge">Booking Flow</span>
+              <h2>Premium photobooth services for local events</h2>
+              <p>Studio Photuna currently serves Metro Manila events with a high-angle photobooth setup. Regular photobooth and phone booth services are part of the roadmap and will open for booking later.</p>
+              <div class="booking-highlights">
+                <div class="booking-highlight"><strong>3 hours</strong><span>Standard event coverage</span></div>
+                <div class="booking-highlight"><strong>50%</strong><span>Reservation fee to secure the date</span></div>
+                <div class="booking-highlight"><strong>Metro Manila</strong><span>Local service area for now</span></div>
+                <div class="booking-highlight"><strong>+3 hours max</strong><span>Optional extension limit</span></div>
+              </div>
+              <div class="event-package-grid" aria-label="Studio Photuna event packages">
+                <article class="event-package is-disabled">
+                  <h3>Bundle Package <span>Soon</span></h3>
+                  <ul>
+                    <li>Planned high-angle photobooth plus phone booth bundle</li>
+                    <li>Not available until Phone Booth opens for booking</li>
+                    <li>Future extra hour estimate: PHP 1,500/hour</li>
+                  </ul>
+                </article>
+                <article class="event-package featured">
+                  <h3>High Angle Photobooth <span>PHP 20,000</span></h3>
+                  <ul>
+                    <li>Current main Studio Photuna package</li>
+                    <li>3 hours with unlimited sessions during coverage</li>
+                    <li>Extra hour estimate: PHP 1,500/hour</li>
+                  </ul>
+                </article>
+                <article class="event-package is-disabled">
+                  <h3>Phone Booth <span>Soon</span></h3>
+                  <ul>
+                    <li>Planned video and audio guest message experience</li>
+                    <li>Not available for booking yet</li>
+                    <li>Future extra hour estimate: PHP 500/hour</li>
+                  </ul>
+                </article>
+                <article class="event-package is-disabled">
+                  <h3>Regular Photobooth <span>Soon</span></h3>
+                  <ul>
+                    <li>Planned for future Studio Photuna service expansion</li>
+                    <li>Not available for booking yet</li>
+                    <li>Ask us if you want to be notified when available</li>
+                  </ul>
+                </article>
+              </div>
+            </div>
+
+            <div class="booking-form-card">
+              <h3>Request a booking quote</h3>
+              <p class="booking-intro">Please read the terms first, then complete the booking form. The date field is filled only by selecting an available date on the calendar.</p>
+              <div class="wizard-progress" id="bookingWizardProgress" aria-label="Booking progress"></div>
+
+              <div class="flow-step active" data-step="0">
+                <h4>Before you book</h4>
+                <div class="policy-grid">
+                  <div class="policy-item"><strong>Service area</strong><span>Studio Photuna currently accepts Metro Manila bookings only.</span></div>
+                  <div class="policy-item"><strong>Reservation</strong><span>A 50% reservation fee is required before a date is blocked on the public calendar.</span></div>
+                  <div class="policy-item"><strong>Reservation fee policy</strong><span>The reservation fee is non-refundable, but may be transferred to another available date subject to coordination and availability.</span></div>
+                  <div class="policy-item"><strong>Setup time</strong><span>We typically arrive 1 to 2 hours before the event start time for setup, testing, and coordination with the venue.</span></div>
+                  <div class="policy-item"><strong>Extra hours</strong><span>Extra hours are optional and limited to a maximum of 3 hours per booking request.</span></div>
+                </div>
+              </div>
+
+              <div class="flow-step" data-step="1">
+                <h4>Booking FAQ</h4>
+                <div class="booking-faq-grid">
+                  <div class="booking-faq-item"><strong>Does submitting this form reserve my date?</strong><span>No. Your date is reserved only after Studio Photuna confirms the booking and records the 50% reservation fee.</span></div>
+                  <div class="booking-faq-item"><strong>Can I request a date that is already unavailable?</strong><span>No. Dates marked unavailable already have an approved booking with reservation payment recorded.</span></div>
+                  <div class="booking-faq-item"><strong>How many guests should I enter?</strong><span>Use your realistic expected headcount. This form accepts 20 to 500 guests so we can plan the booth flow properly.</span></div>
+                  <div class="booking-faq-item"><strong>What if my venue is outside Metro Manila?</strong><span>Please contact Studio Photuna directly first. This booking page is currently configured for Metro Manila only.</span></div>
+                </div>
+              </div>
+
+              <div class="flow-step" data-step="2">
+                <h4>1. Choose an available date</h4>
+                <div class="availability-card" aria-label="Studio Photuna event availability calendar">
+                  <div class="availability-head">
+                    <strong id="bookingCalendarMonth">Availability</strong>
+                    <div class="calendar-controls">
+                      <button type="button" id="calendarPrev" aria-label="Previous month">&lt;</button>
+                      <button type="button" id="calendarNext" aria-label="Next month">&gt;</button>
+                    </div>
+                  </div>
+                  <div class="calendar-weekdays" aria-hidden="true">
+                    <span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span>
+                  </div>
+                  <div class="calendar-grid" id="bookingCalendar"></div>
+                  <div class="calendar-legend">
+                    <span><i></i> Available for inquiry</span>
+                    <span class="blocked"><i></i> Reserved after confirmation + 50% reservation fee</span>
+                  </div>
+                  <div class="calendar-status" id="availabilityStatus">Loading confirmed booking dates...</div>
+                </div>
+              </div>
+
+              <form class="booking-form" id="eventBookingForm">
+                <div class="flow-step" data-step="3">
+                  <h4>2. Select package and coverage</h4>
+                  <div class="form-row">
+                    <div class="field">
+                      <label for="bookingPackage">Preferred package</label>
+                      <select id="bookingPackage" name="package" required>
+                        <option value="">Select a package</option>
+                        <option value="bundle" disabled>Bundle Package - Coming soon</option>
+                        <option value="high-angle">High Angle Photobooth - PHP 20,000</option>
+                        <option value="phone-booth" disabled>Phone Booth - Coming soon</option>
+                        <option value="regular-soon" disabled>Regular Photobooth - Coming soon</option>
+                      </select>
+                    </div>
+                    <div class="field">
+                      <label for="bookingExtraHours">Extra hours</label>
+                      <select id="bookingExtraHours" name="extraHours">
+                        <option value="0">No extra hours</option>
+                        <option value="1">+1 hour</option>
+                        <option value="2">+2 hours</option>
+                        <option value="3">+3 hours</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div class="package-breakdown" id="packageBreakdown">
+                    <h4>Select a package to see what is included</h4>
+                    <p>Package inclusions and total estimate will appear here.</p>
+                  </div>
+                </div>
+
+                <div class="flow-step" data-step="4">
+                  <h4>3. Event schedule</h4>
+                  <div class="form-row">
+                    <div class="field">
+                      <label for="bookingDateDisplay">Date of event</label>
+                      <input id="bookingDateDisplay" type="text" placeholder="Select a date from the calendar above" readonly required />
+                      <input id="bookingDate" name="date" type="hidden" required />
+                    </div>
+                    <div class="field"><label for="bookingTime">Start time</label><input id="bookingTime" name="time" type="time" value="08:00" required /></div>
+                  </div>
+                  <div class="field">
+                    <label for="bookingVenueCity">Metro Manila city</label>
+                    <select id="bookingVenueCity" name="venueCity" required>
+                      <option value="">Select city</option>
+                      <option>Manila</option>
+                      <option>Makati</option>
+                      <option>Taguig</option>
+                      <option>Pasig</option>
+                      <option>Quezon City</option>
+                      <option>Mandaluyong</option>
+                      <option>San Juan</option>
+                      <option>Pasay</option>
+                      <option>Paranaque</option>
+                      <option>Muntinlupa</option>
+                      <option>Las Pinas</option>
+                      <option>Marikina</option>
+                      <option>Caloocan</option>
+                      <option>Malabon</option>
+                      <option>Navotas</option>
+                      <option>Valenzuela</option>
+                      <option>Pateros</option>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <label for="bookingVenueName">Venue name</label>
+                    <input id="bookingVenueName" name="venueName" placeholder="Example: The Blue Leaf Events Pavilion" required />
+                  </div>
+                  <div class="field">
+                    <label for="bookingVenueAddress">Full venue address</label>
+                    <input id="bookingVenueAddress" name="venueAddress" placeholder="Street, barangay, building, or landmark" required />
+                  </div>
+                  <div class="field">
+                    <label for="bookingMapsLink">Google Maps link (optional)</label>
+                    <input id="bookingMapsLink" name="mapsLink" type="url" inputmode="url" placeholder="Optional pinned location link if available" />
+                  </div>
+                </div>
+
+                <div class="flow-step" data-step="5">
+                  <h4>4. Contact and event details</h4>
+                  <div class="form-row">
+                    <div class="field"><label for="bookingName">Full name</label><input id="bookingName" name="name" autocomplete="name" required /></div>
+                    <div class="field"><label for="bookingPhone">Contact number</label><input id="bookingPhone" name="phone" autocomplete="tel" inputmode="tel" placeholder="09XXXXXXXXX" pattern="^(\+639|09)\d{9}$" required /></div>
+                  </div>
+                  <div class="form-row">
+                    <div class="field"><label for="bookingEmail">Email address</label><input id="bookingEmail" name="email" type="email" autocomplete="email" /></div>
+                    <div class="field"><label for="bookingGuests">Estimated guests</label><input id="bookingGuests" name="guests" type="number" min="20" max="500" step="1" inputmode="numeric" placeholder="Example: 120" required /></div>
+                  </div>
+                  <div class="field">
+                    <label for="bookingType">Type of event</label>
+                    <select id="bookingType" name="eventType" required>
+                      <option value="">Select event type</option>
+                      <option>Wedding</option>
+                      <option>Birthday</option>
+                      <option>Corporate event</option>
+                      <option>Graduation</option>
+                      <option>Baptism</option>
+                      <option>Holiday party</option>
+                      <option>Awarding ceremony</option>
+                      <option>Product launch</option>
+                      <option>Anniversary</option>
+                      <option>Other</option>
+                    </select>
+                  </div>
+                  <div class="field"><label for="bookingNotes">Theme, layout, or event notes</label><textarea id="bookingNotes" name="notes" placeholder="Share your theme, color scheme, venue notes, ingress rules, or custom request."></textarea></div>
+                </div>
+
+                <div class="quote-summary" id="quoteSummary" aria-live="polite">
+                  <h4>Estimated total</h4>
+                  <ul id="quoteSummaryList">
+                    <li><span>Package</span><strong>Select a package</strong></li>
+                    <li><span>Standard coverage</span><strong>3 hours</strong></li>
+                    <li><span>Extra hours</span><strong>PHP 0</strong></li>
+                  </ul>
+                  <div class="quote-total"><span>Total estimate</span><strong id="quoteTotal">PHP 0</strong></div>
+                </div>
+
+                <div class="flow-step" data-step="6">
+                  <h4>5. Confirm understanding</h4>
+                  <label class="terms-row">
+                    <input id="bookingTerms" type="checkbox" required />
+                    <span>I have read and understood the service area, reservation, cancellation, setup, and extra-hour policies above.</span>
+                  </label>
+                  <div class="booking-note">Payments may be made through GCash, bank transfer, or cash. Remaining balance is payable before or on event day unless otherwise agreed in writing.</div>
+                </div>
+                <div class="wizard-actions" id="bookingWizardActions">
+                  <button class="btn secondary prev-step" type="button" id="bookingPrevStep">Back</button>
+                  <button class="btn next-step" type="button" id="bookingNextStep">Next</button>
+                  <button class="btn submit-booking" type="submit" id="bookingSubmit">Send booking request</button>
+                </div>
+                <div class="booking-message" id="bookingMessage" aria-live="polite"></div>
+              </form>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="container">Copyright Studio Photuna. All rights reserved.</div>
+    </footer>
+
+    <script>
+      const SUPABASE_URL = "https://elthktbvojsmvhtxxqnz.supabase.co";
+      const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVsdGhrdGJ2b2pzbXZodHh4cW56Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ2NzYzMjUsImV4cCI6MjA5MDI1MjMyNX0.5QrzeI0WKJclFLHEBgZH7WxsHPdKBJmdEtpqlyXg9PQ";
+      const supabaseClient = window.supabase?.createClient ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
+
+      const eventBookingForm = document.getElementById("eventBookingForm");
+      const bookingDate = document.getElementById("bookingDate");
+      const bookingDateDisplay = document.getElementById("bookingDateDisplay");
+      const bookingTime = document.getElementById("bookingTime");
+      const bookingPhone = document.getElementById("bookingPhone");
+      const bookingPackage = document.getElementById("bookingPackage");
+      const bookingExtraHours = document.getElementById("bookingExtraHours");
+      const bookingGuests = document.getElementById("bookingGuests");
+      const bookingVenueCity = document.getElementById("bookingVenueCity");
+      const bookingVenueName = document.getElementById("bookingVenueName");
+      const bookingVenueAddress = document.getElementById("bookingVenueAddress");
+      const bookingMapsLink = document.getElementById("bookingMapsLink");
+      const packageBreakdown = document.getElementById("packageBreakdown");
+      const quoteSummaryList = document.getElementById("quoteSummaryList");
+      const quoteTotal = document.getElementById("quoteTotal");
+      const bookingWizardProgress = document.getElementById("bookingWizardProgress");
+      const bookingWizardActions = document.getElementById("bookingWizardActions");
+      const bookingPrevStep = document.getElementById("bookingPrevStep");
+      const bookingNextStep = document.getElementById("bookingNextStep");
+      const bookingMessage = document.getElementById("bookingMessage");
+      const bookingCalendar = document.getElementById("bookingCalendar");
+      const bookingCalendarMonth = document.getElementById("bookingCalendarMonth");
+      const calendarPrev = document.getElementById("calendarPrev");
+      const calendarNext = document.getElementById("calendarNext");
+      const availabilityStatus = document.getElementById("availabilityStatus");
+
+      const packageCatalog = {
+        "high-angle": {
+          name: "High Angle Photobooth",
+          price: 20000,
+          extraRate: 1500,
+          coverage: "3 hours",
+          included: [
+            "High-angle photobooth setup",
+            "Customized digital layout",
+            "Soft panel lighting",
+            "Digital copies",
+            "On-site attendant",
+            "Metro Manila transport coverage"
+          ]
+        },
+        "phone-booth": {
+          name: "Phone Booth",
+          price: 4500,
+          extraRate: 500,
+          coverage: "3 hours",
+          included: [
+            "Phone booth video and audio recording",
+            "Guest message experience",
+            "Basic design support",
+            "Props and guest book support",
+            "Metro Manila transport coverage"
+          ]
+        }
+      };
+
+      let visibleBookingMonth = new Date();
+      let unavailableBookingDates = new Set();
+      let selectedBookingDate = "";
+      let currentBookingStep = 0;
+      const totalBookingSteps = 7;
+
+      function getFormValue(formData, key) {
+        return String(formData.get(key) || "").trim();
+      }
+
+      function toDateKey(date) {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, "0");
+        const day = String(date.getDate()).padStart(2, "0");
+        return `${year}-${month}-${day}`;
+      }
+
+      function parseDateKey(dateKey) {
+        const [year, month, day] = dateKey.split("-").map(Number);
+        return new Date(year, month - 1, day);
+      }
+
+      function formatPeso(value) {
+        return `PHP ${Number(value || 0).toLocaleString("en-PH")}`;
+      }
+
+      function formatDisplayDate(dateKey) {
+        if (!dateKey) return "";
+        return parseDateKey(dateKey).toLocaleDateString("en-PH", {
+          year: "numeric",
+          month: "long",
+          day: "numeric",
+          weekday: "long"
+        });
+      }
+
+      function selectedPackage() {
+        return packageCatalog[bookingPackage?.value] || null;
+      }
+
+      function selectedExtraHours() {
+        return Math.min(3, Math.max(0, Number(bookingExtraHours?.value || 0)));
+      }
+
+      function calculateQuote() {
+        const pkg = selectedPackage();
+        const extraHours = selectedExtraHours();
+        const basePrice = pkg?.price || 0;
+        const extraTotal = pkg ? extraHours * pkg.extraRate : 0;
+        const total = basePrice + extraTotal;
+        return { pkg, extraHours, basePrice, extraTotal, total };
+      }
+
+      function renderQuote() {
+        const { pkg, extraHours, basePrice, extraTotal, total } = calculateQuote();
+        if (packageBreakdown) {
+          if (!pkg) {
+            packageBreakdown.innerHTML = `
+              <h4>Select a package to see what is included</h4>
+              <p>Package inclusions and total estimate will appear here.</p>
+            `;
+          } else {
+            packageBreakdown.innerHTML = `
+              <h4>${pkg.name}</h4>
+              <p>${pkg.coverage} standard coverage. Extra hours are optional and limited to 3 hours.</p>
+              <ul>
+                ${pkg.included.map((item) => `<li><span>${item}</span></li>`).join("")}
+              </ul>
+            `;
+          }
+        }
+        if (quoteSummaryList) {
+          quoteSummaryList.innerHTML = `
+            <li><span>Package</span><strong>${pkg ? `${pkg.name} - ${formatPeso(basePrice)}` : "Select a package"}</strong></li>
+            <li><span>Standard coverage</span><strong>3 hours</strong></li>
+            <li><span>Extra hours</span><strong>${extraHours} hour${extraHours === 1 ? "" : "s"} - ${formatPeso(extraTotal)}</strong></li>
+            <li><span>Reservation fee</span><strong>${pkg ? `${formatPeso(total / 2)} estimate` : "50% of total"}</strong></li>
+          `;
+        }
+        if (quoteTotal) quoteTotal.textContent = formatPeso(total);
+      }
+
+      function setSelectedDate(dateKey) {
+        selectedBookingDate = dateKey;
+        bookingDate.value = dateKey;
+        bookingDateDisplay.value = formatDisplayDate(dateKey);
+      }
+
+      function isValidPhilippinePhone(value) {
+        return /^(\+639|09)\d{9}$/.test(String(value || "").trim());
+      }
+
+      function setBookingMessage(message, isError = true) {
+        bookingMessage.textContent = message || "";
+        bookingMessage.style.color = isError ? "var(--red)" : "var(--body)";
+      }
+
+      function buildWizardProgress() {
+        if (!bookingWizardProgress) return;
+        bookingWizardProgress.innerHTML = "";
+        for (let index = 0; index < totalBookingSteps; index += 1) {
+          const dot = document.createElement("span");
+          dot.className = "wizard-dot";
+          dot.setAttribute("aria-hidden", "true");
+          bookingWizardProgress.appendChild(dot);
+        }
+      }
+
+      function showBookingStep(step) {
+        currentBookingStep = Math.min(totalBookingSteps - 1, Math.max(0, step));
+        document.querySelectorAll(".flow-step[data-step]").forEach((element) => {
+          element.classList.toggle("active", Number(element.dataset.step) === currentBookingStep);
+        });
+        document.querySelectorAll(".wizard-dot").forEach((dot, index) => {
+          dot.classList.toggle("active", index <= currentBookingStep);
+        });
+        if (bookingPrevStep) bookingPrevStep.disabled = currentBookingStep === 0;
+        if (bookingWizardActions) bookingWizardActions.classList.toggle("final-step", currentBookingStep === totalBookingSteps - 1);
+        const showQuote = currentBookingStep >= 3 && currentBookingStep <= totalBookingSteps - 1;
+        document.getElementById("quoteSummary")?.classList.toggle("active", showQuote);
+        setBookingMessage("");
+      }
+
+      function validateCurrentStep() {
+        if (currentBookingStep === 2 && !selectedBookingDate) {
+          setBookingMessage("Please choose your event date from the availability calendar.");
+          return false;
+        }
+        if (currentBookingStep === 3 && !selectedPackage()) {
+          setBookingMessage("Please select an available package.");
+          bookingPackage.focus();
+          return false;
+        }
+        if (currentBookingStep === 4) {
+          if (!bookingDate.value) {
+            setBookingMessage("Please choose your event date from the availability calendar.");
+            return false;
+          }
+          if (
+            !bookingTime.reportValidity()
+            || !bookingVenueCity.reportValidity()
+            || !bookingVenueName.reportValidity()
+            || !bookingVenueAddress.reportValidity()
+            || !bookingMapsLink.reportValidity()
+          ) return false;
+        }
+        if (currentBookingStep === 5) {
+          const fields = [
+            document.getElementById("bookingName"),
+            bookingPhone,
+            document.getElementById("bookingEmail"),
+            bookingGuests,
+            document.getElementById("bookingType")
+          ];
+          if (!fields.every((field) => field.reportValidity())) return false;
+          if (!isValidPhilippinePhone(bookingPhone.value)) {
+            setBookingMessage("Please enter a valid Philippine mobile number starting with 09 or +639.");
+            bookingPhone.focus();
+            return false;
+          }
+          const guestCount = Number(bookingGuests.value);
+          if (!Number.isFinite(guestCount) || guestCount < 20 || guestCount > 500) {
+            setBookingMessage("Please enter an estimated guest count between 20 and 500.");
+            bookingGuests.focus();
+            return false;
+          }
+        }
+        return true;
+      }
+
+      function isPastDate(dateKey) {
+        const today = parseDateKey(toDateKey(new Date()));
+        return parseDateKey(dateKey) < today;
+      }
+
+      function renderBookingCalendar() {
+        const monthStart = new Date(visibleBookingMonth.getFullYear(), visibleBookingMonth.getMonth(), 1);
+        const monthEnd = new Date(visibleBookingMonth.getFullYear(), visibleBookingMonth.getMonth() + 1, 0);
+        bookingCalendarMonth.textContent = new Intl.DateTimeFormat("en", { month: "long", year: "numeric" }).format(monthStart);
+        bookingCalendar.innerHTML = "";
+
+        for (let i = 0; i < monthStart.getDay(); i += 1) {
+          const empty = document.createElement("span");
+          empty.className = "calendar-day empty";
+          bookingCalendar.appendChild(empty);
+        }
+
+        for (let day = 1; day <= monthEnd.getDate(); day += 1) {
+          const date = new Date(monthStart.getFullYear(), monthStart.getMonth(), day);
+          const dateKey = toDateKey(date);
+          const blocked = unavailableBookingDates.has(dateKey);
+          const past = isPastDate(dateKey);
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "calendar-day";
+          button.textContent = String(day);
+          if (blocked) {
+            button.classList.add("unavailable");
+            button.title = "Reserved after confirmation and 50% reservation payment";
+            button.disabled = true;
+          }
+          if (past) {
+            button.classList.add("past");
+            button.disabled = true;
+          }
+          if (dateKey === selectedBookingDate || dateKey === bookingDate.value) {
+            button.classList.add("selected");
+          }
+          button.addEventListener("click", () => {
+            setSelectedDate(dateKey);
+            renderBookingCalendar();
+          });
+          bookingCalendar.appendChild(button);
+        }
+      }
+
+      async function loadBookingAvailability() {
+        if (!supabaseClient) {
+          availabilityStatus.textContent = "Availability is loading. Please refresh if it does not appear.";
+          return;
+        }
+
+        const start = toDateKey(new Date());
+        const endDate = new Date();
+        endDate.setMonth(endDate.getMonth() + 12);
+        const end = toDateKey(endDate);
+
+        try {
+          const { data, error } = await supabaseClient
+            .from("booking_calendar_days")
+            .select("event_date,status")
+            .gte("event_date", start)
+            .lte("event_date", end);
+          if (error) throw error;
+          unavailableBookingDates = new Set((data || []).map((row) => row.event_date));
+          availabilityStatus.textContent = "Unavailable dates already have confirmed bookings with the 50% reservation fee recorded.";
+          renderBookingCalendar();
+        } catch (error) {
+          availabilityStatus.textContent = "Availability could not be loaded. Please refresh or contact Studio Photuna.";
+          console.warn("Booking availability unavailable", error);
+        }
+      }
+
+      async function submitBookingRequest(event) {
+        event.preventDefault();
+        const form = event.currentTarget;
+        if (!form.reportValidity()) return;
+        if (!supabaseClient) {
+          setBookingMessage("Booking requests are unavailable right now. Please refresh and try again.");
+          return;
+        }
+
+        const formData = new FormData(form);
+        const requestedDate = getFormValue(formData, "date");
+        if (!requestedDate || requestedDate !== selectedBookingDate) {
+          setBookingMessage("Please choose your event date from the availability calendar.");
+          bookingDateDisplay.focus();
+          return;
+        }
+        if (unavailableBookingDates.has(requestedDate)) {
+          setBookingMessage("That date is already reserved. Please choose another available date.");
+          return;
+        }
+
+        const phone = getFormValue(formData, "phone");
+        if (!isValidPhilippinePhone(phone)) {
+          setBookingMessage("Please enter a valid Philippine mobile number starting with 09 or +639.");
+          bookingPhone.focus();
+          return;
+        }
+
+        const guestCount = Number(getFormValue(formData, "guests"));
+        if (!Number.isFinite(guestCount) || guestCount < 20 || guestCount > 500) {
+          setBookingMessage("Please enter an estimated guest count between 20 and 500.");
+          bookingGuests.focus();
+          return;
+        }
+
+        const { pkg, extraHours, basePrice, extraTotal, total } = calculateQuote();
+        if (!pkg) {
+          setBookingMessage("Please select an available package.");
+          bookingPackage.focus();
+          return;
+        }
+
+        const venueCity = getFormValue(formData, "venueCity");
+        const venueName = getFormValue(formData, "venueName");
+        const venueAddress = getFormValue(formData, "venueAddress");
+        const mapsLink = getFormValue(formData, "mapsLink");
+        if (!venueCity) {
+          setBookingMessage("Please select the Metro Manila city for the event.");
+          bookingVenueCity.focus();
+          return;
+        }
+        if (!venueName) {
+          setBookingMessage("Please enter the venue name.");
+          bookingVenueName.focus();
+          return;
+        }
+        if (!venueAddress) {
+          setBookingMessage("Please enter the full venue address.");
+          bookingVenueAddress.focus();
+          return;
+        }
+
+        const submitButton = form.querySelector('button[type="submit"]');
+        submitButton.disabled = true;
+        setBookingMessage("Submitting your booking request...", false);
+
+        const rawNotes = getFormValue(formData, "notes");
+        const quoteNotes = [
+          rawNotes,
+          "",
+          "Quote estimate:",
+          `Package: ${pkg.name}`,
+          `Base price: ${formatPeso(basePrice)}`,
+          `Standard coverage: ${pkg.coverage}`,
+          `Extra hours: ${extraHours}`,
+          `Extra hour total: ${formatPeso(extraTotal)}`,
+          `Estimated total: ${formatPeso(total)}`,
+          `Estimated 50% reservation fee: ${formatPeso(total / 2)}`,
+          `Metro Manila city: ${venueCity}`,
+          `Venue: ${venueName}`,
+          `Address: ${venueAddress}`,
+          mapsLink ? `Google Maps link: ${mapsLink}` : ""
+        ].filter(Boolean).join("\n");
+
+        const payload = {
+          full_name: getFormValue(formData, "name"),
+          contact_number: phone,
+          email: getFormValue(formData, "email") || null,
+          package_name: pkg.name,
+          package_price: basePrice,
+          extra_hours: extraHours,
+          extra_hour_rate: pkg.extraRate,
+          extra_hours_total: extraTotal,
+          estimated_total: total,
+          event_date: requestedDate,
+          start_time: getFormValue(formData, "time"),
+          event_type: getFormValue(formData, "eventType"),
+          estimated_guests: guestCount,
+          venue_location: `${venueName}, ${venueAddress}, ${venueCity}, Metro Manila${mapsLink ? ` | Maps: ${mapsLink}` : ""}`,
+          notes: quoteNotes,
+          service_area: "Metro Manila",
+          status: "pending",
+          reservation_status: "unpaid"
+        };
+
+        try {
+          let { error } = await supabaseClient.from("event_bookings").insert(payload);
+          if (error && /package_price|extra_hours|extra_hour_rate|extra_hours_total|estimated_total/i.test(error.message || "")) {
+            const legacyPayload = { ...payload };
+            delete legacyPayload.package_price;
+            delete legacyPayload.extra_hours;
+            delete legacyPayload.extra_hour_rate;
+            delete legacyPayload.extra_hours_total;
+            delete legacyPayload.estimated_total;
+            ({ error } = await supabaseClient.from("event_bookings").insert(legacyPayload));
+          }
+          if (error) throw error;
+          form.reset();
+          selectedBookingDate = "";
+          bookingDate.value = "";
+          bookingDateDisplay.value = "";
+          bookingTime.value = "08:00";
+          renderQuote();
+          renderBookingCalendar();
+          showBookingStep(0);
+          bookingMessage.textContent = "Booking request received. Studio Photuna will contact you with availability, quotation, and reservation steps.";
+          bookingMessage.style.color = "var(--green)";
+        } catch (error) {
+          setBookingMessage(error.message || "Booking request could not be submitted. Please try again.");
+          console.warn("Booking request failed", error);
+        } finally {
+          submitButton.disabled = false;
+        }
+      }
+
+      bookingTime.value = bookingTime.value || "08:00";
+      buildWizardProgress();
+      showBookingStep(0);
+      renderQuote();
+      renderBookingCalendar();
+      loadBookingAvailability();
+
+      calendarPrev.addEventListener("click", () => {
+        visibleBookingMonth = new Date(visibleBookingMonth.getFullYear(), visibleBookingMonth.getMonth() - 1, 1);
+        renderBookingCalendar();
+      });
+
+      calendarNext.addEventListener("click", () => {
+        visibleBookingMonth = new Date(visibleBookingMonth.getFullYear(), visibleBookingMonth.getMonth() + 1, 1);
+        renderBookingCalendar();
+      });
+
+      bookingPackage.addEventListener("change", renderQuote);
+      bookingExtraHours.addEventListener("change", renderQuote);
+      bookingPrevStep.addEventListener("click", () => showBookingStep(currentBookingStep - 1));
+      bookingNextStep.addEventListener("click", () => {
+        if (!validateCurrentStep()) return;
+        showBookingStep(currentBookingStep + 1);
+      });
+      bookingPhone.addEventListener("input", () => {
+        bookingPhone.setCustomValidity(isValidPhilippinePhone(bookingPhone.value) || !bookingPhone.value ? "" : "Enter a valid Philippine mobile number starting with 09 or +639.");
+      });
+      eventBookingForm.addEventListener("submit", submitBookingRequest);
+
+      if (supabaseClient) {
+        supabaseClient
+          .channel("public-booking-calendar")
+          .on("postgres_changes", { event: "*", schema: "public", table: "booking_calendar_days" }, () => loadBookingAvailability())
+          .subscribe();
+      }
+    </script>
+  </body>
+</html>

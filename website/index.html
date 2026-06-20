@@ -1,0 +1,2972 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Studio Photuna | Korean-Style Photobooth Business Software</title>
+    <link rel="icon" type="image/png" href="./favicon.png" />
+    <link rel="apple-touch-icon" href="./favicon.png" />
+    <meta
+      name="description"
+      content="Studio Photuna helps operators launch and grow a Korean-style photobooth business with event setup, templates, booth flow, printing, sharing, payments, and reports."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+      :root {
+        --title: #111827;
+        --body: #5f6678;
+        --muted: #8b92a6;
+        --grey: #f4f5f8;
+        --grey-2: #eef0f5;
+        --line: #dedfe6;
+        --green: #22c55e;
+        --purple: #6f4dff;
+        --purple-dark: #4b32c3;
+        --yellow: #f7d54a;
+        --white: #ffffff;
+        --shadow: 0 30px 90px rgba(17, 24, 39, 0.12);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      body {
+        margin: 0;
+        color: var(--body);
+        background: var(--white);
+        font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+
+      button,
+      input {
+        font: inherit;
+      }
+
+      select,
+      textarea {
+        font: inherit;
+      }
+
+      .container {
+        width: min(1230px, calc(100% - 40px));
+        margin: 0 auto;
+      }
+
+      .site-header {
+        position: fixed;
+        inset: 0 0 auto;
+        z-index: 50;
+        padding: 10px 0;
+        background: rgba(255, 255, 255, 0.9);
+        backdrop-filter: blur(18px);
+        transition: box-shadow 0.2s ease;
+      }
+
+      .site-header.scrolled {
+        box-shadow: 0 10px 30px rgba(17, 24, 39, 0.08);
+      }
+
+      .header-row {
+        display: flex;
+        min-height: 64px;
+        align-items: center;
+        justify-content: space-between;
+      }
+
+      .logo img {
+        display: block;
+        height: 44px;
+        width: auto;
+      }
+
+      .nav-links {
+        display: flex;
+        align-items: center;
+        gap: 32px;
+        color: var(--title);
+        font-size: 15px;
+        font-weight: 700;
+      }
+
+      .nav-links a:hover {
+        color: var(--purple);
+      }
+
+      .header-actions {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+      }
+
+      .user-dropdown {
+        position: relative;
+      }
+
+      .dropdown-trigger {
+        display: inline-flex;
+        min-height: 44px;
+        align-items: center;
+        gap: 8px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: var(--white);
+        color: var(--title);
+        padding: 0 16px;
+        font-size: 14px;
+        font-weight: 800;
+        cursor: pointer;
+      }
+
+      .dropdown-trigger {
+        max-width: 190px;
+        border-color: transparent;
+        background: var(--grey);
+      }
+
+      .dropdown-trigger span:first-child {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .dropdown-menu {
+        position: absolute;
+        top: calc(100% + 10px);
+        right: 0;
+        display: none;
+        min-width: 190px;
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        background: var(--white);
+        padding: 8px;
+        box-shadow: 0 20px 50px rgba(17, 24, 39, 0.12);
+      }
+
+      .dropdown-menu {
+        min-width: 220px;
+      }
+
+      .user-dropdown.open .dropdown-menu {
+        display: grid;
+      }
+
+      .dropdown-menu button,
+      .dropdown-menu a {
+        display: block;
+        width: 100%;
+        border: 0;
+        border-radius: 12px;
+        background: transparent;
+        color: var(--title);
+        padding: 10px 12px;
+        text-align: left;
+        font-size: 14px;
+        font-weight: 700;
+        cursor: pointer;
+      }
+
+      .dropdown-menu button:hover,
+      .dropdown-menu a:hover {
+        background: var(--grey);
+      }
+
+      .dropdown-menu .menu-divider {
+        height: 1px;
+        margin: 6px 12px;
+        background: var(--line);
+      }
+
+      .btn {
+        position: relative;
+        display: inline-flex;
+        min-height: 52px;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+        border: 0;
+        border-radius: 999px;
+        background: var(--purple);
+        color: var(--white);
+        padding: 0 30px;
+        font-size: 15px;
+        font-weight: 800;
+        cursor: pointer;
+        transition: transform 0.2s ease, background 0.2s ease;
+      }
+
+      .btn:hover {
+        background: var(--purple-dark);
+        transform: translateY(-2px);
+      }
+
+      .btn.secondary {
+        border: 1px solid var(--line);
+        background: var(--white);
+        color: var(--title);
+      }
+
+      .btn.secondary:hover {
+        background: var(--grey);
+      }
+
+      .is-hidden {
+        display: none !important;
+      }
+
+      .hamburger {
+        display: none;
+        width: 44px;
+        height: 44px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: var(--white);
+        color: var(--title);
+        font-size: 22px;
+      }
+
+      .hero {
+        position: relative;
+        overflow: clip;
+        padding: 150px 0 92px;
+      }
+
+      .hero::before {
+        position: absolute;
+        top: 95px;
+        left: -120px;
+        width: 290px;
+        height: 200px;
+        border-radius: 46px;
+        background: radial-gradient(circle at 30% 35%, rgba(111, 77, 255, 0.22), transparent 48%), var(--grey);
+        content: "";
+        transform: rotate(-8deg);
+      }
+
+      .hero::after {
+        position: absolute;
+        right: -170px;
+        bottom: 140px;
+        width: 330px;
+        height: 250px;
+        border-radius: 60px;
+        background: radial-gradient(circle at 70% 30%, rgba(34, 197, 94, 0.18), transparent 48%), var(--grey);
+        content: "";
+        transform: rotate(10deg);
+      }
+
+      .hero-content {
+        position: relative;
+        z-index: 2;
+        max-width: 960px;
+        margin: 0 auto;
+        text-align: center;
+      }
+
+      .hero h1 {
+        margin: 0 0 24px;
+        color: var(--title);
+        font-size: clamp(46px, 7vw, 86px);
+        line-height: 1.02;
+        letter-spacing: -0.065em;
+      }
+
+      .hero p {
+        max-width: 790px;
+        margin: 0 auto;
+        color: var(--body);
+        font-size: 20px;
+        line-height: 1.75;
+      }
+
+      .signup-form {
+        max-width: 650px;
+        margin: 46px auto 0;
+      }
+
+      .email-wrap {
+        position: relative;
+      }
+
+      .email-wrap input {
+        width: 100%;
+        min-height: 68px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 0 245px 0 24px;
+        color: var(--title);
+        background: var(--white);
+        font-size: 17px;
+        outline: none;
+        box-shadow: 0 12px 30px rgba(17, 24, 39, 0.05);
+      }
+
+      .email-wrap .btn {
+        position: absolute;
+        top: 7px;
+        right: 7px;
+      }
+
+      .signup-form.premium-cta {
+        max-width: none;
+      }
+
+      .signup-form.premium-cta .email-wrap {
+        display: flex;
+        justify-content: center;
+      }
+
+      .signup-form.premium-cta .email-wrap .btn {
+        position: static;
+      }
+
+      .rating {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 8px;
+        margin-top: 18px;
+        color: var(--title);
+        font-size: 15px;
+        font-weight: 600;
+      }
+
+      .stars {
+        color: var(--green);
+        letter-spacing: 1px;
+      }
+
+      .dashboard-wrap {
+        position: relative;
+        z-index: 2;
+        width: min(1120px, 100%);
+        margin: 70px auto 0;
+      }
+
+      .dashboard {
+        overflow: hidden;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+        padding: 0;
+        box-shadow: none;
+      }
+
+      .app-screenshot {
+        display: block;
+        width: 100%;
+        height: auto;
+        margin: 0 auto;
+        border: 1px solid rgba(207, 211, 221, 0.86);
+        border-radius: 18px;
+        object-fit: cover;
+      }
+
+      .metric-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 14px;
+      }
+
+      .metric {
+        border-radius: 16px;
+        background: var(--grey);
+        padding: 17px;
+      }
+
+      .metric small {
+        display: block;
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 900;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+      }
+
+      .metric strong {
+        display: block;
+        margin-top: 6px;
+        color: var(--title);
+        font-size: 22px;
+      }
+
+      .section-space {
+        padding: 100px 0;
+      }
+
+      .section-grey {
+        background: var(--grey);
+      }
+
+      .section-title {
+        max-width: 760px;
+        margin: 0 auto 58px;
+        text-align: center;
+      }
+
+      .section-title.left {
+        margin: 0 0 34px;
+        text-align: left;
+      }
+
+      .section-title h2 {
+        margin: 0;
+        color: var(--title);
+        font-size: clamp(36px, 5vw, 64px);
+        line-height: 1.08;
+        letter-spacing: -0.055em;
+      }
+
+      .section-title p,
+      .body-copy {
+        color: var(--body);
+        font-size: 18px;
+        line-height: 1.75;
+      }
+
+      .section-title p {
+        margin: 20px 0 0;
+      }
+
+      .features-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 24px;
+      }
+
+      .feature-card,
+      .price-card,
+      .review-card,
+      .faq-card {
+        border: 1px solid var(--line);
+        border-radius: 22px;
+        background: var(--white);
+        padding: 34px;
+      }
+
+      .feature-card {
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+      }
+
+      .feature-card:hover {
+        transform: translateY(-8px);
+        box-shadow: 0 24px 60px rgba(17, 24, 39, 0.1);
+      }
+
+      .icon {
+        display: grid;
+        width: 58px;
+        height: 58px;
+        margin-bottom: 24px;
+        place-items: center;
+        border-radius: 16px;
+        background: var(--grey);
+        color: var(--purple);
+        font-size: 20px;
+        font-weight: 900;
+      }
+
+      .feature-card h3,
+      .price-card h3,
+      .review-card h3,
+      .faq-card h3 {
+        margin: 0 0 12px;
+        color: var(--title);
+        font-size: 22px;
+        line-height: 1.25;
+      }
+
+      .feature-card p,
+      .price-card p,
+      .review-card p,
+      .faq-card p {
+        margin: 0;
+        color: var(--body);
+        font-size: 16px;
+        line-height: 1.75;
+      }
+
+      .split-grid {
+        display: grid;
+        grid-template-columns: 0.94fr 1.06fr;
+        gap: 70px;
+        align-items: center;
+      }
+
+      .split-grid.reverse {
+        grid-template-columns: 1.06fr 0.94fr;
+      }
+
+      .visual-panel {
+        min-height: 470px;
+        border: 1px solid var(--line);
+        border-radius: 30px;
+        background: var(--white);
+        padding: 28px;
+        box-shadow: 0 24px 70px rgba(17, 24, 39, 0.09);
+      }
+
+      .visual-screen {
+        min-height: 100%;
+        border-radius: 24px;
+        background: radial-gradient(circle at 26% 20%, rgba(111, 77, 255, 0.2), transparent 28%), var(--grey);
+        padding: 28px;
+      }
+
+      .visual-panel.image-panel {
+        display: grid;
+        align-items: center;
+        overflow: visible;
+      }
+
+      .visual-panel.frameless {
+        min-height: 0;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+        padding: 0;
+        box-shadow: none;
+      }
+
+      .image-stack {
+        position: relative;
+        width: 100%;
+      }
+
+      .stack-shot {
+        position: relative;
+        display: block;
+        border: 1px solid rgba(207, 211, 221, 0.86);
+        border-radius: 18px;
+        background: var(--white);
+        box-shadow: none;
+      }
+
+      .stack-shot.primary {
+        width: 92%;
+        margin: 0;
+        z-index: 2;
+      }
+
+      .stack-shot.secondary {
+        width: 62%;
+        margin: -20% 0 0 auto;
+        z-index: 1;
+        transform: translateX(1%);
+      }
+
+      .template-shot {
+        display: block;
+        width: 100%;
+        border: 1px solid rgba(207, 211, 221, 0.86);
+        border-radius: 18px;
+        object-fit: cover;
+        transform: none;
+        box-shadow: none;
+      }
+
+      .bars span {
+        display: block;
+        height: 14px;
+        margin-bottom: 14px;
+        border-radius: 999px;
+        background: #dfe2ea;
+      }
+
+      .bars span:nth-child(1) { width: 86%; }
+      .bars span:nth-child(2) { width: 64%; }
+      .bars span:nth-child(3) { width: 42%; }
+
+      .check-list {
+        display: grid;
+        gap: 14px;
+        margin: 28px 0 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .check-list li {
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
+        color: var(--title);
+        font-weight: 700;
+      }
+
+      .check-list li::before {
+        content: "✓";
+        display: grid;
+        flex: 0 0 24px;
+        width: 24px;
+        height: 24px;
+        place-items: center;
+        border-radius: 50%;
+        background: #e9fbef;
+        color: #12833d;
+        font-size: 13px;
+      }
+
+      .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 24px;
+      }
+
+      .stat {
+        text-align: center;
+      }
+
+      .stat strong {
+        display: block;
+        color: var(--title);
+        font-size: clamp(36px, 5vw, 60px);
+        letter-spacing: -0.06em;
+      }
+
+      .stat span {
+        display: block;
+        margin-top: 8px;
+        color: var(--body);
+        font-weight: 700;
+      }
+
+      .pricing-grid {
+        display: grid;
+        grid-template-columns: 0.86fr 1.14fr;
+        gap: 24px;
+        align-items: stretch;
+      }
+
+      .price-card {
+        position: relative;
+        display: flex;
+        min-height: 100%;
+        flex-direction: column;
+      }
+
+      .price-card.featured {
+        border-color: var(--purple);
+        background: var(--title);
+        color: var(--white);
+        box-shadow: var(--shadow);
+        transform: translateY(-14px);
+      }
+
+      .price-card.featured h3,
+      .price-card.featured .price,
+      .price-card.featured li,
+      .price-card.featured p {
+        color: var(--white);
+      }
+
+      .badge {
+        display: inline-flex;
+        width: fit-content;
+        border-radius: 999px;
+        background: #ece8ff;
+        color: var(--purple);
+        padding: 8px 12px;
+        font-size: 12px;
+        font-weight: 900;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .featured .badge {
+        background: var(--yellow);
+        color: var(--title);
+      }
+
+      .price {
+        margin: 22px 0 10px;
+        color: var(--title);
+        font-size: 54px;
+        font-weight: 900;
+        letter-spacing: -0.06em;
+      }
+
+      .price small {
+        font-size: 17px;
+        letter-spacing: 0;
+      }
+
+      .price-note {
+        min-height: 54px;
+      }
+
+      .price-card ul {
+        display: grid;
+        gap: 13px;
+        margin: 26px 0 32px;
+        padding: 0;
+        list-style: none;
+      }
+
+      .price-card li {
+        color: var(--title);
+        font-weight: 700;
+      }
+
+      .price-card .btn {
+        margin-top: auto;
+        width: 100%;
+      }
+
+      .event-booking {
+        position: relative;
+        overflow: hidden;
+        border-radius: 34px;
+        background: var(--title);
+        color: var(--white);
+        padding: clamp(28px, 5vw, 58px);
+        box-shadow: var(--shadow);
+      }
+
+      .event-booking::before {
+        position: absolute;
+        inset: -28% auto auto -10%;
+        width: 480px;
+        height: 480px;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(111, 77, 255, 0.38), transparent 62%);
+        content: "";
+      }
+
+      .event-booking::after {
+        position: absolute;
+        right: -140px;
+        bottom: -180px;
+        width: 430px;
+        height: 430px;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(247, 213, 74, 0.18), transparent 64%);
+        content: "";
+      }
+
+      .booking-grid {
+        position: relative;
+        z-index: 2;
+        display: grid;
+        grid-template-columns: 0.92fr 1.08fr;
+        gap: 34px;
+        align-items: start;
+      }
+
+      .booking-copy h2,
+      .booking-copy h3,
+      .booking-copy p,
+      .booking-copy li {
+        color: var(--white);
+      }
+
+      .booking-copy h2 {
+        margin: 18px 0;
+        font-size: clamp(38px, 5vw, 68px);
+        line-height: 1.02;
+        letter-spacing: -0.06em;
+      }
+
+      .booking-copy p {
+        max-width: 590px;
+        font-size: 18px;
+        line-height: 1.72;
+        opacity: 0.82;
+      }
+
+      .booking-highlights {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 12px;
+        margin: 28px 0;
+      }
+
+      .booking-highlight {
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.08);
+        padding: 16px;
+      }
+
+      .booking-highlight strong {
+        display: block;
+        color: var(--white);
+        font-size: 20px;
+        letter-spacing: -0.03em;
+      }
+
+      .booking-highlight span {
+        display: block;
+        margin-top: 4px;
+        color: rgba(255, 255, 255, 0.68);
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .event-package-grid {
+        display: grid;
+        gap: 12px;
+      }
+
+      .event-package {
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 20px;
+        background: rgba(255, 255, 255, 0.08);
+        padding: 18px;
+      }
+
+      .event-package.featured {
+        border-color: rgba(247, 213, 74, 0.8);
+        background: rgba(247, 213, 74, 0.12);
+      }
+
+      .event-package h3 {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 12px;
+        margin: 0 0 10px;
+        font-size: 19px;
+      }
+
+      .event-package h3 span {
+        color: var(--yellow);
+        white-space: nowrap;
+      }
+
+      .event-package ul {
+        display: grid;
+        gap: 6px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .event-package li {
+        color: rgba(255, 255, 255, 0.78);
+        font-size: 14px;
+      }
+
+      .booking-form-card {
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 28px;
+        background: rgba(255, 255, 255, 0.96);
+        color: var(--body);
+        padding: clamp(22px, 3vw, 32px);
+        box-shadow: 0 30px 90px rgba(0, 0, 0, 0.2);
+      }
+
+      .booking-form-card h3 {
+        margin: 0 0 8px;
+        color: var(--title);
+        font-size: 30px;
+        letter-spacing: -0.045em;
+      }
+
+      .booking-form-card p {
+        margin: 0 0 22px;
+        line-height: 1.6;
+      }
+
+      .availability-card {
+        margin: 22px 0;
+        border: 1px solid var(--line);
+        border-radius: 22px;
+        background: var(--grey);
+        padding: 16px;
+      }
+
+      .availability-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 14px;
+      }
+
+      .availability-head strong {
+        color: var(--title);
+        font-size: 16px;
+      }
+
+      .calendar-controls {
+        display: inline-flex;
+        gap: 8px;
+      }
+
+      .calendar-controls button {
+        display: grid;
+        width: 34px;
+        height: 34px;
+        place-items: center;
+        border: 1px solid var(--line);
+        border-radius: 50%;
+        background: var(--white);
+        color: var(--title);
+        cursor: pointer;
+      }
+
+      .calendar-weekdays,
+      .calendar-grid {
+        display: grid;
+        grid-template-columns: repeat(7, 1fr);
+        gap: 6px;
+      }
+
+      .calendar-weekdays {
+        margin-bottom: 8px;
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 900;
+        text-align: center;
+        text-transform: uppercase;
+      }
+
+      .calendar-day {
+        display: grid;
+        min-height: 42px;
+        place-items: center;
+        border: 1px solid transparent;
+        border-radius: 12px;
+        background: var(--white);
+        color: var(--title);
+        font-size: 13px;
+        font-weight: 900;
+        cursor: pointer;
+      }
+
+      .calendar-day:hover {
+        border-color: var(--purple);
+      }
+
+      .calendar-day.empty {
+        background: transparent;
+        cursor: default;
+      }
+
+      .calendar-day.past {
+        color: var(--muted);
+        opacity: 0.42;
+        cursor: not-allowed;
+      }
+
+      .calendar-day.unavailable {
+        background: #fee2e2;
+        color: #991b1b;
+        cursor: not-allowed;
+      }
+
+      .calendar-day.selected {
+        background: var(--purple);
+        color: var(--white);
+      }
+
+      .calendar-legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-top: 14px;
+        color: var(--body);
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .calendar-legend span {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+      }
+
+      .calendar-legend i {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: var(--white);
+      }
+
+      .calendar-legend .blocked i {
+        background: #fca5a5;
+      }
+
+      .calendar-status {
+        margin-top: 12px;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .booking-form {
+        display: grid;
+        gap: 14px;
+      }
+
+      .form-row {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 14px;
+      }
+
+      .field {
+        display: grid;
+        gap: 7px;
+      }
+
+      .field label,
+      .terms-row {
+        color: var(--title);
+        font-size: 13px;
+        font-weight: 900;
+      }
+
+      .field input,
+      .field select,
+      .field textarea {
+        width: 100%;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: var(--white);
+        color: var(--title);
+        padding: 13px 14px;
+        outline: none;
+        transition: border-color 0.18s ease, box-shadow 0.18s ease;
+      }
+
+      .field textarea {
+        min-height: 104px;
+        resize: vertical;
+      }
+
+      .field input:focus,
+      .field select:focus,
+      .field textarea:focus {
+        border-color: var(--purple);
+        box-shadow: 0 0 0 4px rgba(111, 77, 255, 0.12);
+      }
+
+      .terms-row {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        line-height: 1.5;
+      }
+
+      .terms-row input {
+        margin-top: 3px;
+      }
+
+      .booking-note {
+        border-radius: 16px;
+        background: var(--grey);
+        padding: 14px;
+        color: var(--body);
+        font-size: 13px;
+        line-height: 1.55;
+      }
+
+      .booking-form .btn {
+        width: 100%;
+      }
+
+      .booking-message {
+        min-height: 20px;
+        color: var(--body);
+        font-size: 13px;
+        font-weight: 800;
+      }
+
+      .billing-toggle {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        margin: 22px 0 8px;
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.1);
+        padding: 6px;
+      }
+
+      .billing-toggle button {
+        min-height: 44px;
+        border: 0;
+        border-radius: 999px;
+        background: transparent;
+        color: rgba(255, 255, 255, 0.74);
+        font-weight: 900;
+        cursor: pointer;
+      }
+
+      .billing-toggle button.active {
+        background: var(--white);
+        color: var(--title);
+      }
+
+      .billing-detail {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin: 0 0 20px;
+        padding: 0;
+        list-style: none;
+      }
+
+      .billing-detail li {
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.12);
+        padding: 8px 12px;
+        font-size: 13px;
+      }
+
+      .compare {
+        margin-top: 34px;
+        border: 1px solid var(--line);
+        border-radius: 22px;
+        background: var(--white);
+        padding: 24px;
+        text-align: center;
+      }
+
+      .compare strong {
+        color: var(--title);
+      }
+
+      .reviews {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 24px;
+      }
+
+      .review-card .stars {
+        margin-bottom: 16px;
+        font-size: 20px;
+      }
+
+      .rating-summary .stars {
+        color: var(--green);
+        font-size: 24px;
+      }
+
+      .download-panel {
+        display: grid;
+        grid-template-columns: 1fr 0.9fr;
+        gap: 34px;
+        align-items: center;
+        border: 1px solid var(--line);
+        border-radius: 30px;
+        background: var(--title);
+        color: var(--white);
+        padding: 42px;
+        box-shadow: var(--shadow);
+      }
+
+      .download-panel h2,
+      .download-panel h3,
+      .download-panel p,
+      .download-panel li {
+        color: var(--white);
+      }
+
+      .download-panel h2 {
+        margin: 0 0 16px;
+        font-size: clamp(34px, 4vw, 56px);
+        line-height: 1.08;
+        letter-spacing: -0.055em;
+      }
+
+      .download-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-top: 28px;
+      }
+
+      .download-card {
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 24px;
+        background: rgba(255, 255, 255, 0.08);
+        padding: 26px;
+      }
+
+      .review-source {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 16px;
+        color: var(--title);
+        font-weight: 900;
+      }
+
+      .review-form-card {
+        max-width: 760px;
+        margin: 34px auto 0;
+        border: 1px solid var(--line);
+        border-radius: 24px;
+        background: var(--white);
+        padding: 24px;
+        box-shadow: 0 18px 50px rgba(17, 24, 39, 0.08);
+      }
+
+      .review-form-card h3 {
+        margin: 0 0 8px;
+        color: var(--title);
+        font-size: 26px;
+        letter-spacing: -0.04em;
+      }
+
+      .review-form-card p {
+        margin: 0 0 20px;
+        line-height: 1.65;
+      }
+
+      .review-form {
+        display: grid;
+        gap: 14px;
+      }
+
+      .review-form-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 14px;
+      }
+
+      .review-form label {
+        display: grid;
+        gap: 7px;
+        color: var(--title);
+        font-size: 13px;
+        font-weight: 900;
+      }
+
+      .review-form input,
+      .review-form select,
+      .review-form textarea {
+        width: 100%;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: var(--white);
+        color: var(--title);
+        padding: 13px 14px;
+        outline: none;
+      }
+
+      .review-form textarea {
+        min-height: 108px;
+        resize: vertical;
+      }
+
+      .review-message {
+        min-height: 20px;
+        color: var(--body);
+        font-size: 13px;
+        font-weight: 800;
+      }
+
+      .faq-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 18px;
+      }
+
+      .cta {
+        position: relative;
+        overflow: hidden;
+        border-radius: 30px;
+        background: var(--grey);
+        padding: 76px 24px;
+        text-align: center;
+      }
+
+      .cta::after {
+        position: absolute;
+        right: -80px;
+        bottom: -110px;
+        width: 340px;
+        height: 300px;
+        border-radius: 54px;
+        background: radial-gradient(circle at 30% 30%, rgba(111, 77, 255, 0.16), transparent 50%), #e8e9f0;
+        content: "";
+      }
+
+      .cta-inner {
+        position: relative;
+        z-index: 2;
+        max-width: 780px;
+        margin: 0 auto;
+      }
+
+      .cta h2 {
+        margin: 0;
+        color: var(--title);
+        font-size: clamp(36px, 5vw, 64px);
+        line-height: 1.08;
+        letter-spacing: -0.055em;
+      }
+
+      .cta p {
+        margin: 18px auto 34px;
+        max-width: 640px;
+        font-size: 18px;
+        line-height: 1.7;
+      }
+
+      .footer {
+        padding: 82px 0 34px;
+      }
+
+      .footer-grid {
+        display: grid;
+        grid-template-columns: 1.5fr 1fr 1fr 1fr;
+        gap: 44px;
+      }
+
+      .footer p {
+        max-width: 360px;
+        font-size: 16px;
+        line-height: 1.75;
+      }
+
+      .footer h4 {
+        margin: 0 0 22px;
+        color: var(--title);
+        font-size: 18px;
+      }
+
+      .footer nav {
+        display: grid;
+        gap: 13px;
+      }
+
+      .footer a:hover {
+        color: var(--purple);
+      }
+
+      .socials {
+        display: flex;
+        gap: 14px;
+        margin-top: 26px;
+      }
+
+      .socials span {
+        display: grid;
+        width: 42px;
+        height: 42px;
+        place-items: center;
+        border-radius: 50%;
+        background: var(--grey);
+        color: var(--title);
+        font-weight: 900;
+      }
+
+      .modal-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 100;
+        display: none;
+        place-items: center;
+        background: rgba(17, 24, 39, 0.56);
+        padding: 24px;
+      }
+
+      .modal-backdrop.open {
+        display: grid;
+      }
+
+      .auth-modal {
+        width: min(100%, 460px);
+        border-radius: 28px;
+        background: var(--white);
+        padding: 28px;
+        box-shadow: var(--shadow);
+      }
+
+      .auth-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 18px;
+      }
+
+      .auth-head h2 {
+        margin: 0;
+        color: var(--title);
+        font-size: 30px;
+        letter-spacing: -0.04em;
+      }
+
+      .modal-close {
+        display: grid;
+        width: 38px;
+        height: 38px;
+        place-items: center;
+        border: 1px solid var(--line);
+        border-radius: 50%;
+        background: var(--white);
+        cursor: pointer;
+      }
+
+      .auth-tabs {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        margin: 24px 0;
+        border-radius: 999px;
+        background: var(--grey);
+        padding: 6px;
+      }
+
+      .auth-tab {
+        border: 0;
+        border-radius: 999px;
+        background: transparent;
+        color: var(--title);
+        padding: 11px 14px;
+        font-weight: 800;
+        cursor: pointer;
+      }
+
+      .auth-tab.active {
+        background: var(--white);
+        box-shadow: 0 8px 22px rgba(17, 24, 39, 0.08);
+      }
+
+      .auth-form {
+        display: grid;
+        gap: 12px;
+      }
+
+      .auth-form input {
+        width: 100%;
+        min-height: 52px;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        padding: 0 16px;
+        color: var(--title);
+        outline: none;
+      }
+
+      .auth-message {
+        min-height: 22px;
+        color: var(--body);
+        font-size: 14px;
+        line-height: 1.5;
+      }
+
+      .user-pill {
+        display: none;
+        max-width: 220px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 10px 14px;
+        color: var(--title);
+        font-size: 14px;
+        font-weight: 800;
+      }
+
+      .user-pill.show {
+        display: inline-flex;
+      }
+
+      .user-dropdown {
+        display: none;
+      }
+
+      .user-dropdown.show {
+        display: inline-block;
+      }
+
+      .account-modal {
+        max-width: 760px;
+      }
+
+      .account-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 14px;
+        margin-top: 26px;
+      }
+
+      .account-card {
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        background: var(--grey);
+        padding: 18px;
+      }
+
+      .account-card small {
+        display: block;
+        margin-bottom: 8px;
+        color: var(--muted);
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+
+      .account-card strong {
+        display: block;
+        overflow-wrap: anywhere;
+        color: var(--title);
+        font-size: 18px;
+      }
+
+      .footer-bottom {
+        margin-top: 54px;
+        border-top: 1px solid var(--line);
+        padding-top: 28px;
+        text-align: center;
+      }
+
+      .reveal {
+        opacity: 0;
+        transform: translateY(26px);
+        transition: opacity 0.7s ease, transform 0.7s ease;
+      }
+
+      .reveal.in-view {
+        opacity: 1;
+        transform: translateY(0);
+      }
+
+      @media (max-width: 980px) {
+        .nav-links:not(.open),
+        .header-actions > .trial-cta {
+          display: none;
+        }
+
+        .nav-links.open {
+          position: absolute;
+          top: 100%;
+          left: 0;
+          display: flex;
+          width: 100%;
+          flex-direction: column;
+          align-items: stretch;
+          gap: 8px;
+          border-top: 1px solid var(--line);
+          background: var(--white);
+          padding: 16px 20px 20px;
+          box-shadow: 0 18px 34px rgba(17, 24, 39, 0.08);
+        }
+
+        .nav-links.open a {
+          border-radius: 12px;
+          padding: 12px 14px;
+        }
+
+        .nav-links.open a:hover {
+          background: var(--grey);
+        }
+
+        .hamburger {
+          display: inline-grid;
+          place-items: center;
+        }
+
+        .hero {
+          padding-top: 118px;
+        }
+
+        .dashboard-body,
+        .split-grid,
+        .split-grid.reverse,
+        .features-grid,
+        .pricing-grid,
+        .booking-grid,
+        .reviews,
+        .footer-grid,
+        .faq-grid,
+        .download-panel,
+        .account-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .live-preview {
+          border-right: 0;
+          border-bottom: 1px solid var(--line);
+        }
+
+        .app-screenshot,
+        .template-shot {
+          width: 100%;
+          margin-left: 0;
+          transform: none;
+        }
+
+        .stack-shot.primary {
+          width: 100%;
+        }
+
+        .stack-shot.secondary {
+          width: 76%;
+          margin-top: -20%;
+          transform: none;
+        }
+
+        .price-card.featured {
+          transform: none;
+        }
+      }
+
+      @media (max-width: 640px) {
+        .container {
+          width: min(100% - 28px, 1230px);
+        }
+
+        .hero h1 {
+          font-size: 42px;
+        }
+
+        .hero p,
+        .section-title p,
+        .body-copy,
+        .cta p {
+          font-size: 16px;
+        }
+
+        .booking-highlights,
+        .form-row,
+        .review-form-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .event-package h3 {
+          display: grid;
+        }
+
+        .email-wrap input {
+          min-height: 60px;
+          padding: 0 18px;
+        }
+
+        .email-wrap .btn {
+          position: static;
+          width: 100%;
+          margin-top: 12px;
+        }
+
+        .section-space {
+          padding: 72px 0;
+        }
+
+        .metric-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .camera-screen {
+          min-height: 270px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="container header-row">
+        <a class="logo" href="#top" aria-label="Studio Photuna">
+          <img src="./logo-dark.png" alt="Studio Photuna" />
+        </a>
+        <nav class="nav-links" aria-label="Primary navigation">
+          <a href="#top">Home</a>
+          <a href="#features">Features</a>
+          <a href="#pricing">Pricing</a>
+          <a href="./book-event.html">Book Event</a>
+          <a href="#download">Download</a>
+          <a href="#faq">FAQ</a>
+        </nav>
+        <div class="header-actions">
+          <div class="user-dropdown" id="userDropdown">
+            <button class="dropdown-trigger" type="button" id="dropdownButton" aria-haspopup="true" aria-expanded="false">
+              <span id="userPill">Account</span>
+              <span>▾</span>
+            </button>
+            <div class="dropdown-menu" role="menu" aria-label="User session options">
+              <a href="./account.html" id="accountOpen">View Account</a>
+              <a href="./bookings-admin.html" id="adminBookingsOpen" class="is-hidden">Admin Bookings</a>
+              <div class="menu-divider"></div>
+              <button type="button" id="logoutAction">Logout</button>
+            </div>
+          </div>
+          <button class="btn secondary" type="button" id="loginOpen">Login</button>
+          <a class="btn trial-cta" href="#pricing" id="headerTrialCta">Start 14-Day Free Trial</a>
+          <button class="hamburger" type="button" aria-label="Menu" aria-expanded="false">≡</button>
+        </div>
+      </div>
+    </header>
+
+    <main id="top">
+      <section class="hero">
+        <div class="container">
+          <div class="hero-content reveal">
+            <h1>Launch a Korean-Style Photobooth Business With One Windows App</h1>
+            <p>
+              Studio Photuna helps operators set up events, design templates, run the booth flow,
+              print, share with QR, and track reports without buying an expensive kiosk system.
+            </p>
+            <form class="signup-form" id="heroSignupForm">
+              <div class="email-wrap">
+                <input type="email" name="email" id="heroEmailInput" placeholder="Enter your email" aria-label="Email address" required />
+                <button class="btn trial-cta" type="submit" id="heroTrialSubmit">Start 14-day free trial</button>
+              </div>
+            </form>
+            <div class="rating">
+              <span class="stars" id="heroRatingStars">★★★★★</span>
+              <span id="heroRatingText">Loading Studio Photuna reviews...</span>
+            </div>
+          </div>
+
+          <div class="dashboard-wrap reveal">
+            <div class="dashboard">
+              <img class="app-screenshot" src="./app_image_1.png" alt="Studio Photuna event dashboard" />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="features" class="section-space section-grey">
+        <div class="container">
+          <div class="section-title reveal">
+            <h2>Run every booking from one operator workspace</h2>
+            <p>Set up the business side, event flow, guest experience, and delivery workflow in one practical Windows app.</p>
+          </div>
+          <div class="features-grid">
+            <article class="feature-card reveal"><div class="icon">01</div><h3>Event workspace</h3><p>Create events, assign templates, configure settings, and organize each booking.</p></article>
+            <article class="feature-card reveal"><div class="icon">02</div><h3>Template editor</h3><p>Design 4 x 6, 6 x 4, 2 x 6, and 6 x 2 layouts with slots, frames, and guides.</p></article>
+            <article class="feature-card reveal"><div class="icon">03</div><h3>Brand controls</h3><p>Style booth name, logo, colors, background, frames, and event screens for each client.</p></article>
+            <article class="feature-card reveal"><div class="icon">04</div><h3>Guest flow</h3><p>Run welcome, template, payment, capture, retake, print preview, QR, and thank-you screens.</p></article>
+            <article class="feature-card reveal"><div class="icon">05</div><h3>Output setup</h3><p>Configure camera, printer, paper size, copies, orientation, and local storage.</p></article>
+            <article class="feature-card reveal"><div class="icon">06</div><h3>Reports</h3><p>Track sessions, revenue, print counts, weekly activity, and top templates.</p></article>
+          </div>
+        </div>
+      </section>
+
+      <section id="workflow" class="section-space">
+        <div class="container split-grid">
+          <div class="reveal">
+            <div class="section-title left">
+              <h2>Set up the booth with equipment you already own</h2>
+              <p>Use a Windows PC, camera, printer, and internet connection to prepare a professional booth workflow.</p>
+            </div>
+            <ul class="check-list">
+              <li>Windows-based booth operation</li>
+              <li>Camera, printer, and storage setup</li>
+              <li>Rental mode and payment flow controls</li>
+              <li>QR sharing and optional gallery add-on</li>
+            </ul>
+          </div>
+          <div class="visual-panel image-panel frameless reveal">
+            <div class="image-stack" aria-label="Studio Photuna setup screens">
+              <img class="stack-shot primary" src="./app_image_2.png" alt="Studio Photuna booth configuration screen" />
+              <img class="stack-shot secondary" src="./app_image_2_1.png" alt="Studio Photuna welcome screen" />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section-space section-grey">
+        <div class="container split-grid reverse">
+          <div class="visual-panel image-panel frameless reveal">
+            <img class="template-shot" src="./app_image_3.png" alt="Studio Photuna Korean-style template selection screen" />
+          </div>
+          <div class="reveal">
+            <div class="section-title left">
+              <h2>Create Korean-style templates clients remember</h2>
+              <p>Offer polished photo-strip experiences for weddings, birthdays, private events, and brand activations.</p>
+            </div>
+            <ul class="check-list">
+              <li>Photo strip and postcard-style layouts</li>
+              <li>Frames, colors, and branded event screens</li>
+              <li>Reusable templates for repeat bookings</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section id="pricing" class="section-space section-grey">
+        <div class="container">
+          <div class="section-title reveal">
+            <h2>Simple pricing for every stage of growth</h2>
+            <p>Start free, then choose monthly flexibility or yearly savings inside one Pro plan.</p>
+          </div>
+          <div class="pricing-grid">
+            <article class="price-card reveal">
+              <span class="badge">Trial</span>
+              <h3 style="margin-top: 20px">14-Day Free Trial</h3>
+              <div class="price">$0</div>
+              <p class="price-note">Test the workflow before subscribing.</p>
+              <ul>
+                <li>Event setup</li>
+                <li>Template workflow</li>
+                <li>Booth operation preview</li>
+              </ul>
+              <a href="#pricing" class="btn secondary trial-cta" id="pricingCardTrialBtn">Start 14-Day Free Trial</a>
+            </article>
+
+            <article class="price-card featured reveal">
+              <span class="badge" id="proPlanBadge">Best Value</span>
+              <h3 style="margin-top: 20px">Studio Photuna Pro</h3>
+              <div class="billing-toggle" aria-label="Choose billing cycle">
+                <button type="button" data-billing="monthly">Monthly</button>
+                <button type="button" class="active" data-billing="yearly">Yearly</button>
+              </div>
+              <div class="price" id="proPlanPrice">$17<small>/mo</small></div>
+              <p class="price-note" id="proPlanNote">$204 billed yearly. Save 43% compared with monthly billing.</p>
+              <ul class="billing-detail" id="proPlanDetails">
+                <li>Best value</li>
+                <li>12-month access</li>
+                <li>Priority support entitlement</li>
+              </ul>
+              <ul>
+                <li>Full software access</li>
+                <li>Continuous updates</li>
+                <li>Event setup, templates, reports, QR workflow</li>
+              </ul>
+              <button type="button" class="btn plan-cta" id="proPlanCta" data-plan="yearly">Choose Yearly</button>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="download" class="section-space">
+        <div class="container">
+          <div class="download-panel reveal">
+            <div>
+              <span class="badge">Windows App</span>
+              <h2>Download Studio Photuna for Windows</h2>
+              <p>Install the Windows booth app, sign in, and prepare events from the same operator system your account uses.</p>
+              <div class="download-actions">
+                <a class="btn" href="./download.html">Download for Windows</a>
+              </div>
+            </div>
+            <div class="download-card">
+              <h3>Included workflow</h3>
+              <ul class="check-list">
+                <li>Windows booth app installer</li>
+                <li>Event setup and template tools</li>
+                <li>Account, license, and trial status support</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section-space">
+        <div class="container">
+          <div class="section-title reveal">
+            <h2>Client and operator reviews</h2>
+            <p>Real feedback from customers using Studio Photuna for events and booth operations.</p>
+          </div>
+          <div class="reviews" id="googleReviewsList"></div>
+          <div class="review-form-card reveal" id="reviewFormCard">
+            <h3>Leave a Studio Photuna review</h3>
+            <p id="reviewAccessText">Share one review from your Studio Photuna account. Reviews appear after moderation.</p>
+            <form class="review-form" id="publicReviewForm">
+              <div class="review-form-grid">
+                <label>
+                  Name
+                  <input id="reviewName" name="name" autocomplete="name" required />
+                </label>
+                <label>
+                  Rating
+                  <select id="reviewRating" name="rating" required>
+                    <option value="5">5 stars</option>
+                    <option value="4">4 stars</option>
+                    <option value="3">3 stars</option>
+                    <option value="2">2 stars</option>
+                    <option value="1">1 star</option>
+                  </select>
+                </label>
+              </div>
+              <div class="review-form-grid">
+                <label>
+                  Event type
+                  <select id="reviewEventType" name="eventType">
+                    <option value="">Select if applicable</option>
+                    <option>Wedding</option>
+                    <option>Birthday</option>
+                    <option>Corporate event</option>
+                    <option>Private event</option>
+                    <option>Photobooth operator</option>
+                    <option>Other</option>
+                  </select>
+                </label>
+                <label>
+                  Email optional
+                  <input id="reviewEmail" name="email" type="email" autocomplete="email" />
+                </label>
+              </div>
+              <label>
+                Review
+                <textarea id="reviewText" name="review" required placeholder="Tell us about your Studio Photuna experience."></textarea>
+              </label>
+              <button class="btn" type="submit">Share review</button>
+              <div class="review-message" id="reviewMessage" aria-live="polite"></div>
+            </form>
+          </div>
+        </div>
+      </section>
+
+      <section id="faq" class="section-space section-grey">
+        <div class="container">
+          <div class="section-title reveal">
+            <h2>Frequently asked questions</h2>
+          </div>
+          <div class="faq-grid">
+            <article class="faq-card reveal"><h3>Do I need a kiosk enclosure?</h3><p>No. Studio Photuna is designed around a Windows-based booth workflow, so you can start before investing in custom hardware.</p></article>
+            <article class="faq-card reveal"><h3>Can I create my own templates?</h3><p>Yes. The workflow supports common layouts, photo slots, frames, branding, guides, and event-specific styling.</p></article>
+            <article class="faq-card reveal"><h3>Does it include galleries?</h3><p>Online galleries are available through the gallery add-on, with QR access for guests when enabled.</p></article>
+            <article class="faq-card reveal"><h3>What operating system does it support?</h3><p>Studio Photuna is built around a Windows-based booth workflow.</p></article>
+            <article class="faq-card reveal"><h3>Can I use it for weddings and events?</h3><p>Yes. It is designed for weddings, birthdays, private events, cafe pop-ups, malls, and brand activations.</p></article>
+            <article class="faq-card reveal"><h3>Can guests retake photos?</h3><p>The booth flow includes retake controls so operators can decide how guests move through each session.</p></article>
+            <article class="faq-card reveal"><h3>Can I configure printing?</h3><p>Yes. The workflow includes printer, paper size, orientation, copies, and output setup.</p></article>
+            <article class="faq-card reveal"><h3>Can I book Studio Photuna for an event?</h3><p>Yes. Event bookings are currently available locally within Metro Manila. Use the Book Event form to send your date, venue, event type, and preferred package.</p></article>
+            <article class="faq-card reveal"><h3>What is required to reserve an event date?</h3><p>A 50% reservation fee is required to secure the date. The reservation fee is non-refundable but transferable, subject to booking terms.</p></article>
+          </div>
+        </div>
+      </section>
+
+      <section id="contact" class="section-space">
+        <div class="container">
+          <div class="cta reveal">
+            <div class="cta-inner">
+              <h2>Ready to launch your Korean-style photobooth business?</h2>
+              <p>Start with a 14-day free trial, then choose the annual plan when you are ready to operate events at the best value.</p>
+              <button type="button" class="btn" id="ctaLoginOpen">Start 14-Day Free Trial</button>
+              <p style="margin-bottom: 0; font-size: 15px">Full access. No credit card needed.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="container">
+        <div class="footer-grid">
+          <div>
+            <a class="logo" href="#top"><img src="./logo-dark.png" alt="Studio Photuna" /></a>
+            <p>Studio Photuna helps operators launch and manage Korean-style photobooth experiences using a practical Windows workflow.</p>
+            <div class="socials"><span>X</span><span>F</span><span>I</span><span>in</span></div>
+          </div>
+          <div><h4>Company</h4><nav><a href="#top">Home</a><a href="#features">Features</a><a href="#pricing">Pricing</a><a href="./book-event.html">Book Event</a><a href="#faq">FAQ</a></nav></div>
+          <div><h4>Pages</h4><nav><a href="./account.html">Account</a><a href="./download.html">Download</a><a href="./book-event.html">Book Event</a><a href="mailto:support@photuna.app">Support</a></nav></div>
+          <div><h4>Product</h4><nav><a href="#download">Download</a><a href="#pricing">Pricing</a><a href="#features">Features</a><a href="#faq">FAQ</a></nav></div>
+        </div>
+        <div class="footer-bottom">Copyright Studio Photuna. All rights reserved.</div>
+      </div>
+    </footer>
+
+    <div class="modal-backdrop" id="authModal" aria-hidden="true">
+      <div class="auth-modal" role="dialog" aria-modal="true" aria-labelledby="authTitle">
+        <div class="auth-head">
+          <div>
+            <h2 id="authTitle">Access Studio Photuna</h2>
+            <p class="body-copy" style="margin: 8px 0 0">Login or create a Studio Photuna account.</p>
+          </div>
+          <button class="modal-close" type="button" id="authClose" aria-label="Close">&times;</button>
+        </div>
+        <div class="auth-tabs">
+          <button class="auth-tab active" type="button" data-auth-tab="login">Login</button>
+          <button class="auth-tab" type="button" data-auth-tab="signup">Sign up</button>
+        </div>
+        <form class="auth-form" id="authForm">
+          <input id="authName" name="name" type="text" placeholder="Full name" autocomplete="name" style="display: none" />
+          <input id="authEmail" name="email" type="email" placeholder="Email address" autocomplete="email" required />
+          <input id="authPassword" name="password" type="password" placeholder="Password" autocomplete="current-password" required />
+          <button class="btn" type="submit" id="authSubmit">Login</button>
+          <p class="auth-message" id="authMessage"></p>
+        </form>
+      </div>
+    </div>
+
+    <script>
+      const SUPABASE_URL = "https://elthktbvojsmvhtxxqnz.supabase.co";
+      const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVsdGhrdGJ2b2pzbXZodHh4cW56Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ2NzYzMjUsImV4cCI6MjA5MDI1MjMyNX0.5QrzeI0WKJclFLHEBgZH7WxsHPdKBJmdEtpqlyXg9PQ";
+      const ACCOUNT_SNAPSHOT_KEY = "studio-photuna-account-snapshot";
+
+      const header = document.querySelector(".site-header");
+      const navLinks = document.querySelector(".nav-links");
+      const userDropdown = document.getElementById("userDropdown");
+      const dropdownButton = document.getElementById("dropdownButton");
+      const authModal = document.getElementById("authModal");
+      const authClose = document.getElementById("authClose");
+      const authForm = document.getElementById("authForm");
+      const heroSignupForm = document.getElementById("heroSignupForm");
+      const heroEmailInput = document.getElementById("heroEmailInput");
+      const heroTrialSubmit = document.getElementById("heroTrialSubmit");
+      const authName = document.getElementById("authName");
+      const authPassword = document.getElementById("authPassword");
+      const authSubmit = document.getElementById("authSubmit");
+      const authMessage = document.getElementById("authMessage");
+      const userPill = document.getElementById("userPill");
+      const accountOpen = document.getElementById("accountOpen");
+      const adminBookingsOpen = document.getElementById("adminBookingsOpen");
+      const logoutAction = document.getElementById("logoutAction");
+      const hamburger = document.querySelector(".hamburger");
+      const headerTrialCta = document.getElementById("headerTrialCta");
+      const pricingCardTrialBtn = document.getElementById("pricingCardTrialBtn");
+      const proPlanBadge = document.getElementById("proPlanBadge");
+      const proPlanPrice = document.getElementById("proPlanPrice");
+      const proPlanNote = document.getElementById("proPlanNote");
+      const proPlanDetails = document.getElementById("proPlanDetails");
+      const proPlanCta = document.getElementById("proPlanCta");
+      const billingToggleButtons = document.querySelectorAll("[data-billing]");
+      const heroRatingStars = document.getElementById("heroRatingStars");
+      const heroRatingText = document.getElementById("heroRatingText");
+      const googleRatingStars = document.getElementById("googleRatingStars");
+      const googleRatingText = document.getElementById("googleRatingText");
+      const googleReviewStatus = document.getElementById("googleReviewStatus");
+      const googleReviewsList = document.getElementById("googleReviewsList");
+      const reviewFormCard = document.getElementById("reviewFormCard");
+      const reviewAccessText = document.getElementById("reviewAccessText");
+      const publicReviewForm = document.getElementById("publicReviewForm");
+      const reviewMessage = document.getElementById("reviewMessage");
+      const eventBookingForm = document.getElementById("eventBookingForm");
+      const bookingDate = document.getElementById("bookingDate");
+      const bookingMessage = document.getElementById("bookingMessage");
+      const bookingCalendar = document.getElementById("bookingCalendar");
+      const bookingCalendarMonth = document.getElementById("bookingCalendarMonth");
+      const calendarPrev = document.getElementById("calendarPrev");
+      const calendarNext = document.getElementById("calendarNext");
+      const availabilityStatus = document.getElementById("availabilityStatus");
+      const supabaseClient = window.supabase?.createClient
+        ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+        : null;
+      let authMode = "login";
+      let currentProfile = null;
+      let currentLicense = null;
+      let usingAccountSnapshot = false;
+      let selectedBilling = "yearly";
+      let visibleBookingMonth = new Date();
+      let unavailableBookingDates = new Set();
+      let selectedBookingDate = "";
+      let currentUserReview = null;
+
+      const billingPlans = {
+        monthly: {
+          badge: "Monthly",
+          price: "$30<small>/mo</small>",
+          note: "Best for operators who want monthly flexibility before committing annually.",
+          details: ["Monthly billing", "Cancel when needed", "Standard support"],
+          cta: "Choose Monthly"
+        },
+        yearly: {
+          badge: "Best Value",
+          price: "$17<small>/mo</small>",
+          note: "$204 billed yearly. Save 43% compared with monthly billing.",
+          details: ["Best value", "12-month access", "Priority support entitlement"],
+          cta: "Choose Yearly"
+        }
+      };
+
+      const revealObserver = new IntersectionObserver((entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) entry.target.classList.add("in-view");
+        });
+      }, { threshold: 0.12 });
+
+      document.querySelectorAll(".reveal").forEach((element) => revealObserver.observe(element));
+      loadReviews();
+      updateReviewFormAccess();
+
+      if (bookingDate) {
+        bookingDate.min = new Date().toISOString().split("T")[0];
+      }
+      renderBookingCalendar();
+      loadBookingAvailability();
+
+      function setBillingPlan(plan) {
+        selectedBilling = billingPlans[plan] ? plan : "yearly";
+        const selected = billingPlans[selectedBilling];
+        billingToggleButtons.forEach((button) => {
+          button.classList.toggle("active", button.dataset.billing === selectedBilling);
+        });
+        if (proPlanBadge) proPlanBadge.textContent = selected.badge;
+        if (proPlanPrice) proPlanPrice.innerHTML = selected.price;
+        if (proPlanNote) proPlanNote.textContent = selected.note;
+        if (proPlanDetails) {
+          proPlanDetails.innerHTML = selected.details.map((detail) => `<li>${detail}</li>`).join("");
+        }
+        if (proPlanCta) {
+          proPlanCta.dataset.plan = selectedBilling;
+          proPlanCta.textContent = selected.cta;
+        }
+      }
+
+      function starString(rating) {
+        const rounded = Math.round(Number(rating) || 0);
+        return "★★★★★".slice(0, rounded).padEnd(5, "☆");
+      }
+
+      function normalizeReview(row) {
+        return {
+          rating: row.rating,
+          authorName: row.name || row.authorName || "Studio Photuna client",
+          text: row.review_text || row.text || "",
+          role: row.event_type || row.role || "Studio Photuna customer",
+          source: row.source || "website"
+        };
+      }
+
+      function renderReviews(payload) {
+        const reviews = Array.isArray(payload.reviews) ? payload.reviews.map(normalizeReview).filter((review) => review.text).slice(0, 6) : [];
+        const ratingValue = payload.rating || (reviews.length
+          ? reviews.reduce((sum, review) => sum + Number(review.rating || 0), 0) / reviews.length
+          : 0);
+        const reviewCount = payload.reviewCount || reviews.length;
+
+        if (ratingValue) {
+          const reviewLabel = reviewCount > 1
+            ? `Rated ${Number(ratingValue).toFixed(1)}/5 by ${reviewCount} Studio Photuna customers`
+            : `Early customer feedback: ${Number(ratingValue).toFixed(1)}/5`;
+          if (googleRatingStars) googleRatingStars.textContent = starString(ratingValue);
+          if (googleRatingText) googleRatingText.textContent = reviewLabel;
+          if (heroRatingStars) heroRatingStars.textContent = starString(ratingValue);
+          if (heroRatingText) heroRatingText.textContent = reviewLabel;
+        } else {
+          if (heroRatingStars) heroRatingStars.textContent = starString(0);
+          if (heroRatingText) heroRatingText.textContent = "Customer reviews coming soon";
+        }
+
+        if (googleReviewStatus) googleReviewStatus.textContent = "";
+
+        googleReviewsList.innerHTML = "";
+        if (!reviews.length) {
+          const empty = document.createElement("article");
+          empty.className = "review-card reveal in-view";
+          empty.innerHTML = "<h3>Reviews coming soon</h3><p>Customer feedback will appear here once it has been reviewed.</p>";
+          googleReviewsList.appendChild(empty);
+          return;
+        }
+
+        reviews.forEach((review) => {
+          const card = document.createElement("article");
+          card.className = "review-card reveal in-view";
+
+          const stars = document.createElement("div");
+          stars.className = "stars";
+          stars.textContent = starString(review.rating);
+
+          const title = document.createElement("h3");
+          title.textContent = review.authorName || "Studio Photuna customer";
+
+          const text = document.createElement("p");
+          text.textContent = review.text;
+
+          const source = document.createElement("p");
+          source.className = "review-source";
+          source.textContent = review.role || "Studio Photuna customer";
+
+          card.append(stars, title, text, source);
+          googleReviewsList.appendChild(card);
+        });
+      }
+
+      async function loadReviews() {
+        if (!googleReviewsList) return;
+        if (supabaseClient) {
+          try {
+            const [{ data, error, count }, { data: ratingRows, error: ratingError, count: totalCount }] = await Promise.all([
+              supabaseClient
+              .from("public_reviews")
+              .select("name,rating,review_text,event_type,source,is_featured,created_at", { count: "exact" })
+              .eq("status", "approved")
+              .order("is_featured", { ascending: false })
+              .order("created_at", { ascending: false })
+                .limit(12),
+              supabaseClient
+                .from("public_reviews")
+                .select("rating", { count: "exact" })
+                .eq("status", "approved")
+            ]);
+            if (error) throw error;
+            if (ratingError) throw ratingError;
+            const allRatings = ratingRows || [];
+            const averageRating = allRatings.length
+              ? allRatings.reduce((sum, row) => sum + Number(row.rating || 0), 0) / allRatings.length
+              : 0;
+            renderReviews({
+              source: "supabase",
+              rating: averageRating,
+              reviews: data || [],
+              reviewCount: totalCount || count || allRatings.length
+            });
+            return;
+          } catch (error) {
+            console.warn("Supabase reviews unavailable", error);
+          }
+        }
+
+        googleReviewsList.innerHTML = "";
+        if (googleReviewStatus) googleReviewStatus.textContent = "";
+        if (heroRatingText) heroRatingText.textContent = "Customer reviews unavailable";
+      }
+
+      async function submitPublicReview(event) {
+        event.preventDefault();
+        const form = event.currentTarget;
+        if (!form.reportValidity()) return;
+        if (!window.currentSupabaseUser?.id) {
+          reviewMessage.textContent = "Please login before submitting a review.";
+          reviewMessage.style.color = "#dc2626";
+          openAuthModal("login");
+          return;
+        }
+        if (currentUserReview) {
+          reviewMessage.textContent = `You have already shared a review. It is currently ${String(currentUserReview.status || "pending").replace(/_/g, " ")}.`;
+          reviewMessage.style.color = "var(--body)";
+          return;
+        }
+        if (!supabaseClient) {
+          reviewMessage.textContent = "Review submission is unavailable right now. Please refresh and try again.";
+          reviewMessage.style.color = "#dc2626";
+          return;
+        }
+
+        const formData = new FormData(form);
+        const submitButton = form.querySelector('button[type="submit"]');
+        submitButton.disabled = true;
+        reviewMessage.textContent = "Submitting your review...";
+        reviewMessage.style.color = "var(--body)";
+
+        try {
+          const { error } = await supabaseClient.from("public_reviews").insert({
+            user_id: window.currentSupabaseUser.id,
+            name: getFormValue(formData, "name"),
+            email: getFormValue(formData, "email") || null,
+            rating: Number(getFormValue(formData, "rating")),
+            review_text: getFormValue(formData, "review"),
+            event_type: getFormValue(formData, "eventType") || null,
+            source: "website",
+            status: "pending",
+            is_featured: false
+          });
+          if (error) throw error;
+          form.reset();
+          currentUserReview = { status: "pending" };
+          updateReviewFormAccess();
+          reviewMessage.textContent = "Review submitted. It will appear after moderation.";
+          reviewMessage.style.color = "#12833d";
+        } catch (error) {
+          reviewMessage.textContent = error.message || "Review could not be submitted. Please try again.";
+          reviewMessage.style.color = "#dc2626";
+        } finally {
+          submitButton.disabled = false;
+        }
+      }
+
+      async function loadCurrentUserReview(user) {
+        currentUserReview = null;
+        if (!supabaseClient || !user?.id) {
+          updateReviewFormAccess();
+          return;
+        }
+        try {
+          const { data, error } = await supabaseClient
+            .from("public_reviews")
+            .select("id,status,rating,created_at")
+            .eq("user_id", user.id)
+            .maybeSingle();
+          if (error) throw error;
+          currentUserReview = data || null;
+        } catch (error) {
+          console.warn("Unable to load current user review", error);
+        }
+        updateReviewFormAccess();
+      }
+
+      function updateReviewFormAccess() {
+        if (!reviewFormCard || !publicReviewForm || !reviewAccessText) return;
+        const user = window.currentSupabaseUser;
+        const canSubmit = Boolean(user?.id && !currentUserReview);
+        reviewFormCard.classList.toggle("is-hidden", !user?.id);
+        publicReviewForm.classList.toggle("is-hidden", !canSubmit);
+
+        if (!user?.id) {
+          reviewAccessText.textContent = "Login to your Studio Photuna account to submit one review.";
+          reviewMessage.textContent = "";
+          return;
+        }
+
+        if (currentUserReview) {
+          reviewAccessText.textContent = `You have already shared a review. It is currently ${String(currentUserReview.status || "pending").replace(/_/g, " ")}.`;
+          reviewMessage.textContent = "One review is allowed per Studio Photuna account.";
+          reviewMessage.style.color = "var(--body)";
+          return;
+        }
+
+        reviewAccessText.textContent = "Share one review from your Studio Photuna account. It will appear after moderation.";
+        reviewMessage.textContent = "";
+      }
+
+      function getFormValue(formData, key) {
+        return String(formData.get(key) || "").trim();
+      }
+
+      function formatBookingEmail(formData) {
+        const lines = [
+          "Hi Studio Photuna,",
+          "",
+          "I would like to request a quotation and availability check for an event booking.",
+          "",
+          "Booking details:",
+          `Full name: ${getFormValue(formData, "name")}`,
+          `Contact number: ${getFormValue(formData, "phone")}`,
+          `Email address: ${getFormValue(formData, "email") || "Not provided"}`,
+          `Preferred package: ${getFormValue(formData, "package")}`,
+          `Date of event: ${getFormValue(formData, "date")}`,
+          `Start time: ${getFormValue(formData, "time")}`,
+          `Type of event: ${getFormValue(formData, "eventType")}`,
+          `Estimated guests: ${getFormValue(formData, "guests") || "Not provided"}`,
+          `Venue location: ${getFormValue(formData, "venue")}`,
+          "",
+          "Theme, layout, or event notes:",
+          getFormValue(formData, "notes") || "Not provided",
+          "",
+          "I understand this is currently for Metro Manila bookings only and that a 50% reservation fee is required to secure the date.",
+          "",
+          "Thank you."
+        ];
+        return lines.join("\n");
+      }
+
+      function submitBookingRequest(event) {
+        event.preventDefault();
+        const form = event.currentTarget;
+        if (!form.reportValidity()) return;
+
+        const formData = new FormData(form);
+        const venue = getFormValue(formData, "venue").toLowerCase();
+        const metroManilaHints = [
+          "metro manila", "manila", "makati", "taguig", "pasig", "quezon", "mandaluyong",
+          "san juan", "pasay", "paranaque", "parañaque", "muntinlupa", "las pinas",
+          "las piñas", "marikina", "caloocan", "malabon", "navotas", "valenzuela", "pateros"
+        ];
+        const appearsLocal = metroManilaHints.some((hint) => venue.includes(hint));
+
+        if (!appearsLocal) {
+          bookingMessage.textContent = "Please include the Metro Manila city in the venue so availability and travel coverage can be checked.";
+          bookingMessage.style.color = "#dc2626";
+          document.getElementById("bookingVenue").focus();
+          return;
+        }
+
+        bookingMessage.textContent = "Booking requests are submitted through the live availability system.";
+        bookingMessage.style.color = "var(--body)";
+      }
+
+      function toDateKey(date) {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, "0");
+        const day = String(date.getDate()).padStart(2, "0");
+        return `${year}-${month}-${day}`;
+      }
+
+      function parseDateKey(dateKey) {
+        const [year, month, day] = dateKey.split("-").map(Number);
+        return new Date(year, month - 1, day);
+      }
+
+      function isPastDate(dateKey) {
+        const today = parseDateKey(toDateKey(new Date()));
+        return parseDateKey(dateKey) < today;
+      }
+
+      function renderBookingCalendar() {
+        if (!bookingCalendar || !bookingCalendarMonth) return;
+        const monthStart = new Date(visibleBookingMonth.getFullYear(), visibleBookingMonth.getMonth(), 1);
+        const monthEnd = new Date(visibleBookingMonth.getFullYear(), visibleBookingMonth.getMonth() + 1, 0);
+        bookingCalendarMonth.textContent = new Intl.DateTimeFormat("en", { month: "long", year: "numeric" }).format(monthStart);
+        bookingCalendar.innerHTML = "";
+
+        for (let i = 0; i < monthStart.getDay(); i += 1) {
+          const empty = document.createElement("span");
+          empty.className = "calendar-day empty";
+          bookingCalendar.appendChild(empty);
+        }
+
+        for (let day = 1; day <= monthEnd.getDate(); day += 1) {
+          const date = new Date(monthStart.getFullYear(), monthStart.getMonth(), day);
+          const dateKey = toDateKey(date);
+          const blocked = unavailableBookingDates.has(dateKey);
+          const past = isPastDate(dateKey);
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "calendar-day";
+          button.textContent = String(day);
+          button.dataset.date = dateKey;
+          if (blocked) {
+            button.classList.add("unavailable");
+            button.title = "Reserved after confirmation and 50% reservation payment";
+            button.disabled = true;
+          }
+          if (past) {
+            button.classList.add("past");
+            button.disabled = true;
+          }
+          if (dateKey === selectedBookingDate || dateKey === bookingDate?.value) {
+            button.classList.add("selected");
+          }
+          button.addEventListener("click", () => {
+            selectedBookingDate = dateKey;
+            if (bookingDate) bookingDate.value = dateKey;
+            renderBookingCalendar();
+          });
+          bookingCalendar.appendChild(button);
+        }
+      }
+
+      async function loadBookingAvailability() {
+        if (!supabaseClient || !bookingCalendar) {
+          if (availabilityStatus) availabilityStatus.textContent = "Availability is loading. Please refresh if it does not appear.";
+          return;
+        }
+
+        const start = toDateKey(new Date());
+        const endDate = new Date();
+        endDate.setMonth(endDate.getMonth() + 12);
+        const end = toDateKey(endDate);
+
+        try {
+          const { data, error } = await supabaseClient
+            .from("booking_calendar_days")
+            .select("event_date,status")
+            .gte("event_date", start)
+            .lte("event_date", end);
+          if (error) throw error;
+          unavailableBookingDates = new Set((data || []).map((row) => row.event_date));
+          if (availabilityStatus) {
+            availabilityStatus.textContent = "Dates marked unavailable have approved bookings with the 50% reservation fee recorded.";
+          }
+          renderBookingCalendar();
+        } catch (error) {
+          if (availabilityStatus) availabilityStatus.textContent = "Availability could not be loaded. Please refresh or contact Studio Photuna.";
+          console.warn("Booking availability unavailable", error);
+        }
+      }
+
+      async function submitBookingRequest(event) {
+        event.preventDefault();
+        const form = event.currentTarget;
+        if (!form.reportValidity()) return;
+        if (!supabaseClient) {
+          bookingMessage.textContent = "Booking requests are unavailable right now. Please refresh and try again.";
+          bookingMessage.style.color = "#dc2626";
+          return;
+        }
+
+        const formData = new FormData(form);
+        const requestedDate = getFormValue(formData, "date");
+        if (unavailableBookingDates.has(requestedDate)) {
+          bookingMessage.textContent = "That date is already reserved. Please choose another available date.";
+          bookingMessage.style.color = "#dc2626";
+          return;
+        }
+
+        const venue = getFormValue(formData, "venue").toLowerCase();
+        const metroManilaHints = [
+          "metro manila", "manila", "makati", "taguig", "pasig", "quezon", "mandaluyong",
+          "san juan", "pasay", "paranaque", "muntinlupa", "las pinas", "marikina",
+          "caloocan", "malabon", "navotas", "valenzuela", "pateros"
+        ];
+        const appearsLocal = metroManilaHints.some((hint) => venue.includes(hint));
+
+        if (!appearsLocal) {
+          bookingMessage.textContent = "Please include the Metro Manila city in the venue so availability and travel coverage can be checked.";
+          bookingMessage.style.color = "#dc2626";
+          document.getElementById("bookingVenue").focus();
+          return;
+        }
+
+        const submitButton = form.querySelector('button[type="submit"]');
+        submitButton.disabled = true;
+        bookingMessage.textContent = "Submitting your booking request...";
+        bookingMessage.style.color = "var(--body)";
+
+        const guests = getFormValue(formData, "guests");
+        const payload = {
+          full_name: getFormValue(formData, "name"),
+          contact_number: getFormValue(formData, "phone"),
+          email: getFormValue(formData, "email") || null,
+          package_name: getFormValue(formData, "package"),
+          event_date: requestedDate,
+          start_time: getFormValue(formData, "time"),
+          event_type: getFormValue(formData, "eventType"),
+          estimated_guests: guests ? Number(guests) : null,
+          venue_location: getFormValue(formData, "venue"),
+          notes: getFormValue(formData, "notes") || null,
+          service_area: "Metro Manila",
+          status: "pending",
+          reservation_status: "unpaid"
+        };
+
+        try {
+          const { error } = await supabaseClient.from("event_bookings").insert(payload);
+          if (error) throw error;
+          form.reset();
+          selectedBookingDate = "";
+          if (bookingDate) bookingDate.min = new Date().toISOString().split("T")[0];
+          renderBookingCalendar();
+          bookingMessage.textContent = "Booking request received. Studio Photuna will contact you with availability, quotation, and reservation steps.";
+          bookingMessage.style.color = "#12833d";
+        } catch (error) {
+          bookingMessage.textContent = error.message || "Booking request could not be submitted. Please try again.";
+          bookingMessage.style.color = "#dc2626";
+          console.warn("Booking request failed", error);
+        } finally {
+          submitButton.disabled = false;
+        }
+      }
+
+      function openAuthModal(mode = "login") {
+        setAuthMode(mode);
+        authModal.classList.add("open");
+        authModal.setAttribute("aria-hidden", "false");
+        authMessage.textContent = "";
+        document.getElementById("authEmail").focus();
+      }
+
+      function closeAuthModal() {
+        authModal.classList.remove("open");
+        authModal.setAttribute("aria-hidden", "true");
+      }
+
+      function openAccountModal() {
+        let accountUrl = "./account.html";
+        if (window.currentSupabaseUser) {
+          const payload = writeAccountSnapshot(window.currentSupabaseUser, currentProfile, currentLicense);
+          if (payload) accountUrl += `#account=${encodeURIComponent(payload)}`;
+        }
+        window.location.href = accountUrl;
+      }
+
+      function writeAccountSnapshot(user, profile, license) {
+        if (!user?.email) return "";
+        const payload = JSON.stringify({
+          source: "studio-photuna-account",
+          createdAt: Date.now(),
+          user: {
+            id: user.id,
+            email: user.email
+          },
+          profile,
+          license
+        });
+        window.name = payload;
+        try {
+          sessionStorage.setItem(ACCOUNT_SNAPSHOT_KEY, payload);
+          localStorage.setItem(ACCOUNT_SNAPSHOT_KEY, payload);
+        } catch (_error) {}
+        return payload;
+      }
+
+      function readAccountSnapshot() {
+        const candidates = [
+          window.name,
+          (() => {
+            try { return sessionStorage.getItem(ACCOUNT_SNAPSHOT_KEY); } catch (_error) { return null; }
+          })(),
+          (() => {
+            try { return localStorage.getItem(ACCOUNT_SNAPSHOT_KEY); } catch (_error) { return null; }
+          })()
+        ].filter(Boolean);
+        if (!candidates.length) return null;
+        try {
+          for (const candidate of candidates) {
+            const snapshot = JSON.parse(candidate);
+            const isFresh = Date.now() - Number(snapshot.createdAt || 0) < 30 * 60 * 1000;
+            if (snapshot.source === "studio-photuna-account" && isFresh && snapshot.user?.email) return snapshot;
+          }
+        } catch (_error) {
+          return null;
+        }
+        return null;
+      }
+
+      function clearAccountSnapshot() {
+        if (window.name) window.name = "";
+        try {
+          sessionStorage.removeItem(ACCOUNT_SNAPSHOT_KEY);
+          localStorage.removeItem(ACCOUNT_SNAPSHOT_KEY);
+        } catch (_error) {}
+      }
+
+      function hydrateFromAccountSnapshot(snapshot) {
+        usingAccountSnapshot = true;
+        window.currentSupabaseUser = snapshot.user;
+        currentProfile = snapshot.profile || null;
+        currentLicense = snapshot.license || null;
+        updateAuthUi(window.currentSupabaseUser);
+        updateTrialCtas(hasUsedTrialOrSubscription(currentProfile, currentLicense));
+      }
+
+      function setAuthMode(mode) {
+        authMode = mode;
+        document.querySelectorAll(".auth-tab").forEach((tab) => {
+          tab.classList.toggle("active", tab.dataset.authTab === mode);
+        });
+        authName.style.display = mode === "signup" ? "block" : "none";
+        authName.toggleAttribute("required", mode === "signup");
+        authPassword.setAttribute("autocomplete", mode === "signup" ? "new-password" : "current-password");
+        authSubmit.textContent = mode === "signup" ? "Sign up" : "Login";
+      }
+
+      function setAuthMessage(message, isError = false) {
+        authMessage.textContent = message;
+        authMessage.style.color = isError ? "#dc2626" : "var(--body)";
+      }
+
+      function formatStatus(value) {
+        if (!value) return "No subscription";
+        return String(value).replace(/[_-]/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+      }
+
+      function hasUsedTrialOrSubscription(profile, license) {
+        const plan = String(license?.plan || profile?.subscription_plan || "free").toLowerCase();
+        const state = String(license?.state || "").toLowerCase();
+        const paidOrTrialPlan = ["trial", "monthly", "yearly", "pro"].includes(plan);
+        return Boolean(
+          license?.trial_redeemed ||
+          paidOrTrialPlan ||
+          (paidOrTrialPlan && ["active", "past_due", "cancelling"].includes(state)) ||
+          state === "trialing"
+        );
+      }
+
+      function isAdminProfile(profile) {
+        return ["admin", "superadmin"].includes(String(profile?.role || "").toLowerCase());
+      }
+
+      function updateTrialCtas(hasPremiumStatus) {
+        if (headerTrialCta) {
+          headerTrialCta.textContent = hasPremiumStatus ? "Open Studio Photuna" : "Start 14-Day Free Trial";
+          headerTrialCta.setAttribute("href", hasPremiumStatus ? "photuna://open" : "#pricing");
+        }
+
+        if (pricingCardTrialBtn) {
+          pricingCardTrialBtn.textContent = hasPremiumStatus ? "Manage Subscription" : "Start Trial";
+          pricingCardTrialBtn.setAttribute("href", hasPremiumStatus ? "./account.html" : "#pricing");
+        }
+
+        if (heroTrialSubmit) {
+          heroTrialSubmit.textContent = hasPremiumStatus ? "Open Studio Photuna" : "Start 14-day free trial";
+          heroTrialSubmit.setAttribute("type", hasPremiumStatus ? "button" : "submit");
+        }
+
+        if (heroEmailInput) {
+          heroEmailInput.classList.toggle("is-hidden", hasPremiumStatus);
+          heroEmailInput.toggleAttribute("required", !hasPremiumStatus);
+        }
+        heroSignupForm.classList.toggle("premium-cta", hasPremiumStatus);
+      }
+
+      async function loadAccountState(user) {
+        currentProfile = null;
+        currentLicense = null;
+        if (!user) {
+          await loadCurrentUserReview(null);
+          updateTrialCtas(false);
+          return;
+        }
+        if (!supabaseClient) {
+          await loadCurrentUserReview(user);
+          updateTrialCtas(false);
+          return;
+        }
+
+        try {
+          const [{ data: profile }, { data: license }] = await Promise.all([
+            supabaseClient
+              .from("profiles")
+              .select("id,full_name,email,phone,company,avatar_url,role,subscription_plan,created_at,updated_at")
+              .eq("id", user.id)
+              .maybeSingle(),
+            supabaseClient
+              .from("licenses")
+              .select("plan,state,expires_at,trial_redeemed,gallery_addon,priority_support,max_events,templates")
+              .eq("user_id", user.id)
+              .maybeSingle()
+          ]);
+          currentProfile = profile;
+          currentLicense = license;
+          writeAccountSnapshot(user, profile, license);
+          updateAuthUi(user);
+          await loadCurrentUserReview(user);
+          updateTrialCtas(hasUsedTrialOrSubscription(profile, license));
+        } catch (error) {
+          console.warn("Unable to load account state", error);
+          await loadCurrentUserReview(user);
+          updateTrialCtas(false);
+        }
+      }
+
+      function updateAuthUi(user) {
+        if (user) {
+          userPill.textContent = user.email || "Account";
+          userDropdown.classList.add("show");
+          document.getElementById("loginOpen").style.display = "none";
+          if (adminBookingsOpen) adminBookingsOpen.classList.toggle("is-hidden", !isAdminProfile(currentProfile));
+          if (document.getElementById("reviewName") && !document.getElementById("reviewName").value) {
+            document.getElementById("reviewName").value = currentProfile?.full_name || user.user_metadata?.full_name || "";
+          }
+          if (document.getElementById("reviewEmail") && !document.getElementById("reviewEmail").value) {
+            document.getElementById("reviewEmail").value = user.email || "";
+          }
+        } else {
+          userPill.textContent = "Account";
+          userDropdown.classList.remove("show");
+          userDropdown.classList.remove("open");
+          dropdownButton.setAttribute("aria-expanded", "false");
+          document.getElementById("loginOpen").style.display = "inline-flex";
+          document.getElementById("loginOpen").textContent = "Login";
+          if (adminBookingsOpen) adminBookingsOpen.classList.add("is-hidden");
+        }
+        updateReviewFormAccess();
+      }
+
+      window.addEventListener("scroll", () => {
+        header.classList.toggle("scrolled", window.scrollY > 8);
+      });
+
+      dropdownButton.addEventListener("click", () => {
+        const isOpen = userDropdown.classList.toggle("open");
+        dropdownButton.setAttribute("aria-expanded", String(isOpen));
+      });
+
+      document.addEventListener("click", (event) => {
+        if (!userDropdown.contains(event.target)) {
+          userDropdown.classList.remove("open");
+          dropdownButton.setAttribute("aria-expanded", "false");
+        }
+      });
+
+      document.getElementById("loginOpen").addEventListener("click", () => {
+        openAuthModal("login");
+      });
+
+      logoutAction.addEventListener("click", async () => {
+        clearAccountSnapshot();
+        currentProfile = null;
+        currentLicense = null;
+        currentUserReview = null;
+        usingAccountSnapshot = false;
+        window.currentSupabaseUser = null;
+        try {
+          if (supabaseClient) await supabaseClient.auth.signOut();
+        } catch (_error) {
+          // The local UI still needs to be cleared even if the remote session is already gone.
+        }
+        updateAuthUi(null);
+        updateReviewFormAccess();
+        updateTrialCtas(false);
+      });
+
+      document.getElementById("ctaLoginOpen").addEventListener("click", () => {
+        if (window.currentSupabaseUser) {
+          openAccountModal();
+          return;
+        }
+        openAuthModal("signup");
+      });
+
+      if (hamburger) {
+        hamburger.addEventListener("click", () => {
+          const isOpen = navLinks.classList.toggle("open");
+          hamburger.setAttribute("aria-expanded", String(isOpen));
+        });
+      }
+
+      navLinks.querySelectorAll("a").forEach((link) => {
+        link.addEventListener("click", () => {
+          navLinks.classList.remove("open");
+          hamburger?.setAttribute("aria-expanded", "false");
+        });
+      });
+
+      heroSignupForm.addEventListener("submit", (event) => {
+        event.preventDefault();
+        if (window.currentSupabaseUser) {
+          if (hasUsedTrialOrSubscription(currentProfile, currentLicense)) {
+            window.location.href = "photuna://open";
+            return;
+          }
+          openAccountModal();
+          return;
+        }
+        document.getElementById("authEmail").value = heroEmailInput.value.trim();
+        openAuthModal("signup");
+      });
+
+      pricingCardTrialBtn.addEventListener("click", (event) => {
+        event.preventDefault();
+        if (window.currentSupabaseUser) {
+          openAccountModal();
+          return;
+        }
+        openAuthModal("signup");
+      });
+
+      billingToggleButtons.forEach((button) => {
+        button.addEventListener("click", () => setBillingPlan(button.dataset.billing));
+      });
+      setBillingPlan(selectedBilling);
+
+      if (eventBookingForm) {
+        eventBookingForm.addEventListener("submit", submitBookingRequest);
+      }
+
+      if (publicReviewForm) {
+        publicReviewForm.addEventListener("submit", submitPublicReview);
+      }
+
+      if (calendarPrev) {
+        calendarPrev.addEventListener("click", () => {
+          visibleBookingMonth = new Date(visibleBookingMonth.getFullYear(), visibleBookingMonth.getMonth() - 1, 1);
+          renderBookingCalendar();
+        });
+      }
+
+      if (calendarNext) {
+        calendarNext.addEventListener("click", () => {
+          visibleBookingMonth = new Date(visibleBookingMonth.getFullYear(), visibleBookingMonth.getMonth() + 1, 1);
+          renderBookingCalendar();
+        });
+      }
+
+      if (bookingDate) {
+        bookingDate.addEventListener("change", () => {
+          selectedBookingDate = bookingDate.value;
+          if (selectedBookingDate) {
+            visibleBookingMonth = parseDateKey(selectedBookingDate);
+          }
+          renderBookingCalendar();
+        });
+      }
+
+      if (supabaseClient && bookingCalendar) {
+        supabaseClient
+          .channel("public-booking-calendar")
+          .on(
+            "postgres_changes",
+            { event: "*", schema: "public", table: "booking_calendar_days" },
+            () => loadBookingAvailability()
+          )
+          .subscribe();
+      }
+
+      if (supabaseClient && googleReviewsList) {
+        supabaseClient
+          .channel("public-reviews")
+          .on(
+            "postgres_changes",
+            { event: "*", schema: "public", table: "public_reviews" },
+            () => loadReviews()
+          )
+          .subscribe();
+      }
+
+      document.querySelectorAll(".plan-cta").forEach((button) => {
+        button.addEventListener("click", () => {
+          if (window.currentSupabaseUser) {
+            openAccountModal();
+            return;
+          }
+          openAuthModal("signup");
+        });
+      });
+      accountOpen.addEventListener("click", (event) => {
+        event.preventDefault();
+        userDropdown.classList.remove("open");
+        openAccountModal();
+      });
+      authClose.addEventListener("click", closeAuthModal);
+      authModal.addEventListener("click", (event) => {
+        if (event.target === authModal) closeAuthModal();
+      });
+      document.querySelectorAll(".auth-tab").forEach((tab) => {
+        tab.addEventListener("click", () => setAuthMode(tab.dataset.authTab));
+      });
+
+      authForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        if (!supabaseClient) {
+          setAuthMessage("Authentication is unavailable right now. Please refresh and try again.", true);
+          return;
+        }
+        const email = document.getElementById("authEmail").value.trim();
+        const password = authPassword.value;
+        const fullName = authName.value.trim();
+        authSubmit.disabled = true;
+        setAuthMessage(authMode === "signup" ? "Creating account..." : "Signing in...");
+        try {
+          if (authMode === "signup") {
+            const { data, error } = await supabaseClient.auth.signUp({
+              email,
+              password,
+              options: { data: { full_name: fullName } }
+            });
+            if (error) throw error;
+            if (data?.user?.id) {
+              await supabaseClient.from("profiles").upsert(
+                { id: data.user.id, full_name: fullName, email, subscription_plan: "free" },
+                { onConflict: "id" }
+              );
+            }
+            setAuthMessage("Account created. Check your email if confirmation is required.");
+          } else {
+            const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
+            if (error) throw error;
+            setAuthMessage("Signed in.");
+            closeAuthModal();
+          }
+        } catch (error) {
+          setAuthMessage(error.message || "Authentication failed.", true);
+        } finally {
+          authSubmit.disabled = false;
+        }
+      });
+
+      if (supabaseClient) {
+        supabaseClient.auth.getSession().then(({ data }) => {
+          const sessionUser = data?.session?.user || null;
+          const snapshot = readAccountSnapshot();
+          if (!sessionUser && snapshot) {
+            hydrateFromAccountSnapshot(snapshot);
+            return;
+          }
+          usingAccountSnapshot = false;
+          window.currentSupabaseUser = sessionUser;
+          updateAuthUi(window.currentSupabaseUser);
+          loadAccountState(window.currentSupabaseUser);
+        });
+
+        supabaseClient.auth.onAuthStateChange((_event, session) => {
+          if (!session?.user && usingAccountSnapshot) return;
+          usingAccountSnapshot = false;
+          window.currentSupabaseUser = session?.user || null;
+          updateAuthUi(window.currentSupabaseUser);
+          loadAccountState(window.currentSupabaseUser);
+        });
+      } else {
+        const snapshot = readAccountSnapshot();
+        if (snapshot) {
+          hydrateFromAccountSnapshot(snapshot);
+        } else {
+          window.currentSupabaseUser = null;
+          updateAuthUi(null);
+          updateTrialCtas(false);
+        }
+      }
+
+    </script>
+  </body>
+</html>

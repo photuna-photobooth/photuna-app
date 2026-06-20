@@ -1,0 +1,1140 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Bookings Admin | Studio Photuna</title>
+    <link rel="icon" type="image/png" href="./favicon.png" />
+    <link rel="apple-touch-icon" href="./favicon.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+      :root {
+        --title: #111827;
+        --body: #5f6678;
+        --muted: #8b92a6;
+        --grey: #f4f5f8;
+        --line: #dedfe6;
+        --purple: #6f4dff;
+        --purple-dark: #4b32c3;
+        --green: #16a34a;
+        --red: #dc2626;
+        --yellow: #f7d54a;
+        --white: #ffffff;
+        --shadow: 0 30px 90px rgba(17, 24, 39, 0.12);
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        color: var(--body);
+        background: var(--white);
+        font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      a { color: inherit; text-decoration: none; }
+      button, input, select, textarea { font: inherit; }
+
+      .container {
+        width: min(1230px, calc(100% - 40px));
+        margin: 0 auto;
+      }
+
+      .site-header {
+        position: sticky;
+        top: 0;
+        z-index: 50;
+        padding: 10px 0;
+        border-bottom: 1px solid rgba(222, 223, 230, 0.7);
+        background: rgba(255, 255, 255, 0.92);
+        backdrop-filter: blur(18px);
+      }
+
+      .header-row {
+        display: flex;
+        min-height: 64px;
+        align-items: center;
+        justify-content: space-between;
+        gap: 20px;
+      }
+
+      .logo img {
+        display: block;
+        height: 44px;
+        width: auto;
+      }
+
+      .header-actions {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 12px;
+      }
+
+      .btn {
+        display: inline-flex;
+        min-height: 48px;
+        align-items: center;
+        justify-content: center;
+        border: 0;
+        border-radius: 999px;
+        background: var(--purple);
+        color: var(--white);
+        padding: 0 22px;
+        font-size: 14px;
+        font-weight: 900;
+        cursor: pointer;
+        transition: background 0.18s ease, transform 0.18s ease, opacity 0.18s ease;
+      }
+
+      .btn:hover {
+        background: var(--purple-dark);
+        transform: translateY(-1px);
+      }
+
+      .btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+        transform: none;
+      }
+
+      .btn.secondary {
+        border: 1px solid var(--line);
+        background: var(--white);
+        color: var(--title);
+      }
+
+      .btn.secondary:hover {
+        background: var(--grey);
+      }
+
+      .btn.danger {
+        background: var(--red);
+      }
+
+      .btn.success {
+        background: var(--green);
+      }
+
+      .hero {
+        position: relative;
+        overflow: clip;
+        padding: 76px 0 34px;
+      }
+
+      .hero::after {
+        position: absolute;
+        right: -160px;
+        top: 42px;
+        width: 330px;
+        height: 250px;
+        border-radius: 60px;
+        background: radial-gradient(circle at 70% 30%, rgba(111, 77, 255, 0.18), transparent 48%), var(--grey);
+        content: "";
+        transform: rotate(10deg);
+      }
+
+      .hero-inner {
+        position: relative;
+        z-index: 2;
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 28px;
+        align-items: end;
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        width: fit-content;
+        border-radius: 999px;
+        background: #ece8ff;
+        color: var(--purple);
+        padding: 8px 12px;
+        font-size: 12px;
+        font-weight: 900;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      h1 {
+        max-width: 820px;
+        margin: 18px 0 14px;
+        color: var(--title);
+        font-size: clamp(42px, 6vw, 78px);
+        line-height: 1.02;
+        letter-spacing: -0.065em;
+      }
+
+      .hero p {
+        max-width: 720px;
+        margin: 0;
+        font-size: 18px;
+        line-height: 1.75;
+      }
+
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 16px;
+        margin: 28px 0 26px;
+      }
+
+      .stat-card,
+      .panel,
+      .booking-card {
+        border: 1px solid var(--line);
+        border-radius: 24px;
+        background: var(--white);
+        box-shadow: var(--shadow);
+      }
+
+      .stat-card {
+        padding: 20px;
+      }
+
+      .stat-card small {
+        display: block;
+        margin-bottom: 10px;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 900;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .stat-card strong {
+        display: block;
+        color: var(--title);
+        font-size: 34px;
+        letter-spacing: -0.05em;
+      }
+
+      .panel {
+        padding: 26px;
+        margin-bottom: 28px;
+      }
+
+      .login-panel {
+        max-width: 520px;
+        margin: 34px auto 90px;
+      }
+
+      .panel h2 {
+        margin: 0 0 10px;
+        color: var(--title);
+        font-size: 32px;
+        letter-spacing: -0.045em;
+      }
+
+      .form-grid {
+        display: grid;
+        gap: 14px;
+        margin-top: 22px;
+      }
+
+      label {
+        display: grid;
+        gap: 7px;
+        color: var(--title);
+        font-size: 13px;
+        font-weight: 900;
+      }
+
+      input,
+      select,
+      textarea {
+        width: 100%;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: var(--white);
+        color: var(--title);
+        padding: 12px 14px;
+        outline: none;
+      }
+
+      textarea {
+        min-height: 84px;
+        resize: vertical;
+      }
+
+      input:focus,
+      select:focus,
+      textarea:focus {
+        border-color: var(--purple);
+        box-shadow: 0 0 0 4px rgba(111, 77, 255, 0.12);
+      }
+
+      .toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+        margin-bottom: 18px;
+      }
+
+      .filters {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+
+      .filters button {
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: var(--white);
+        color: var(--title);
+        padding: 10px 14px;
+        font-size: 13px;
+        font-weight: 900;
+        cursor: pointer;
+      }
+
+      .filters button.active {
+        border-color: var(--purple);
+        background: #ece8ff;
+        color: var(--purple);
+      }
+
+      .admin-tabs {
+        display: inline-flex;
+        gap: 8px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: var(--grey);
+        padding: 6px;
+      }
+
+      .admin-tabs button {
+        border: 0;
+        border-radius: 999px;
+        background: transparent;
+        color: var(--title);
+        padding: 10px 14px;
+        font-size: 13px;
+        font-weight: 900;
+        cursor: pointer;
+      }
+
+      .admin-tabs button.active {
+        background: var(--white);
+        color: var(--purple);
+      }
+
+      .booking-list {
+        display: grid;
+        gap: 16px;
+        margin-bottom: 90px;
+      }
+
+      .review-admin-card {
+        grid-template-columns: 1fr 280px;
+      }
+
+      .booking-card {
+        display: grid;
+        grid-template-columns: 1fr 320px;
+        gap: 20px;
+        padding: 22px;
+      }
+
+      .booking-main h3 {
+        margin: 0 0 10px;
+        color: var(--title);
+        font-size: 24px;
+        letter-spacing: -0.04em;
+      }
+
+      .meta-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 10px;
+        margin: 16px 0;
+      }
+
+      .meta {
+        border-radius: 16px;
+        background: var(--grey);
+        padding: 12px;
+      }
+
+      .meta small {
+        display: block;
+        margin-bottom: 4px;
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 900;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .meta strong {
+        display: block;
+        overflow-wrap: anywhere;
+        color: var(--title);
+        font-size: 14px;
+      }
+
+      .status-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 12px;
+      }
+
+      .pill {
+        display: inline-flex;
+        border-radius: 999px;
+        background: var(--grey);
+        color: var(--title);
+        padding: 7px 10px;
+        font-size: 12px;
+        font-weight: 900;
+      }
+
+      .pill.pending { background: #fef3c7; color: #92400e; }
+      .pill.approved { background: #dcfce7; color: #166534; }
+      .pill.declined,
+      .pill.cancelled { background: #fee2e2; color: #991b1b; }
+      .pill.paid,
+      .pill.partial_paid { background: #e0f2fe; color: #075985; }
+
+      .booking-actions {
+        display: grid;
+        gap: 12px;
+      }
+
+      .action-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+
+      .empty-state {
+        border: 1px dashed var(--line);
+        border-radius: 24px;
+        background: var(--grey);
+        padding: 42px;
+        text-align: center;
+      }
+
+      .empty-state h3 {
+        margin: 0 0 8px;
+        color: var(--title);
+        font-size: 24px;
+      }
+
+      .message {
+        min-height: 20px;
+        color: var(--body);
+        font-size: 13px;
+        font-weight: 800;
+      }
+
+      .hidden { display: none !important; }
+
+      @media (max-width: 980px) {
+        .hero-inner,
+        .stats,
+        .booking-card,
+        .meta-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .header-row {
+          align-items: flex-start;
+        }
+      }
+
+      @media (max-width: 640px) {
+        .container {
+          width: min(100% - 28px, 1230px);
+        }
+
+        .header-row,
+        .toolbar {
+          display: grid;
+        }
+
+        .header-actions {
+          justify-content: start;
+        }
+
+        .action-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="container header-row">
+        <a class="logo" href="./index.html#top" aria-label="Studio Photuna">
+          <img src="./logo-dark.png" alt="Studio Photuna" />
+        </a>
+        <div class="header-actions">
+          <a class="btn secondary" href="./index.html#book-event">Public Booking Page</a>
+          <button class="btn secondary hidden" type="button" id="refreshBookings">Refresh</button>
+          <button class="btn secondary hidden" type="button" id="logoutButton">Logout</button>
+        </div>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="container hero-inner">
+          <div>
+            <span class="eyebrow">Admin only</span>
+            <h1>Event booking requests</h1>
+            <p>Review customer inquiries, approve dates, and mark the 50% reservation fee as paid. Approved and paid dates automatically become unavailable on the public booking calendar.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="container login-panel panel" id="loginPanel">
+        <h2>Login as admin</h2>
+        <p>Use a Studio Photuna account with admin or superadmin role in Supabase profiles.</p>
+        <form class="form-grid" id="loginForm">
+          <label>
+            Email
+            <input type="email" id="loginEmail" autocomplete="email" required />
+          </label>
+          <label>
+            Password
+            <input type="password" id="loginPassword" autocomplete="current-password" required />
+          </label>
+          <button class="btn" type="submit" id="loginSubmit">Login</button>
+          <div class="message" id="loginMessage" aria-live="polite"></div>
+        </form>
+      </section>
+
+      <section class="container hidden" id="adminPanel">
+        <div class="stats">
+          <div class="stat-card"><small>Pending</small><strong id="statPending">0</strong></div>
+          <div class="stat-card"><small>Approved</small><strong id="statApproved">0</strong></div>
+          <div class="stat-card"><small>50% Paid</small><strong id="statPaid">0</strong></div>
+          <div class="stat-card"><small>Total</small><strong id="statTotal">0</strong></div>
+        </div>
+
+        <div class="panel">
+          <div class="toolbar">
+            <div>
+              <h2 id="adminPanelTitle">Manage bookings</h2>
+              <p id="adminMeta">Loading admin profile...</p>
+            </div>
+            <div class="admin-tabs" aria-label="Admin sections">
+              <button type="button" class="active" data-admin-tab="bookings">Bookings</button>
+              <button type="button" data-admin-tab="reviews">Reviews</button>
+            </div>
+            <div class="filters" aria-label="Booking filters">
+              <button type="button" class="active" data-filter="all">All</button>
+              <button type="button" data-filter="pending">Pending</button>
+              <button type="button" data-filter="approved">Approved</button>
+              <button type="button" data-filter="declined">Declined</button>
+            </div>
+          </div>
+          <div class="message" id="adminMessage" aria-live="polite"></div>
+        </div>
+
+        <div class="booking-list" id="bookingList"></div>
+        <div class="booking-list hidden" id="reviewList"></div>
+      </section>
+    </main>
+
+    <script>
+      const SUPABASE_URL = "https://elthktbvojsmvhtxxqnz.supabase.co";
+      const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVsdGhrdGJ2b2pzbXZodHh4cW56Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ2NzYzMjUsImV4cCI6MjA5MDI1MjMyNX0.5QrzeI0WKJclFLHEBgZH7WxsHPdKBJmdEtpqlyXg9PQ";
+
+      const supabaseClient = window.supabase?.createClient
+        ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+        : null;
+
+      const loginPanel = document.getElementById("loginPanel");
+      const adminPanel = document.getElementById("adminPanel");
+      const loginForm = document.getElementById("loginForm");
+      const loginSubmit = document.getElementById("loginSubmit");
+      const loginMessage = document.getElementById("loginMessage");
+      const adminMessage = document.getElementById("adminMessage");
+      const adminMeta = document.getElementById("adminMeta");
+      const adminPanelTitle = document.getElementById("adminPanelTitle");
+      const bookingList = document.getElementById("bookingList");
+      const reviewList = document.getElementById("reviewList");
+      const refreshBookings = document.getElementById("refreshBookings");
+      const logoutButton = document.getElementById("logoutButton");
+      const filterButtons = document.querySelectorAll("[data-filter]");
+      const adminTabButtons = document.querySelectorAll("[data-admin-tab]");
+
+      let currentUser = null;
+      let currentProfile = null;
+      let bookings = [];
+      let reviews = [];
+      let activeFilter = "all";
+      let activeAdminTab = "bookings";
+      let authRefreshTimer = null;
+
+      function setMessage(element, text, isError = false) {
+        element.textContent = text || "";
+        element.style.color = isError ? "var(--red)" : "var(--body)";
+      }
+
+      function withTimeout(promise, label, ms = 12000) {
+        return Promise.race([
+          promise,
+          new Promise((_, reject) => {
+            setTimeout(() => reject(new Error(`${label} timed out. Please refresh and try again.`)), ms);
+          })
+        ]);
+      }
+
+      function formatDate(value) {
+        if (!value) return "Not set";
+        return new Date(`${value}T00:00:00`).toLocaleDateString("en", {
+          year: "numeric",
+          month: "short",
+          day: "numeric"
+        });
+      }
+
+      function formatDateTime(value) {
+        if (!value) return "Not recorded";
+        return new Date(value).toLocaleString("en", {
+          year: "numeric",
+          month: "short",
+          day: "numeric",
+          hour: "numeric",
+          minute: "2-digit"
+        });
+      }
+
+      function formatPeso(value) {
+        if (value === null || value === undefined || value === "") return "Not set";
+        return `PHP ${Number(value || 0).toLocaleString("en-PH")}`;
+      }
+
+      function normalizeStatus(value) {
+        return String(value || "").replace(/[_-]/g, " ");
+      }
+
+      function escapeHtml(value) {
+        return String(value ?? "").replace(/[&<>"']/g, (char) => ({
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          '"': "&quot;",
+          "'": "&#039;"
+        }[char]));
+      }
+
+      function isAdmin(profile) {
+        return ["admin", "superadmin"].includes(String(profile?.role || "").toLowerCase());
+      }
+
+      function showLoggedOut() {
+        currentUser = null;
+        currentProfile = null;
+        bookings = [];
+        reviews = [];
+        loginPanel.classList.remove("hidden");
+        adminPanel.classList.add("hidden");
+        refreshBookings.classList.add("hidden");
+        logoutButton.classList.add("hidden");
+        bookingList.innerHTML = "";
+      }
+
+      function showAdmin() {
+        loginPanel.classList.add("hidden");
+        adminPanel.classList.remove("hidden");
+        refreshBookings.classList.remove("hidden");
+        logoutButton.classList.remove("hidden");
+        adminMeta.textContent = `${currentUser.email} - ${currentProfile.role}`;
+      }
+
+      function updateStats() {
+        const pending = bookings.filter((item) => item.status === "pending").length;
+        const approved = bookings.filter((item) => item.status === "approved").length;
+        const paid = bookings.filter((item) => ["partial_paid", "paid"].includes(item.reservation_status)).length;
+        const pendingReviews = reviews.filter((item) => item.status === "pending").length;
+        const approvedReviews = reviews.filter((item) => item.status === "approved").length;
+        document.getElementById("statPending").textContent = activeAdminTab === "reviews" ? pendingReviews : pending;
+        document.getElementById("statApproved").textContent = activeAdminTab === "reviews" ? approvedReviews : approved;
+        document.getElementById("statPaid").textContent = paid;
+        document.getElementById("statTotal").textContent = activeAdminTab === "reviews" ? reviews.length : bookings.length;
+      }
+
+      function filteredBookings() {
+        if (activeFilter === "all") return bookings;
+        return bookings.filter((booking) => booking.status === activeFilter);
+      }
+
+      function fieldValue(card, selector) {
+        return card.querySelector(selector)?.value || "";
+      }
+
+      function starString(rating) {
+        const rounded = Math.round(Number(rating) || 0);
+        return "★★★★★".slice(0, rounded).padEnd(5, "☆");
+      }
+
+      function renderBookings() {
+        updateStats();
+        const visible = filteredBookings();
+        bookingList.innerHTML = "";
+
+        if (!visible.length) {
+          bookingList.innerHTML = `
+            <div class="empty-state">
+              <h3>No bookings found</h3>
+              <p>There are no booking requests for the selected filter.</p>
+            </div>
+          `;
+          return;
+        }
+
+        visible.forEach((booking) => {
+          const safe = {
+            fullName: escapeHtml(booking.full_name),
+            packageName: escapeHtml(booking.package_name),
+            eventType: escapeHtml(booking.event_type),
+            startTime: escapeHtml(booking.start_time || "Not set"),
+            phone: escapeHtml(booking.contact_number),
+            email: escapeHtml(booking.email || "Not provided"),
+            guests: escapeHtml(booking.estimated_guests || "Not provided"),
+            packagePrice: escapeHtml(formatPeso(booking.package_price)),
+            extraHours: escapeHtml(booking.extra_hours || 0),
+            extraHourRate: escapeHtml(formatPeso(booking.extra_hour_rate)),
+            extraHoursTotal: escapeHtml(formatPeso(booking.extra_hours_total)),
+            estimatedTotal: escapeHtml(formatPeso(booking.estimated_total)),
+            venue: escapeHtml(booking.venue_location),
+            notes: escapeHtml(booking.notes || "No notes provided"),
+            adminNotes: escapeHtml(booking.admin_notes || "")
+          };
+          const card = document.createElement("article");
+          card.className = "booking-card";
+          card.dataset.id = booking.id;
+          card.innerHTML = `
+            <div class="booking-main">
+              <div class="status-row">
+                <span class="pill ${booking.status}">${normalizeStatus(booking.status)}</span>
+                <span class="pill ${booking.reservation_status}">${normalizeStatus(booking.reservation_status)}</span>
+              </div>
+              <h3>${safe.fullName}</h3>
+              <div class="meta-grid">
+                <div class="meta"><small>Package</small><strong>${safe.packageName}</strong></div>
+                <div class="meta"><small>Event</small><strong>${safe.eventType}</strong></div>
+                <div class="meta"><small>Date</small><strong>${formatDate(booking.event_date)}</strong></div>
+                <div class="meta"><small>Start time</small><strong>${safe.startTime}</strong></div>
+                <div class="meta"><small>Phone</small><strong>${safe.phone}</strong></div>
+                <div class="meta"><small>Email</small><strong>${safe.email}</strong></div>
+                <div class="meta"><small>Guests</small><strong>${safe.guests}</strong></div>
+                <div class="meta"><small>Base price</small><strong>${safe.packagePrice}</strong></div>
+                <div class="meta"><small>Extra hours</small><strong>${safe.extraHours} x ${safe.extraHourRate}</strong></div>
+                <div class="meta"><small>Extra total</small><strong>${safe.extraHoursTotal}</strong></div>
+                <div class="meta"><small>Estimated total</small><strong>${safe.estimatedTotal}</strong></div>
+                <div class="meta"><small>Created</small><strong>${formatDateTime(booking.created_at)}</strong></div>
+              </div>
+              <div class="meta"><small>Venue</small><strong>${safe.venue}</strong></div>
+              <div class="meta" style="margin-top: 10px"><small>Customer notes</small><strong>${safe.notes}</strong></div>
+            </div>
+            <div class="booking-actions">
+              <label>
+                Booking status
+                <select class="status-select">
+                  <option value="pending">Pending</option>
+                  <option value="quoted">Quoted</option>
+                  <option value="approved">Approved</option>
+                  <option value="declined">Declined</option>
+                  <option value="cancelled">Cancelled</option>
+                </select>
+              </label>
+              <label>
+                Reservation payment
+                <select class="payment-select">
+                  <option value="unpaid">Unpaid</option>
+                  <option value="partial_paid">50% paid</option>
+                  <option value="paid">Fully paid</option>
+                  <option value="refunded">Refunded</option>
+                </select>
+              </label>
+              <label>
+                Admin notes
+                <textarea class="notes-input" placeholder="Quotation, payment reference, internal notes">${safe.adminNotes}</textarea>
+              </label>
+              <div class="action-grid">
+                <button class="btn secondary save-booking" type="button">Save</button>
+                <button class="btn success approve-paid" type="button">Approve + 50%</button>
+                <button class="btn secondary mark-paid" type="button">Mark 50% Paid</button>
+                <button class="btn danger decline-booking" type="button">Decline</button>
+              </div>
+              <div class="message card-message"></div>
+            </div>
+          `;
+          card.querySelector(".status-select").value = booking.status;
+          card.querySelector(".payment-select").value = booking.reservation_status;
+          bookingList.appendChild(card);
+        });
+      }
+
+      async function loadBookings() {
+        if (!supabaseClient || !currentUser) return;
+        setMessage(adminMessage, "Loading bookings...");
+        const { data, error } = await supabaseClient
+          .from("event_bookings")
+          .select("*")
+          .order("created_at", { ascending: false });
+
+        if (error) {
+          setMessage(adminMessage, error.message || "Unable to load bookings.", true);
+          return;
+        }
+
+        bookings = data || [];
+        setMessage(adminMessage, bookings.length ? "Bookings loaded." : "No booking requests yet.");
+        renderBookings();
+      }
+
+      function renderReviewsAdmin() {
+        updateStats();
+        reviewList.innerHTML = "";
+        if (!reviews.length) {
+          reviewList.innerHTML = `
+            <div class="empty-state">
+              <h3>No reviews found</h3>
+              <p>Submitted reviews will appear here for moderation.</p>
+            </div>
+          `;
+          return;
+        }
+
+        reviews.forEach((review) => {
+          const safe = {
+            name: escapeHtml(review.name),
+            email: escapeHtml(review.email || "Not provided"),
+            text: escapeHtml(review.review_text),
+            eventType: escapeHtml(review.event_type || "Not provided"),
+            status: escapeHtml(review.status),
+            source: escapeHtml(review.source),
+            adminNotes: escapeHtml(review.admin_notes || "")
+          };
+          const card = document.createElement("article");
+          card.className = "booking-card review-admin-card";
+          card.dataset.id = review.id;
+          card.innerHTML = `
+            <div class="booking-main">
+              <div class="status-row">
+                <span class="pill ${review.status}">${safe.status}</span>
+                <span class="pill">${review.is_featured ? "featured" : "standard"}</span>
+              </div>
+              <h3>${safe.name}</h3>
+              <div class="meta-grid">
+                <div class="meta"><small>Rating</small><strong>${starString(review.rating)}</strong></div>
+                <div class="meta"><small>Event type</small><strong>${safe.eventType}</strong></div>
+                <div class="meta"><small>Email</small><strong>${safe.email}</strong></div>
+                <div class="meta"><small>Source</small><strong>${safe.source}</strong></div>
+                <div class="meta"><small>Submitted</small><strong>${formatDateTime(review.created_at)}</strong></div>
+                <div class="meta"><small>Approved</small><strong>${formatDateTime(review.approved_at)}</strong></div>
+              </div>
+              <div class="meta"><small>Review</small><strong>${safe.text}</strong></div>
+            </div>
+            <div class="booking-actions">
+              <label>
+                Review status
+                <select class="review-status-select">
+                  <option value="pending">Pending</option>
+                  <option value="approved">Approved</option>
+                  <option value="hidden">Hidden</option>
+                  <option value="rejected">Rejected</option>
+                </select>
+              </label>
+              <label>
+                Display
+                <select class="review-featured-select">
+                  <option value="false">Standard</option>
+                  <option value="true">Featured</option>
+                </select>
+              </label>
+              <label>
+                Admin notes
+                <textarea class="review-notes-input">${safe.adminNotes}</textarea>
+              </label>
+              <div class="action-grid">
+                <button class="btn success approve-review" type="button">Approve</button>
+                <button class="btn secondary save-review" type="button">Save</button>
+                <button class="btn secondary hide-review" type="button">Hide</button>
+                <button class="btn danger reject-review" type="button">Reject</button>
+              </div>
+              <div class="message card-message"></div>
+            </div>
+          `;
+          card.querySelector(".review-status-select").value = review.status;
+          card.querySelector(".review-featured-select").value = String(Boolean(review.is_featured));
+          reviewList.appendChild(card);
+        });
+      }
+
+      async function loadReviewsAdmin() {
+        if (!supabaseClient || !currentUser) return;
+        setMessage(adminMessage, "Loading reviews...");
+        const { data, error } = await supabaseClient
+          .from("public_reviews")
+          .select("*")
+          .order("created_at", { ascending: false });
+
+        if (error) {
+          setMessage(adminMessage, error.message || "Unable to load reviews.", true);
+          return;
+        }
+
+        reviews = data || [];
+        setMessage(adminMessage, reviews.length ? "Reviews loaded." : "No reviews submitted yet.");
+        renderReviewsAdmin();
+      }
+
+      function renderActiveAdminTab() {
+        const isReviews = activeAdminTab === "reviews";
+        adminPanelTitle.textContent = isReviews ? "Manage reviews" : "Manage bookings";
+        bookingList.classList.toggle("hidden", isReviews);
+        reviewList.classList.toggle("hidden", !isReviews);
+        document.querySelector(".filters").classList.toggle("hidden", isReviews);
+        adminTabButtons.forEach((button) => button.classList.toggle("active", button.dataset.adminTab === activeAdminTab));
+        updateStats();
+        if (isReviews) {
+          renderReviewsAdmin();
+        } else {
+          renderBookings();
+        }
+      }
+
+      async function loadAdminSession() {
+        if (!supabaseClient) {
+          setMessage(loginMessage, "Supabase did not load. Refresh the page and try again.", true);
+          return;
+        }
+
+        const { data } = await withTimeout(supabaseClient.auth.getSession(), "Session check");
+        currentUser = data?.session?.user || null;
+        if (!currentUser) {
+          showLoggedOut();
+          return;
+        }
+
+        const { data: profile, error } = await withTimeout(
+          supabaseClient
+            .from("profiles")
+            .select("id,email,full_name,role")
+            .eq("id", currentUser.id)
+            .maybeSingle(),
+          "Admin profile check"
+        );
+
+        if (error || !isAdmin(profile)) {
+          await supabaseClient.auth.signOut();
+          showLoggedOut();
+          setMessage(loginMessage, "This account does not have bookings admin access.", true);
+          return;
+        }
+
+        currentProfile = profile;
+        showAdmin();
+        await loadBookings();
+        await loadReviewsAdmin();
+        renderActiveAdminTab();
+      }
+
+      async function updateBooking(id, patch, messageTarget) {
+        if (!supabaseClient || !currentUser) return;
+        setMessage(messageTarget, "Saving...");
+        const { error } = await supabaseClient
+          .from("event_bookings")
+          .update(patch)
+          .eq("id", id);
+
+        if (error) {
+          setMessage(messageTarget, error.message || "Update failed.", true);
+          return;
+        }
+
+        setMessage(messageTarget, "Saved.");
+        await loadBookings();
+      }
+
+      async function updateReview(id, patch, messageTarget) {
+        if (!supabaseClient || !currentUser) return;
+        setMessage(messageTarget, "Saving...");
+        const { error } = await supabaseClient
+          .from("public_reviews")
+          .update(patch)
+          .eq("id", id);
+
+        if (error) {
+          setMessage(messageTarget, error.message || "Review update failed.", true);
+          return;
+        }
+
+        setMessage(messageTarget, "Saved.");
+        await loadReviewsAdmin();
+      }
+
+      loginForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        if (!supabaseClient) {
+          setMessage(loginMessage, "Supabase did not load. Refresh the page and try again.", true);
+          return;
+        }
+
+        loginSubmit.disabled = true;
+        setMessage(loginMessage, "Signing in...");
+        const email = document.getElementById("loginEmail").value.trim();
+        const password = document.getElementById("loginPassword").value;
+        let error = null;
+        try {
+          ({ error } = await withTimeout(
+            supabaseClient.auth.signInWithPassword({ email, password }),
+            "Admin login"
+          ));
+        } catch (timeoutError) {
+          loginSubmit.disabled = false;
+          setMessage(loginMessage, timeoutError.message, true);
+          return;
+        }
+
+        if (error) {
+          loginSubmit.disabled = false;
+          setMessage(loginMessage, error.message || "Login failed.", true);
+          return;
+        }
+
+        setMessage(loginMessage, "");
+        await loadAdminSession();
+        loginSubmit.disabled = false;
+      });
+
+      logoutButton.addEventListener("click", async () => {
+        if (supabaseClient) await supabaseClient.auth.signOut();
+        showLoggedOut();
+      });
+
+      refreshBookings.addEventListener("click", () => {
+        if (activeAdminTab === "reviews") {
+          loadReviewsAdmin();
+        } else {
+          loadBookings();
+        }
+      });
+
+      adminTabButtons.forEach((button) => {
+        button.addEventListener("click", async () => {
+          activeAdminTab = button.dataset.adminTab;
+          if (activeAdminTab === "reviews" && !reviews.length) await loadReviewsAdmin();
+          renderActiveAdminTab();
+        });
+      });
+
+      filterButtons.forEach((button) => {
+        button.addEventListener("click", () => {
+          activeFilter = button.dataset.filter;
+          filterButtons.forEach((item) => item.classList.toggle("active", item === button));
+          renderBookings();
+        });
+      });
+
+      bookingList.addEventListener("click", async (event) => {
+        const button = event.target.closest("button");
+        if (!button) return;
+        const card = event.target.closest(".booking-card");
+        const id = card?.dataset.id;
+        if (!id) return;
+        const messageTarget = card.querySelector(".card-message");
+        const now = new Date().toISOString();
+
+        if (button.classList.contains("save-booking")) {
+          await updateBooking(id, {
+            status: fieldValue(card, ".status-select"),
+            reservation_status: fieldValue(card, ".payment-select"),
+            admin_notes: fieldValue(card, ".notes-input") || null
+          }, messageTarget);
+        }
+
+        if (button.classList.contains("approve-paid")) {
+          await updateBooking(id, {
+            status: "approved",
+            reservation_status: "partial_paid",
+            approved_at: now,
+            approved_by: currentUser.id,
+            reservation_paid_at: now,
+            admin_notes: fieldValue(card, ".notes-input") || null
+          }, messageTarget);
+        }
+
+        if (button.classList.contains("mark-paid")) {
+          await updateBooking(id, {
+            reservation_status: "partial_paid",
+            reservation_paid_at: now,
+            admin_notes: fieldValue(card, ".notes-input") || null
+          }, messageTarget);
+        }
+
+        if (button.classList.contains("decline-booking")) {
+          await updateBooking(id, {
+            status: "declined",
+            admin_notes: fieldValue(card, ".notes-input") || null
+          }, messageTarget);
+        }
+      });
+
+      reviewList.addEventListener("click", async (event) => {
+        const button = event.target.closest("button");
+        if (!button) return;
+        const card = event.target.closest(".booking-card");
+        const id = card?.dataset.id;
+        if (!id) return;
+        const messageTarget = card.querySelector(".card-message");
+        const now = new Date().toISOString();
+
+        if (button.classList.contains("save-review")) {
+          await updateReview(id, {
+            status: fieldValue(card, ".review-status-select"),
+            is_featured: fieldValue(card, ".review-featured-select") === "true",
+            admin_notes: fieldValue(card, ".review-notes-input") || null
+          }, messageTarget);
+        }
+
+        if (button.classList.contains("approve-review")) {
+          await updateReview(id, {
+            status: "approved",
+            is_featured: fieldValue(card, ".review-featured-select") === "true",
+            approved_at: now,
+            approved_by: currentUser.id,
+            admin_notes: fieldValue(card, ".review-notes-input") || null
+          }, messageTarget);
+        }
+
+        if (button.classList.contains("hide-review")) {
+          await updateReview(id, {
+            status: "hidden",
+            admin_notes: fieldValue(card, ".review-notes-input") || null
+          }, messageTarget);
+        }
+
+        if (button.classList.contains("reject-review")) {
+          await updateReview(id, {
+            status: "rejected",
+            admin_notes: fieldValue(card, ".review-notes-input") || null
+          }, messageTarget);
+        }
+      });
+
+      if (supabaseClient) {
+        supabaseClient.auth.onAuthStateChange(() => {
+          clearTimeout(authRefreshTimer);
+          authRefreshTimer = setTimeout(() => loadAdminSession(), 0);
+        });
+      }
+
+      loadAdminSession();
+    </script>
+  </body>
+</html>

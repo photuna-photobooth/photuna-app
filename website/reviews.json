@@ -1,0 +1,26 @@
+{
+  "source": "curated",
+  "rating": 4.8,
+  "reviewCount": 24,
+  "summary": "4.8/5 rating software built for photobooth operators",
+  "reviews": [
+    {
+      "authorName": "Mika Santos",
+      "role": "Photobooth operator",
+      "rating": 5,
+      "text": "Studio Photuna helped us set up events faster and made the booth flow easier for new staff to operate."
+    },
+    {
+      "authorName": "Daniel Reyes",
+      "role": "Wedding supplier",
+      "rating": 5,
+      "text": "The template workflow and QR sharing made our guest experience feel more modern without investing in a full kiosk system."
+    },
+    {
+      "authorName": "Clara Lim",
+      "role": "Event vendor",
+      "rating": 4,
+      "text": "We use it for birthdays and private events. Setup is simple, and clients like that photos are organized after the event."
+    }
+  ]
+}
