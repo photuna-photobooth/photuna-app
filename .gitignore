@@ -1,0 +1,61 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+**/node_modules/
+/.pnp
+.pnp.js
+
+# testing
+/coverage
+
+# production
+/build
+/dist
+**/.next/
+
+# local package/build caches
+/.npm-cache
+/.electron-builder-cache
+
+# local tools/editors
+/.claude
+/.vscode
+
+# nested/local workspaces
+/studiophotuna-gallery
+
+# generated helper output
+/electron/bin/photo-print-helper.exe
+/electron/bin/PhotoPrintHelper/bin
+/electron/bin/PhotoPrintHelper/obj
+
+# local app databases
+/photuna-licensing-api/db.sqlite
+
+# debug artifacts
+debug_*.png
+debug_*.jpg
+debug_*.jpeg
+debug_*.mp4
+debug_*.webm
+
+# misc
+.DS_Store
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Environment variables
+.env
+.env.local
+.env.production
+.env.electron
+**/.env
+**/.env.local
+**/.env.production
+**/.env.electron
+
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*

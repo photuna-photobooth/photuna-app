@@ -1,0 +1,9 @@
+appId: com.photuna.app
+productName: Photuna
+files:
+  - build/**
+  - electron/**
+directories:
+  output: dist
+win:
+  target: nsis

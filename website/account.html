@@ -1,0 +1,699 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Account | Studio Photuna</title>
+    <link rel="icon" type="image/png" href="./favicon.png" />
+    <link rel="apple-touch-icon" href="./favicon.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+      :root {
+        --title: #111827;
+        --body: #5f6678;
+        --muted: #8b92a6;
+        --grey: #f4f5f8;
+        --line: #dedfe6;
+        --purple: #6f4dff;
+        --purple-dark: #4b32c3;
+        --white: #ffffff;
+        --shadow: 0 30px 90px rgba(17, 24, 39, 0.12);
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        color: var(--body);
+        background: var(--white);
+        font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      a { color: inherit; text-decoration: none; }
+      button, input { font: inherit; }
+
+      .container {
+        width: min(1230px, calc(100% - 40px));
+        margin: 0 auto;
+      }
+
+      .site-header {
+        position: fixed;
+        inset: 0 0 auto;
+        z-index: 50;
+        padding: 10px 0;
+        background: rgba(255, 255, 255, 0.92);
+        backdrop-filter: blur(18px);
+      }
+
+      .header-row {
+        display: flex;
+        min-height: 64px;
+        align-items: center;
+        justify-content: space-between;
+        gap: 20px;
+      }
+
+      .logo img {
+        display: block;
+        height: 44px;
+        width: auto;
+      }
+
+      .nav-links {
+        display: flex;
+        align-items: center;
+        gap: 32px;
+        color: var(--title);
+        font-size: 15px;
+        font-weight: 700;
+      }
+
+      .nav-links a:hover {
+        color: var(--purple);
+      }
+
+      .header-actions {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+      }
+
+      .btn {
+        display: inline-flex;
+        min-height: 50px;
+        align-items: center;
+        justify-content: center;
+        border: 0;
+        border-radius: 999px;
+        background: var(--purple);
+        color: var(--white);
+        padding: 0 24px;
+        font-size: 15px;
+        font-weight: 800;
+        cursor: pointer;
+      }
+
+      .btn:hover {
+        background: var(--purple-dark);
+        transform: translateY(-2px);
+      }
+
+      .btn.secondary {
+        border: 1px solid var(--line);
+        background: var(--white);
+        color: var(--title);
+      }
+
+      .btn.secondary:hover {
+        background: var(--grey);
+      }
+
+      .hero {
+        position: relative;
+        overflow: clip;
+        padding: 150px 0 62px;
+        text-align: center;
+      }
+
+      .hero::before {
+        position: absolute;
+        top: 96px;
+        left: -120px;
+        width: 290px;
+        height: 200px;
+        border-radius: 46px;
+        background: radial-gradient(circle at 30% 35%, rgba(111, 77, 255, 0.2), transparent 48%), var(--grey);
+        content: "";
+        transform: rotate(-8deg);
+      }
+
+      .hero h1 {
+        max-width: 820px;
+        margin: 0 auto 18px;
+        color: var(--title);
+        font-size: clamp(46px, 7vw, 86px);
+        line-height: 1.02;
+        letter-spacing: -0.065em;
+      }
+
+      .hero p {
+        max-width: 680px;
+        margin: 0 auto;
+        font-size: 18px;
+        line-height: 1.75;
+      }
+
+      .panel {
+        margin: 0 auto 86px;
+        border: 1px solid var(--line);
+        border-radius: 30px;
+        background: var(--white);
+        padding: 42px;
+        box-shadow: var(--shadow);
+      }
+
+      .panel h2 {
+        margin: 0;
+        color: var(--title);
+        font-size: clamp(30px, 4vw, 46px);
+        line-height: 1.1;
+        letter-spacing: -0.05em;
+        text-align: center;
+      }
+
+      .profile-summary {
+        display: grid;
+        grid-template-columns: 160px 1fr;
+        gap: 28px;
+        align-items: center;
+        margin-bottom: 28px;
+      }
+
+      .avatar-wrap {
+        display: grid;
+        gap: 12px;
+        justify-items: center;
+      }
+
+      .avatar {
+        display: grid;
+        width: 132px;
+        height: 132px;
+        place-items: center;
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: 34px;
+        background: linear-gradient(135deg, #f0edff, #fff5fb);
+        color: var(--purple);
+        font-size: 42px;
+        font-weight: 900;
+      }
+
+      .avatar img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+
+      .profile-title h2 {
+        margin: 0 0 10px;
+        text-align: left;
+      }
+
+      .profile-title p {
+        margin: 0;
+        line-height: 1.7;
+      }
+
+      .account-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 16px;
+      }
+
+      .account-card {
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        background: var(--grey);
+        padding: 24px;
+      }
+
+      .account-card small {
+        display: block;
+        margin-bottom: 10px;
+        color: var(--muted);
+        font-weight: 900;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .account-card strong {
+        display: block;
+        overflow-wrap: anywhere;
+        color: var(--title);
+        font-size: 22px;
+      }
+
+      .account-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        justify-content: center;
+        margin-top: 30px;
+      }
+
+      .settings-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 18px;
+        margin-top: 24px;
+      }
+
+      .settings-card {
+        border: 1px solid var(--line);
+        border-radius: 24px;
+        background: var(--white);
+        padding: 24px;
+      }
+
+      .settings-card h3 {
+        margin: 0 0 16px;
+        color: var(--title);
+        font-size: 22px;
+        letter-spacing: -0.03em;
+      }
+
+      .auth-form {
+        display: grid;
+        gap: 12px;
+      }
+
+      .auth-form label {
+        display: grid;
+        gap: 7px;
+        color: var(--title);
+        font-size: 13px;
+        font-weight: 800;
+      }
+
+      .auth-form input {
+        min-height: 54px;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        padding: 0 16px;
+        outline: none;
+      }
+
+      .auth-form input[type="file"] {
+        min-height: auto;
+        padding: 14px;
+      }
+
+      .status-message {
+        min-height: 24px;
+        margin-top: 14px;
+        text-align: center;
+        font-weight: 700;
+      }
+
+      .hidden { display: none !important; }
+      .message { min-height: 24px; text-align: center; }
+
+      @media (max-width: 820px) {
+        .account-grid { grid-template-columns: 1fr; }
+        .settings-grid,
+        .profile-summary { grid-template-columns: 1fr; }
+        .profile-title h2,
+        .profile-title p { text-align: center; }
+        .header-row { align-items: flex-start; flex-direction: column; padding: 8px 0; }
+        .nav-links { gap: 18px; flex-wrap: wrap; }
+        .header-actions { width: 100%; justify-content: space-between; }
+        .hero { padding-top: 150px; }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="container header-row">
+        <a class="logo" href="./index.html" aria-label="Studio Photuna">
+          <img src="./logo-dark.png" alt="Studio Photuna" />
+        </a>
+        <nav class="nav-links" aria-label="Account navigation">
+          <a href="./index.html">Home</a>
+          <a href="./index.html#features">Features</a>
+          <a href="./index.html#pricing">Pricing</a>
+          <a href="./download.html">Download</a>
+        </nav>
+        <div class="header-actions">
+          <button class="btn hidden" type="button" id="logoutButton">Logout</button>
+        </div>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="container">
+          <h1>Your Studio Photuna Account</h1>
+          <p>View profile details, subscription status, trial access, and app account settings.</p>
+        </div>
+      </section>
+
+      <section class="container">
+        <div class="panel" id="signedOutPanel">
+          <h2>Login from the Home page</h2>
+          <p class="message" id="authMessage">For account security, this page only displays profile details after you log in from the Studio Photuna home page.</p>
+          <div class="account-actions">
+            <a class="btn" href="./index.html">Go to Home</a>
+          </div>
+        </div>
+
+        <div class="panel hidden" id="accountPanel">
+          <div class="profile-summary">
+            <div class="avatar-wrap">
+              <div class="avatar" id="avatarPreview">SP</div>
+              <label class="btn secondary" for="avatarInput">Update photo</label>
+              <input class="hidden" id="avatarInput" type="file" accept="image/*" />
+            </div>
+            <div class="profile-title">
+              <h2 id="profileName">Account profile</h2>
+              <p id="profileMeta">Your Studio Photuna account details are loaded directly from Supabase.</p>
+            </div>
+          </div>
+
+          <div class="account-grid">
+            <div class="account-card"><small>Email</small><strong id="accountEmail">-</strong></div>
+            <div class="account-card"><small>Company</small><strong id="accountCompany">-</strong></div>
+            <div class="account-card"><small>Phone</small><strong id="accountPhone">-</strong></div>
+            <div class="account-card"><small>Plan</small><strong id="accountPlan">Free</strong></div>
+            <div class="account-card"><small>Status</small><strong id="accountStatus">No subscription</strong></div>
+            <div class="account-card"><small>Trial used</small><strong id="accountTrial">No</strong></div>
+            <div class="account-card"><small>Gallery add-on</small><strong id="accountGallery">No</strong></div>
+            <div class="account-card"><small>Expires</small><strong id="accountExpires">-</strong></div>
+            <div class="account-card"><small>Created</small><strong id="accountCreated">-</strong></div>
+          </div>
+
+          <div class="settings-grid">
+            <div class="settings-card">
+              <h3>Edit profile</h3>
+              <form class="auth-form" id="profileForm">
+                <label>Full name <input id="profileFullName" type="text" autocomplete="name" /></label>
+                <label>Company <input id="profileCompany" type="text" autocomplete="organization" /></label>
+                <label>Phone <input id="profilePhone" type="tel" autocomplete="tel" /></label>
+                <button class="btn" type="submit">Save profile</button>
+              </form>
+            </div>
+
+            <div class="settings-card">
+              <h3>Change password</h3>
+              <form class="auth-form" id="passwordForm">
+                <label>Current password <input id="currentPassword" type="password" autocomplete="current-password" required /></label>
+                <label>New password <input id="newPassword" type="password" autocomplete="new-password" minlength="8" required /></label>
+                <label>Confirm new password <input id="confirmPassword" type="password" autocomplete="new-password" minlength="8" required /></label>
+                <button class="btn" type="submit">Change password</button>
+              </form>
+            </div>
+          </div>
+          <p class="status-message" id="accountStatusMessage"></p>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      const SUPABASE_URL = "https://elthktbvojsmvhtxxqnz.supabase.co";
+      const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVsdGhrdGJ2b2pzbXZodHh4cW56Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ2NzYzMjUsImV4cCI6MjA5MDI1MjMyNX0.5QrzeI0WKJclFLHEBgZH7WxsHPdKBJmdEtpqlyXg9PQ";
+      const ACCOUNT_SNAPSHOT_KEY = "studio-photuna-account-snapshot";
+      const supabaseClient = window.supabase?.createClient
+        ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+        : null;
+
+      const signedOutPanel = document.getElementById("signedOutPanel");
+      const accountPanel = document.getElementById("accountPanel");
+      const logoutButton = document.getElementById("logoutButton");
+      const avatarInput = document.getElementById("avatarInput");
+      const profileForm = document.getElementById("profileForm");
+      const passwordForm = document.getElementById("passwordForm");
+      const accountStatusMessage = document.getElementById("accountStatusMessage");
+      let renderedSnapshot = false;
+      let currentUser = null;
+      let currentProfile = null;
+      let currentLicense = null;
+
+      function formatStatus(value) {
+        if (!value) return "No subscription";
+        return String(value).replace(/[_-]/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+      }
+
+      function renderAccount(user, profile, license) {
+        currentUser = user || null;
+        currentProfile = profile || null;
+        currentLicense = license || null;
+        const plan = license?.plan || profile?.subscription_plan || "free";
+        const state = license?.state || "";
+        const status = plan === "free" && state === "active" ? "" : state || (plan === "free" ? "" : "active");
+        writeAccountSnapshot(user, profile, license);
+        const fullName = profile?.full_name || user?.user_metadata?.full_name || "";
+        const initials = (fullName || user?.email || "SP")
+          .split(/[ @._-]+/)
+          .filter(Boolean)
+          .slice(0, 2)
+          .map((part) => part[0]?.toUpperCase())
+          .join("") || "SP";
+        const avatarUrl = profile?.avatar_url || "";
+        document.getElementById("profileName").textContent = fullName || "Studio Photuna account";
+        document.getElementById("profileMeta").textContent = user?.email || profile?.email || "Profile loaded from Supabase";
+        document.getElementById("avatarPreview").innerHTML = avatarUrl
+          ? `<img src="${avatarUrl}" alt="Profile photo" />`
+          : initials;
+        document.getElementById("accountEmail").textContent = user?.email || profile?.email || "-";
+        document.getElementById("accountCompany").textContent = profile?.company || "-";
+        document.getElementById("accountPhone").textContent = profile?.phone || "-";
+        document.getElementById("accountPlan").textContent = formatStatus(plan);
+        document.getElementById("accountStatus").textContent = formatStatus(status);
+        document.getElementById("accountTrial").textContent = license?.trial_redeemed ? "Yes" : "No";
+        document.getElementById("accountGallery").textContent = license?.gallery_addon ? "Yes" : "No";
+        document.getElementById("accountExpires").textContent = license?.expires_at
+          ? new Date(license.expires_at).toLocaleDateString()
+          : "-";
+        document.getElementById("accountCreated").textContent = profile?.created_at || user?.created_at
+          ? new Date(profile?.created_at || user?.created_at).toLocaleDateString()
+          : "-";
+        document.getElementById("profileFullName").value = fullName;
+        document.getElementById("profileCompany").value = profile?.company || "";
+        document.getElementById("profilePhone").value = profile?.phone || "";
+      }
+
+      function readAccountSnapshot() {
+        const hashMatch = window.location.hash.match(/(?:^#|&)account=([^&]+)/);
+        const hashPayload = hashMatch ? decodeURIComponent(hashMatch[1]) : null;
+        if (hashPayload && window.history?.replaceState) {
+          window.history.replaceState(null, document.title, window.location.pathname);
+        }
+        const candidates = [
+          hashPayload,
+          window.name,
+          (() => {
+            try { return sessionStorage.getItem(ACCOUNT_SNAPSHOT_KEY); } catch (_error) { return null; }
+          })(),
+          (() => {
+            try { return localStorage.getItem(ACCOUNT_SNAPSHOT_KEY); } catch (_error) { return null; }
+          })()
+        ].filter(Boolean);
+        if (!candidates.length) return null;
+        try {
+          for (const candidate of candidates) {
+            const snapshot = JSON.parse(candidate);
+            const isFresh = Date.now() - Number(snapshot.createdAt || 0) < 30 * 60 * 1000;
+            if (snapshot.source === "studio-photuna-account" && isFresh && snapshot.user?.email) return snapshot;
+          }
+        } catch (_error) {
+          return null;
+        }
+        return null;
+      }
+
+      function writeAccountSnapshot(user, profile, license) {
+        if (!user?.email) return "";
+        const payload = JSON.stringify({
+          source: "studio-photuna-account",
+          createdAt: Date.now(),
+          user: {
+            id: user.id,
+            email: user.email
+          },
+          profile,
+          license
+        });
+        window.name = payload;
+        try {
+          sessionStorage.setItem(ACCOUNT_SNAPSHOT_KEY, payload);
+          localStorage.setItem(ACCOUNT_SNAPSHOT_KEY, payload);
+        } catch (_error) {}
+        return payload;
+      }
+
+      function renderSnapshot(snapshot) {
+        renderedSnapshot = true;
+        signedOutPanel.classList.add("hidden");
+        accountPanel.classList.remove("hidden");
+        logoutButton.classList.remove("hidden");
+        renderAccount(snapshot.user, snapshot.profile, snapshot.license);
+        if (!supabaseClient) setStatus("Profile edits need Supabase to load.", true);
+      }
+
+      function setStatus(message, isError = false) {
+        accountStatusMessage.textContent = message || "";
+        accountStatusMessage.style.color = isError ? "#dc2626" : "var(--body)";
+      }
+
+      async function loadAccount(user) {
+        if (!user || !supabaseClient) {
+          const snapshot = readAccountSnapshot();
+          if (snapshot) {
+            renderSnapshot(snapshot);
+            return;
+          }
+          signedOutPanel.classList.remove("hidden");
+          accountPanel.classList.add("hidden");
+          logoutButton.classList.add("hidden");
+          return;
+        }
+
+        const [{ data: profile }, { data: license }] = await Promise.all([
+          supabaseClient.from("profiles").select("id,full_name,email,phone,company,avatar_url,subscription_plan,created_at,updated_at").eq("id", user.id).maybeSingle(),
+          supabaseClient.from("licenses").select("plan,state,expires_at,trial_redeemed,gallery_addon,max_events,templates,priority_support").eq("user_id", user.id).maybeSingle()
+        ]);
+        signedOutPanel.classList.add("hidden");
+        accountPanel.classList.remove("hidden");
+        logoutButton.classList.remove("hidden");
+        renderAccount(user, profile, license);
+      }
+
+      async function refreshAccount() {
+        if (!supabaseClient) return;
+        const { data } = await supabaseClient.auth.getSession();
+        await loadAccount(data?.session?.user || null);
+      }
+
+      profileForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        if (!supabaseClient || !currentUser?.id) {
+          setStatus("Please log in from the Home page before editing your profile.", true);
+          return;
+        }
+        setStatus("Saving profile...");
+        const patch = {
+          id: currentUser.id,
+          email: currentUser.email || currentProfile?.email || "",
+          full_name: document.getElementById("profileFullName").value.trim(),
+          company: document.getElementById("profileCompany").value.trim(),
+          phone: document.getElementById("profilePhone").value.trim(),
+          subscription_plan: currentProfile?.subscription_plan || "free"
+        };
+        const { error } = await supabaseClient.from("profiles").upsert(patch, { onConflict: "id" });
+        if (error) {
+          setStatus(error.message || "Unable to save profile.", true);
+          return;
+        }
+        await supabaseClient.auth.updateUser({
+          data: { full_name: patch.full_name, company: patch.company, phone: patch.phone }
+        });
+        setStatus("Profile updated.");
+        await refreshAccount();
+      });
+
+      avatarInput.addEventListener("change", async () => {
+        const file = avatarInput.files?.[0];
+        if (!file) return;
+        if (!supabaseClient || !currentUser?.id) {
+          setStatus("Please log in from the Home page before updating your photo.", true);
+          return;
+        }
+        if (!file.type.startsWith("image/")) {
+          setStatus("Choose an image file.", true);
+          return;
+        }
+        setStatus("Uploading profile photo...");
+        const extension = file.name.split(".").pop()?.toLowerCase() || "jpg";
+        const filePath = `${currentUser.id}/avatar.${extension}`;
+        const { error: uploadError } = await supabaseClient.storage
+          .from("avatars")
+          .upload(filePath, file, { cacheControl: "3600", contentType: file.type, upsert: true });
+        if (uploadError) {
+          setStatus(`${uploadError.message}. Check the avatars bucket policy if uploads are blocked.`, true);
+          return;
+        }
+        const { data: urlData } = supabaseClient.storage.from("avatars").getPublicUrl(filePath);
+        const publicUrl = `${urlData.publicUrl}?v=${Date.now()}`;
+        const { error: profileError } = await supabaseClient
+          .from("profiles")
+          .update({ avatar_url: publicUrl })
+          .eq("id", currentUser.id);
+        if (profileError) {
+          setStatus(profileError.message || "Photo uploaded but profile was not updated.", true);
+          return;
+        }
+        setStatus("Profile photo updated.");
+        await refreshAccount();
+      });
+
+      passwordForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        if (!supabaseClient || !currentUser?.email) {
+          setStatus("Please log in from the Home page before changing your password.", true);
+          return;
+        }
+        const currentPassword = document.getElementById("currentPassword").value;
+        const newPassword = document.getElementById("newPassword").value;
+        const confirmPassword = document.getElementById("confirmPassword").value;
+        if (newPassword.length < 8) {
+          setStatus("New password must be at least 8 characters.", true);
+          return;
+        }
+        if (newPassword !== confirmPassword) {
+          setStatus("New password and confirmation do not match.", true);
+          return;
+        }
+        setStatus("Verifying current password...");
+        const { error: signInError } = await supabaseClient.auth.signInWithPassword({
+          email: currentUser.email,
+          password: currentPassword
+        });
+        if (signInError) {
+          setStatus("Current password is incorrect.", true);
+          return;
+        }
+        const { error } = await supabaseClient.auth.updateUser({ password: newPassword });
+        if (error) {
+          setStatus(error.message || "Unable to change password.", true);
+          return;
+        }
+        passwordForm.reset();
+        setStatus("Password changed.");
+      });
+
+      function clearAccountSnapshot() {
+        if (window.name) window.name = "";
+        try {
+          sessionStorage.removeItem(ACCOUNT_SNAPSHOT_KEY);
+          localStorage.removeItem(ACCOUNT_SNAPSHOT_KEY);
+        } catch (_error) {}
+      }
+
+      logoutButton.addEventListener("click", async () => {
+        clearAccountSnapshot();
+        renderedSnapshot = false;
+        currentUser = null;
+        currentProfile = null;
+        currentLicense = null;
+        try {
+          if (supabaseClient) await supabaseClient.auth.signOut();
+        } catch (_error) {
+          // Continue back to Home even if Supabase has already cleared the session.
+        } finally {
+          window.location.href = "./index.html";
+        }
+      });
+
+      const initialSnapshot = readAccountSnapshot();
+      if (initialSnapshot) renderSnapshot(initialSnapshot);
+
+      if (supabaseClient) {
+        supabaseClient.auth.getSession().then(({ data }) => {
+          const sessionUser = data?.session?.user || null;
+          if (!sessionUser && renderedSnapshot) return;
+          loadAccount(sessionUser);
+        });
+        supabaseClient.auth.onAuthStateChange((_event, session) => {
+          if (!session?.user && renderedSnapshot) return;
+          loadAccount(session?.user || null);
+        });
+      } else {
+        if (!renderedSnapshot) loadAccount(null);
+      }
+    </script>
+  </body>
+</html>
