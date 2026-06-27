@@ -52,7 +52,7 @@
     "react-start": "cross-env BROWSER=none react-scripts start",
     "electron": "cross-env ELECTRON_START_URL=http://localhost:3000 electron . --no-watcher",
     "electron-start": "wait-on http://localhost:3000 && cross-env ELECTRON_START_URL=http://localhost:3000 electron . --no-watcher",
-    "build": "react-scripts build",
+    "build": "CI=false react-scripts build",
     "test": "react-scripts test",
     "dist": "electron-builder",
     "dist:win": "electron-builder --win",
