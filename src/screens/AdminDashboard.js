@@ -15,6 +15,7 @@ import SubscriptionSummary from "../components/subscription/SubscriptionSummary"
 import TemplateEditor from "../components/TemplateEditor";
 import { initSettingsSync, pullSettings, pushSettings } from "../services/settingsSync.js";
 import AnalyticsDashboard from "../components/AnalyticsDashboard";
+import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 
 const native =
   typeof window !== "undefined"
@@ -267,6 +268,27 @@ export default function AdminDashboard({ onLogout, onStartPhotobooth }) {
     userId: user?.id || null,
   }), [profile?.full_name, user?.user_metadata?.full_name, user?.email, user?.id]);
 
+  // Suppress Supabase Auth navigator.locks "stolen lock" noise (non-critical SDK warning)
+  useEffect(() => {
+    const handler = (event) => {
+      if (event?.message?.includes?.("was released because another request stole it")) {
+        event.preventDefault?.();
+        event.stopImmediatePropagation?.();
+        console.debug("[Supabase Auth] Lock contention suppressed — safe to ignore.");
+        return true;
+      }
+    };
+    window.addEventListener("error", handler);
+    window.addEventListener("unhandledrejection", (event) => {
+      const msg = event?.reason?.message || String(event?.reason || "");
+      if (msg.includes("was released because another request stole it")) {
+        event.preventDefault?.();
+        console.debug("[Supabase Auth] Lock contention suppressed — safe to ignore.");
+      }
+    });
+    return () => window.removeEventListener("error", handler);
+  }, []);
+
   // --- state  --------------------
   const ready = !!identity.userId;
   const [hydrated, setHydrated] = useState(false);
@@ -310,6 +332,7 @@ export default function AdminDashboard({ onLogout, onStartPhotobooth }) {
   const [profileSaving, setProfileSaving] = useState(false);
   const [passwordSaving, setPasswordSaving] = useState(false);
   const [prefsSaving, setPrefsSaving] = useState(false);
+  const [billingCycle, setBillingCycle] = useState("yearly"); // "monthly" | "yearly"
   // Legacy alias so shared UI references still compile
   const accountSaving = profileSaving || passwordSaving || prefsSaving;
 
@@ -2815,20 +2838,32 @@ This cannot be undone.`
 
   const renderAccountBilling = () => (
     <div className="space-y-6">
-      {/* HERO — gradient header matching AuthGate */}
+      {/* ===== HERO — gradient header ===== */}
       <div className="relative overflow-hidden rounded-3xl border border-white/20 bg-gradient-to-br from-indigo-500 via-indigo-600 to-violet-700 px-6 py-7 text-white shadow-[0_24px_64px_rgba(79,70,229,0.25)]">
         <WavePattern />
         <div className="relative z-10 flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/15 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white">
-              Account Center
+          <div className="flex items-center gap-5">
+            {/* Avatar */}
+            <div className="h-16 w-16 flex-shrink-0 overflow-hidden rounded-2xl border-2 border-white/30 bg-white/10 shadow-lg">
+              {accountForm.badgePhoto ? (
+                <img src={accountForm.badgePhoto} alt="Avatar" className="h-full w-full object-cover" />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center text-2xl font-bold text-white/60">
+                  {(user?.user_metadata?.full_name || user?.email || "U").charAt(0).toUpperCase()}
+                </div>
+              )}
             </div>
-            <h2 className="mt-3 text-2xl font-bold tracking-tight" style={{ fontFamily: '"Fraunces", ui-serif, Georgia, serif' }}>
-              {user?.user_metadata?.full_name || user?.email || "Your account"} 👋
-            </h2>
-            <p className="mt-1.5 text-sm text-white/80">
-              Manage your profile, security, preferences, and subscription from one place.
-            </p>
+            <div>
+              <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/15 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white">
+                Account Center
+              </div>
+              <h2 className="mt-2 text-2xl font-bold tracking-tight" style={{ fontFamily: '"Fraunces", ui-serif, Georgia, serif' }}>
+                {user?.user_metadata?.full_name || user?.email || "Your account"}
+              </h2>
+              <p className="mt-1 text-sm text-white/80">
+                Manage your profile, security, subscription, and preferences.
+              </p>
+            </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
@@ -2840,11 +2875,8 @@ This cannot be undone.`
                 onClick={() => {
                   fallbackCustomerPortal()
                     .then(({ url }) => {
-                      if (url) {
-                        window.system?.openExternal?.(url) ?? window.open(url, "_blank", "noopener,noreferrer");
-                      } else {
-                        showToast?.("Portal URL not returned");
-                      }
+                      if (url) { window.system?.openExternal?.(url) ?? window.open(url, "_blank", "noopener,noreferrer"); }
+                      else { showToast?.("Portal URL not returned"); }
                     })
                     .catch((e) => { showToast?.(`Open portal failed: ${e?.message ?? "unknown error"}`); });
                 }}
@@ -2866,33 +2898,39 @@ This cannot be undone.`
         </div>
 
         {/* Plan stat tiles inside the gradient */}
-        <div className="relative z-10 mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <div className="rounded-2xl border border-white/15 bg-white/10 p-3 backdrop-blur-sm">
-            <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/70">Plan</div>
-            <div className="mt-1 text-sm font-bold text-white">{licenseLoading && !plan ? "…" : plan ? String(plan).charAt(0).toUpperCase() + String(plan).slice(1) : "Free"}</div>
-          </div>
-          <div className="rounded-2xl border border-white/15 bg-white/10 p-3 backdrop-blur-sm">
-            <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/70">Best value</div>
-            <div className="mt-1 text-sm font-bold text-white">{prices?.yearly?.display ?? "$204 / yr"}</div>
-          </div>
+        <div className="relative z-10 mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+          {[
+            { label: "Plan", value: licenseLoading && !plan ? "…" : plan ? String(plan).charAt(0).toUpperCase() + String(plan).slice(1) : "Free" },
+            { label: "Status", value: (license?.active || gating?.allow) ? "Active" : "Inactive" },
+            { label: "Events", value: `${events.length} / ${eventLimit === Infinity ? "∞" : eventLimit}` },
+            { label: "Templates", value: `${templateLimit === Infinity ? "∞" : templateLimit} max` },
+            { label: "Gallery", value: galleryAddonEnabled ? "Enabled" : "Off" },
+            { label: "Best Value", value: prices?.yearly?.display ?? "$204 / yr" },
+          ].map(({ label, value }) => (
+            <div key={label} className="rounded-2xl border border-white/15 bg-white/10 p-3 backdrop-blur-sm">
+              <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/70">{label}</div>
+              <div className="mt-1 text-sm font-bold text-white truncate">{value}</div>
+            </div>
+          ))}
         </div>
       </div>
 
-      {/* ACCOUNT NAV */}
-      <div className={`${SURFACE_BG} ${SURFACE_BORDER} ${TOOLBAR_RADIUS} ${SHADOW_SOFT} p-2 flex flex-wrap items-center gap-2`}>
+      {/* ===== ACCOUNT NAV TABS ===== */}
+      <div className={`${SURFACE_BG} ${SURFACE_BORDER} ${TOOLBAR_RADIUS} ${SHADOW_SOFT} p-1.5 flex flex-wrap items-center gap-1.5`}>
         {[
           ["profile", "Profile"],
           ["security", "Security"],
           ["billing", "Billing"],
           ["preferences", "Preferences"],
+          ["gallery", "Gallery"],
         ].map(([key, label]) => (
           <button
             key={key}
             type="button"
             onClick={() => setAccountTab(key)}
-            className={`px-4 py-2 rounded-full text-sm font-semibold transition ${accountTab === key
+            className={`px-5 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 ${accountTab === key
               ? "bg-indigo-600 text-white shadow-md shadow-indigo-200"
-              : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+              : "text-slate-500 hover:bg-slate-100 hover:text-slate-900"
               }`}
           >
             {label}
@@ -2900,99 +2938,120 @@ This cannot be undone.`
         ))}
       </div>
 
-      {/* PROFILE */}
+      {/* ===== PROFILE TAB ===== */}
       {accountTab === "profile" && (
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[320px,minmax(0,1fr)]">
-          <div className={`${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_CARD} p-5`}>
-            <h4 className="text-sm font-semibold text-gray-900">Profile badge</h4>
-            <p className="mt-1 text-xs text-gray-500">
-              Update the badge photo and core account identity shown in the dashboard.
-            </p>
-
-            <div className="mt-5 flex flex-col items-center">
-              <div className="h-28 w-28 overflow-hidden rounded-2xl border border-gray-200 bg-gray-100">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[300px,minmax(0,1fr)]">
+          {/* Left — avatar card */}
+          <div className={`${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_CARD} p-6`}>
+            <div className="flex flex-col items-center text-center">
+              <div className="h-28 w-28 overflow-hidden rounded-3xl border-2 border-slate-200 bg-slate-100 shadow-inner">
                 {accountForm.badgePhoto ? (
-                  <img
-                    src={accountForm.badgePhoto}
-                    alt="Badge"
-                    className="h-full w-full object-cover"
-                  />
+                  <img src={accountForm.badgePhoto} alt="Badge" className="h-full w-full object-cover" />
                 ) : (
-                  <div className="flex h-full w-full items-center justify-center text-3xl text-gray-400">
-                    👤
+                  <div className="flex h-full w-full items-center justify-center text-4xl font-bold text-slate-300">
+                    {(user?.user_metadata?.full_name || user?.email || "U").charAt(0).toUpperCase()}
                   </div>
                 )}
               </div>
-
+              <h4 className="mt-4 text-sm font-bold text-slate-900">
+                {accountForm.displayName || user?.user_metadata?.full_name || "Your Name"}
+              </h4>
+              <p className="mt-0.5 text-xs text-slate-500">{accountForm.role || "Operator"}</p>
+              <p className="mt-0.5 text-xs text-slate-400">{accountForm.email || user?.email || ""}</p>
               <button
                 type="button"
                 onClick={chooseBadgePhoto}
-                className="mt-4 inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
+                className="mt-5 inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-5 py-2.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 hover:border-slate-300"
               >
-                Change badge photo
+                Update photo
               </button>
+            </div>
+
+            {/* Quick info */}
+            <div className="mt-6 space-y-3 border-t border-slate-100 pt-5">
+              {[
+                { label: "Company", value: accountForm.company || "—" },
+                { label: "Phone", value: accountForm.phone || "—" },
+                { label: "Plan", value: plan ? String(plan).charAt(0).toUpperCase() + String(plan).slice(1) : "Free" },
+              ].map(({ label, value }) => (
+                <div key={label} className="flex items-center justify-between text-xs">
+                  <span className="text-slate-400 font-medium">{label}</span>
+                  <span className="text-slate-700 font-semibold">{value}</span>
+                </div>
+              ))}
             </div>
           </div>
 
-          <div className={`${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_CARD} p-5`}>
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <label className="text-xs text-gray-700">
-                Display name
+          {/* Right — edit form */}
+          <div className={`${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_CARD} p-6`}>
+            <div className="mb-5">
+              <h4 className="text-sm font-bold text-slate-900">Edit Profile</h4>
+              <p className="mt-1 text-xs text-slate-500">Update your display name, contact info, and team details.</p>
+            </div>
+
+            <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Display Name</label>
                 <input
                   type="text"
                   value={accountForm.displayName}
                   onChange={(e) => updateAccountField("displayName", e.target.value)}
-                  className={`${SURFACE_BG} ${SURFACE_BORDER} ${INPUT_RADIUS} mt-1 w-full px-3 py-2 text-sm outline-none`}
+                  placeholder="Your full name"
+                  className={`${SURFACE_BG} ${SURFACE_BORDER} ${INPUT_RADIUS} w-full px-4 py-2.5 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 transition`}
                 />
-              </label>
+              </div>
 
-              <label className="text-xs text-gray-700">
-                Email
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Email</label>
                 <input
                   type="email"
                   value={accountForm.email}
                   onChange={(e) => updateAccountField("email", e.target.value)}
-                  className={`${SURFACE_BG} ${SURFACE_BORDER} ${INPUT_RADIUS} mt-1 w-full px-3 py-2 text-sm outline-none`}
+                  placeholder="you@example.com"
+                  className={`${SURFACE_BG} ${SURFACE_BORDER} ${INPUT_RADIUS} w-full px-4 py-2.5 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 transition`}
                 />
-              </label>
+              </div>
 
-              <label className="text-xs text-gray-700">
-                Phone
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Phone</label>
                 <input
-                  type="text"
+                  type="tel"
                   value={accountForm.phone}
                   onChange={(e) => updateAccountField("phone", e.target.value)}
-                  className={`${SURFACE_BG} ${SURFACE_BORDER} ${INPUT_RADIUS} mt-1 w-full px-3 py-2 text-sm outline-none`}
+                  placeholder="+63 9XX XXX XXXX"
+                  className={`${SURFACE_BG} ${SURFACE_BORDER} ${INPUT_RADIUS} w-full px-4 py-2.5 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 transition`}
                 />
-              </label>
+              </div>
 
-              <label className="text-xs text-gray-700">
-                Role
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Role</label>
                 <input
                   type="text"
                   value={accountForm.role}
                   onChange={(e) => updateAccountField("role", e.target.value)}
-                  className={`${SURFACE_BG} ${SURFACE_BORDER} ${INPUT_RADIUS} mt-1 w-full px-3 py-2 text-sm outline-none`}
+                  placeholder="e.g. Operator, Owner"
+                  className={`${SURFACE_BG} ${SURFACE_BORDER} ${INPUT_RADIUS} w-full px-4 py-2.5 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 transition`}
                 />
-              </label>
+              </div>
 
-              <label className="text-xs text-gray-700 md:col-span-2">
-                Company / Team
+              <div className="space-y-1.5 md:col-span-2">
+                <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Company / Team</label>
                 <input
                   type="text"
                   value={accountForm.company}
                   onChange={(e) => updateAccountField("company", e.target.value)}
-                  className={`${SURFACE_BG} ${SURFACE_BORDER} ${INPUT_RADIUS} mt-1 w-full px-3 py-2 text-sm outline-none`}
+                  placeholder="Your business name"
+                  className={`${SURFACE_BG} ${SURFACE_BORDER} ${INPUT_RADIUS} w-full px-4 py-2.5 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 transition`}
                 />
-              </label>
+              </div>
             </div>
 
-            <div className="mt-5 flex justify-end">
+            <div className="mt-6 flex justify-end">
               <button
                 type="button"
                 onClick={saveAccountProfile}
                 disabled={profileSaving}
-                className="inline-flex items-center justify-center rounded-full bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md shadow-indigo-200 transition hover:-translate-y-0.5 hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex items-center justify-center rounded-full bg-indigo-600 px-6 py-2.5 text-sm font-semibold text-white shadow-md shadow-indigo-200 transition hover:-translate-y-0.5 hover:bg-indigo-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {profileSaving ? "Saving..." : "Save profile"}
               </button>
@@ -3001,287 +3060,722 @@ This cannot be undone.`
         </div>
       )}
 
-      {/* SECURITY */}
+      {/* ===== SECURITY TAB ===== */}
       {accountTab === "security" && (
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-          <div className={`${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_CARD} p-5`}>
-            <h4 className="text-sm font-semibold text-gray-900">Change password</h4>
-            <p className="mt-1 text-xs text-gray-500">
-              Update your login password and keep your account secure.
-            </p>
+          {/* Change password */}
+          <div className={`${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_CARD} p-6`}>
+            <div className="mb-5">
+              <h4 className="text-sm font-bold text-slate-900">Change Password</h4>
+              <p className="mt-1 text-xs text-slate-500">Keep your account secure by updating your credentials regularly.</p>
+            </div>
 
-            <div className="mt-4 space-y-4">
-              <label className="block text-xs text-gray-700">
-                Current password
+            <div className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Current Password</label>
                 <input
                   type="password"
                   value={passwordForm.currentPassword}
                   onChange={(e) => updatePasswordField("currentPassword", e.target.value)}
-                  className={`${SURFACE_BG} ${SURFACE_BORDER} ${INPUT_RADIUS} mt-1 w-full px-3 py-2 text-sm outline-none`}
+                  placeholder="Enter current password"
+                  className={`${SURFACE_BG} ${SURFACE_BORDER} ${INPUT_RADIUS} w-full px-4 py-2.5 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 transition`}
                 />
-              </label>
+              </div>
 
-              <label className="block text-xs text-gray-700">
-                New password
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">New Password</label>
                 <input
                   type="password"
                   value={passwordForm.newPassword}
                   onChange={(e) => updatePasswordField("newPassword", e.target.value)}
-                  className={`${SURFACE_BG} ${SURFACE_BORDER} ${INPUT_RADIUS} mt-1 w-full px-3 py-2 text-sm outline-none`}
+                  placeholder="At least 8 characters"
+                  className={`${SURFACE_BG} ${SURFACE_BORDER} ${INPUT_RADIUS} w-full px-4 py-2.5 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 transition`}
                 />
-              </label>
+              </div>
 
-              <label className="block text-xs text-gray-700">
-                Confirm new password
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Confirm New Password</label>
                 <input
                   type="password"
                   value={passwordForm.confirmPassword}
                   onChange={(e) => updatePasswordField("confirmPassword", e.target.value)}
-                  className={`${SURFACE_BG} ${SURFACE_BORDER} ${INPUT_RADIUS} mt-1 w-full px-3 py-2 text-sm outline-none`}
+                  placeholder="Re-enter new password"
+                  className={`${SURFACE_BG} ${SURFACE_BORDER} ${INPUT_RADIUS} w-full px-4 py-2.5 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 transition`}
                 />
-              </label>
+              </div>
             </div>
 
-            <div className="mt-5 flex justify-end">
+            <div className="mt-6 flex justify-end">
               <button
                 type="button"
                 onClick={changePassword}
                 disabled={passwordSaving}
-                className="inline-flex items-center justify-center rounded-full bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md shadow-indigo-200 transition hover:-translate-y-0.5 hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex items-center justify-center rounded-full bg-indigo-600 px-6 py-2.5 text-sm font-semibold text-white shadow-md shadow-indigo-200 transition hover:-translate-y-0.5 hover:bg-indigo-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {passwordSaving ? "Updating..." : "Change password"}
               </button>
             </div>
           </div>
 
-          <div className={`${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_CARD} p-5`}>
-            <h4 className="text-sm font-semibold text-gray-900">Security tips</h4>
-            <div className="mt-4 space-y-3 text-xs leading-relaxed text-gray-600">
-              <p>Use at least 8 characters and avoid reusing passwords from other services.</p>
-              <p>Change credentials immediately when booth access is shared across operators.</p>
-              <p>Later, this section can also support sign out of other sessions and 2-factor authentication.</p>
+          {/* Security overview */}
+          <div className="space-y-5">
+            <div className={`${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_CARD} p-6`}>
+              <h4 className="text-sm font-bold text-slate-900 mb-4">Account Security</h4>
+              <div className="space-y-4">
+                {[
+                  { label: "Email verified", status: user?.email_confirmed_at ? true : false, detail: user?.email || "—" },
+                  { label: "Password set", status: true, detail: "Last changed via Supabase Auth" },
+                  { label: "Two-factor auth", status: false, detail: "Not yet available" },
+                ].map(({ label, status, detail }) => (
+                  <div key={label} className="flex items-center gap-3 rounded-xl border border-slate-100 bg-slate-50/50 p-3.5">
+                    <div className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full ${status ? "bg-emerald-100" : "bg-slate-100"}`}>
+                      {status ? (
+                        <svg className="h-4 w-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                      ) : (
+                        <svg className="h-4 w-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01" /></svg>
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-semibold text-slate-800">{label}</div>
+                      <div className="text-xs text-slate-500 truncate">{detail}</div>
+                    </div>
+                    <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${status ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>
+                      {status ? "Active" : "Pending"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className={`${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_CARD} p-6`}>
+              <h4 className="text-sm font-bold text-slate-900 mb-3">Security Tips</h4>
+              <div className="space-y-3">
+                {[
+                  "Use at least 8 characters with a mix of letters, numbers, and symbols.",
+                  "Avoid reusing passwords from other services or sharing them across operators.",
+                  "Change credentials immediately when booth access is shared with new team members.",
+                ].map((tip, i) => (
+                  <div key={i} className="flex items-start gap-2.5 text-xs text-slate-600 leading-relaxed">
+                    <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-indigo-50 text-[10px] font-bold text-indigo-600 mt-px">{i + 1}</span>
+                    <span>{tip}</span>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* BILLING */}
+      {/* ===== BILLING TAB ===== */}
       {accountTab === "billing" && (
         <>
           {/* Backend / Stripe connectivity error banner */}
           {subscriptionError && (
-            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 flex items-start gap-3">
-              <svg className="h-4 w-4 flex-shrink-0 text-amber-500 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className={`${CARD_RADIUS} border border-amber-200 bg-amber-50 p-4 flex items-start gap-3`}>
+              <svg className="h-5 w-5 flex-shrink-0 text-amber-500 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
               </svg>
               <div>
-                <div className="text-xs font-semibold text-amber-800">Billing server unreachable</div>
-                <p className="mt-0.5 text-xs text-amber-700 leading-relaxed">
-                  {subscriptionError}. This usually means your backend API server is not running, or your Stripe secret key / webhook is not configured in the server environment. Plan upgrades and billing management will be unavailable until the server is reachable.
+                <div className="text-sm font-semibold text-amber-800">Billing server unreachable</div>
+                <p className="mt-1 text-xs text-amber-700 leading-relaxed">
+                  {subscriptionError}. Your backend API or Stripe webhook may not be configured. Billing management will be unavailable until the server is reachable.
                 </p>
-                <button
-                  type="button"
-                  onClick={() => refreshLicense()}
-                  className="mt-2 text-xs font-medium text-amber-800 underline hover:no-underline"
-                >
-                  Retry
+                <button type="button" onClick={() => refreshLicense()} className="mt-2 text-xs font-semibold text-amber-800 underline hover:no-underline">
+                  Retry connection
                 </button>
               </div>
             </div>
           )}
 
-          <div className={`${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_CARD} p-5`}>
-            <div className="mb-3">
-              <h4 className="text-sm font-semibold text-gray-900">Current access</h4>
-              <p className="mt-1 text-xs text-gray-500">
-                Review the entitlement and subscription status currently applied to this account.
-              </p>
+          {/* Current subscription summary */}
+          <div className={`${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_CARD} p-6`}>
+            <div className="mb-4">
+              <h4 className="text-sm font-bold text-slate-900">Current Subscription</h4>
+              <p className="mt-1 text-xs text-slate-500">Review the entitlement and subscription status applied to your account.</p>
             </div>
-
-            <SubscriptionSummary
-              license={license}
-              gating={gating}
-              prices={prices}
-            />
+            <SubscriptionSummary license={license} gating={gating} prices={prices} />
           </div>
 
-          <div className={`${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_CARD} p-5`}>
-            <div className="flex items-center justify-between gap-3">
+          {/* ===== Pricing Cards — mirrors website structure ===== */}
+          <div className={`${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_CARD} p-6`}>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-6">
               <div>
-                <h4 className="text-sm font-semibold text-gray-900">Choose a plan</h4>
-                <p className="mt-1 text-xs text-gray-500 max-w-md">
-                  Upgrade anytime. Yearly plans offer better long-term value than monthly billing.
-                </p>
+                <h4 className="text-sm font-bold text-slate-900">Choose a Plan</h4>
+                <p className="mt-1 text-xs text-slate-500">Start free, then choose monthly flexibility or yearly savings.</p>
               </div>
-
-              <div className="rounded-full bg-indigo-50 px-3 py-1 text-[11px] font-medium text-indigo-700">
-                Recommended: Yearly
-              </div>
+              <span className="inline-flex rounded-full bg-indigo-50 px-3 py-1 text-[11px] font-semibold text-indigo-700">Recommended: Yearly</span>
             </div>
 
-            <div className="mt-5">
-              <PlanCards
-                plan={subscription?.plan || license?.plan || gating?.plan || "free"}
-                trialEligible={trialEligible}
-                monthlyPriceText={prices?.monthly?.display ?? "$30 / mo"}
-                yearlyPriceText={prices?.yearly?.display ?? "$204 / yr"}
-                trialPriceText="$0"
-                monthlyPriceAmount={prices?.monthly?.amount ?? 30}
-                yearlyPriceAmount={prices?.yearly?.amount ?? 204}
-                currency={prices?.currency ?? "USD"}
-                onStartTrial={async () => {
-                  try {
-                    await licensingApi.redeemTrial();
-                    await refreshLicense();
-                    showToast?.("Trial started");
-                  } catch (e) {
-                    console.error("trial failed:", e);
-                    showToast?.(`Trial failed: ${e?.message ?? "unknown error"}`);
-                  }
-                }}
-                onUpgradeMonthly={async () => {
-                  await openCheckout("monthly");
-                }}
-                onUpgradeYearly={async () => {
-                  await openCheckout("yearly");
-                }}
-                onManageBilling={openCustomerPortal}
-              />
-            </div>
-          </div>
-
-          <div className={`${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_CARD} p-5`}>
-            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-              <div>
-                <h4 className="text-sm font-semibold text-gray-900">Gallery add-on</h4>
-                <p className="mt-1 text-xs text-gray-500 max-w-xl">
-                  Enables Supabase gallery upload, guest QR access, downloadable images, and hosted final-motion sharing.
-                </p>
-                <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                  <span className={`rounded-full px-3 py-1 font-medium ${galleryAddonEnabled ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-600"}`}>
-                    {galleryAddonEnabled ? "Gallery enabled" : "Gallery disabled"}
-                  </span>
-                  <span className="rounded-full bg-indigo-50 px-3 py-1 font-medium text-indigo-700">
-                    {prices?.galleryAddon?.display ?? "PHP 499 / mo"}
-                  </span>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5 items-stretch">
+              {/* Trial Card */}
+              <div className="rounded-3xl border border-slate-200 bg-white p-6 flex flex-col justify-between hover:shadow-md transition-shadow">
+                <div className="space-y-4">
+                  <span className="inline-flex rounded-full bg-indigo-50 px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest text-indigo-600">Trial</span>
+                  <h3 className="text-xl font-bold text-slate-900">14-Day Free Trial</h3>
+                  <div className="text-4xl font-black text-slate-900">₱0</div>
+                  <p className="text-sm text-slate-500">Test every operator workspace feature before committing.</p>
+                  <div className="space-y-2 pt-3">
+                    {["Custom template mapping", "Local printer integration", "Event dashboard configuration", "Full booth flow experience"].map((feat) => (
+                      <div key={feat} className="flex items-center gap-2 text-sm text-slate-700">
+                        <svg className="h-4 w-4 flex-shrink-0 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                        <span>{feat}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
+                <button
+                  type="button"
+                  disabled={!trialEligible}
+                  onClick={async () => {
+                    try {
+                      await licensingApi.redeemTrial();
+                      await refreshLicense();
+                      showToast?.("Trial started");
+                    } catch (e) {
+                      console.error("trial failed:", e);
+                      showToast?.(`Trial failed: ${e?.message ?? "unknown error"}`);
+                    }
+                  }}
+                  className={`mt-6 w-full rounded-full py-3 text-sm font-bold transition-all duration-200 ${trialEligible
+                    ? "border border-slate-200 text-slate-800 hover:bg-slate-50 hover:-translate-y-0.5 hover:shadow-md"
+                    : "border border-slate-100 text-slate-400 cursor-not-allowed bg-slate-50"
+                    }`}
+                >
+                  {trialEligible ? "Start Free Trial" : "Trial unavailable"}
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={galleryAddonEnabled ? openCustomerPortal : openGalleryAddonCheckout}
-                className="rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800"
-              >
-                {galleryAddonEnabled ? "Manage add-on" : "Add gallery"}
-              </button>
+
+              {/* Pro Card — with billing cycle toggle */}
+              <div className="relative rounded-3xl border-2 border-indigo-500 bg-slate-900 p-6 flex flex-col justify-between text-white shadow-[0_24px_64px_rgba(79,70,229,0.2)] md:scale-[1.02]">
+                <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-indigo-600 px-4 py-1 text-[11px] font-bold uppercase tracking-widest text-white shadow-md">
+                  Best Value
+                </span>
+                <div className="space-y-4 mt-2">
+                  <h3 className="text-xl font-bold text-white">Studio Photuna Pro</h3>
+
+                  {/* Billing toggle — matching website structure */}
+                  <div className="grid grid-cols-2 gap-1.5 rounded-full border border-white/20 bg-white/10 p-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setBillingCycle("monthly")}
+                      className={`rounded-full py-2 text-xs font-bold transition-all duration-200 ${billingCycle === "monthly" ? "bg-white text-slate-900 shadow-sm" : "text-white/70 hover:text-white"}`}
+                    >
+                      Monthly
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setBillingCycle("yearly")}
+                      className={`rounded-full py-2 text-xs font-bold transition-all duration-200 ${billingCycle === "yearly" ? "bg-white text-slate-900 shadow-sm" : "text-white/70 hover:text-white"}`}
+                    >
+                      Yearly
+                    </button>
+                  </div>
+
+                  <div>
+                    <div className="text-4xl font-black text-white">
+                      {billingCycle === "yearly"
+                        ? (prices?.yearly?.display ?? "₱950/mo")
+                        : (prices?.monthly?.display ?? "₱1,800/mo")}
+                    </div>
+                    <p className="mt-1 text-sm text-white/70">
+                      {billingCycle === "yearly"
+                        ? `${prices?.yearly?.annual ?? "₱11,400"} billed annually. Save up to 47% vs monthly.`
+                        : "Billed monthly. Switch to yearly for better value."}
+                    </p>
+                  </div>
+
+                  <div className="space-y-2 pt-2">
+                    {[
+                      { icon: "star", text: billingCycle === "yearly" ? "Best value choice" : "Full month flexibility" },
+                      { icon: "check", text: "Continuous software feature releases" },
+                      { icon: "check", text: "Priority developer support queue" },
+                      { icon: "check", text: "Unlimited events and sessions" },
+                    ].map(({ icon, text }) => (
+                      <div key={text} className="flex items-center gap-2 text-sm font-medium text-white/90">
+                        {icon === "star" ? (
+                          <svg className="h-4 w-4 flex-shrink-0 text-yellow-400" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87L18.18 22 12 18.56 5.82 22 7 14.14l-5-4.87 6.91-1.01L12 2z" /></svg>
+                        ) : (
+                          <svg className="h-4 w-4 flex-shrink-0 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                        )}
+                        <span>{text}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setGcashBilling(billingCycle);
+                    openGcashPayment("pro");
+                  }}
+                  className="mt-6 w-full rounded-full bg-indigo-600 py-3 text-sm font-bold text-white shadow-md transition-all duration-200 hover:bg-indigo-500 hover:-translate-y-0.5 hover:shadow-lg active:scale-[0.98]"
+                >
+                  {(plan === "monthly" || plan === "yearly") ? "Manage Plan" : `Pay via GCash — ${billingCycle === "yearly" ? "Yearly" : "Monthly"}`}
+                </button>
+              </div>
             </div>
+
+            {/* PlanCards kept for backward compatibility if needed */}
           </div>
 
+          {/* Trust signals */}
           <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-            <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-              <div className="text-sm font-medium text-gray-900">Secure billing</div>
-              <p className="mt-1 text-xs leading-relaxed text-gray-600">
-                Payments are processed securely and plan updates are handled through your billing portal.
-              </p>
-            </div>
-
-            <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-              <div className="text-sm font-medium text-gray-900">Flexible changes</div>
-              <p className="mt-1 text-xs leading-relaxed text-gray-600">
-                Upgrade, downgrade, or cancel based on booth usage and event demand.
-              </p>
-            </div>
-
-            <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-              <div className="text-sm font-medium text-gray-900">Trial friendly</div>
-              <p className="mt-1 text-xs leading-relaxed text-gray-600">
-                Start with a trial when eligible, then switch to a paid plan when ready.
-              </p>
-            </div>
+            {[
+              { title: "Secure billing", desc: "Payments processed securely via GCash. We verify and activate your plan manually.", icon: "M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" },
+              { title: "Flexible changes", desc: "Upgrade, downgrade, or cancel anytime based on booth usage and event demand.", icon: "M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" },
+              { title: "Trial friendly", desc: "Start with a 14-day trial when eligible. Switch to a paid plan whenever you're ready.", icon: "M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" },
+            ].map(({ title, desc, icon }) => (
+              <div key={title} className={`${CARD_RADIUS} border border-slate-100 bg-slate-50/60 p-5`}>
+                <div className="flex items-center gap-2.5 mb-2">
+                  <svg className="h-4 w-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={icon} /></svg>
+                  <div className="text-sm font-semibold text-slate-800">{title}</div>
+                </div>
+                <p className="text-xs leading-relaxed text-slate-500">{desc}</p>
+              </div>
+            ))}
           </div>
         </>
       )}
 
-      {/* PREFERENCES */}
+      {/* ===== PREFERENCES TAB ===== */}
       {accountTab === "preferences" && (
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-          <div className={`${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_CARD} p-5`}>
-            <h4 className="text-sm font-semibold text-gray-900">Preferences</h4>
-            <p className="mt-1 text-xs text-gray-500">
-              Control how the dashboard behaves for this account.
-            </p>
-
-            <div className="mt-4 space-y-4">
-              <label className="flex items-center justify-between gap-4 text-sm text-gray-700">
-                <span>Email notifications</span>
-                <input
-                  type="checkbox"
-                  checked={accountPreferences.emailNotifications}
-                  onChange={(e) => updateAccountPreference("emailNotifications", e.target.checked)}
-                />
-              </label>
-
-              <label className="flex items-center justify-between gap-4 text-sm text-gray-700">
-                <span>Desktop notifications</span>
-                <input
-                  type="checkbox"
-                  checked={accountPreferences.desktopNotifications}
-                  onChange={(e) => updateAccountPreference("desktopNotifications", e.target.checked)}
-                />
-              </label>
-
-              <label className="flex items-center justify-between gap-4 text-sm text-gray-700">
-                <span>Enable sounds</span>
-                <input
-                  type="checkbox"
-                  checked={accountPreferences.soundEnabled}
-                  onChange={(e) => updateAccountPreference("soundEnabled", e.target.checked)}
-                />
-              </label>
-
-              <label className="flex items-center justify-between gap-4 text-sm text-gray-700">
-                <span>Launch app on startup</span>
-                <input
-                  type="checkbox"
-                  checked={accountPreferences.autoLaunch}
-                  onChange={(e) => updateAccountPreference("autoLaunch", e.target.checked)}
-                />
-              </label>
-
-              <label className="block text-xs text-gray-700">
-                Theme
-                <select
-                  value={accountPreferences.theme}
-                  onChange={(e) => updateAccountPreference("theme", e.target.value)}
-                  className={`${SURFACE_BG} ${SURFACE_BORDER} ${INPUT_RADIUS} mt-1 w-full px-3 py-2 text-sm outline-none`}
-                >
-                  <option value="system">System</option>
-                  <option value="light">Light</option>
-                  <option value="dark">Dark</option>
-                </select>
-              </label>
-
-              <label className="block text-xs text-gray-700">
-                Language
-                <select
-                  value={accountPreferences.language}
-                  onChange={(e) => updateAccountPreference("language", e.target.value)}
-                  className={`${SURFACE_BG} ${SURFACE_BORDER} ${INPUT_RADIUS} mt-1 w-full px-3 py-2 text-sm outline-none`}
-                >
-                  <option value="en">English</option>
-                  <option value="fil">Filipino</option>
-                </select>
-              </label>
+          <div className={`${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_CARD} p-6`}>
+            <div className="mb-5">
+              <h4 className="text-sm font-bold text-slate-900">Notifications & Behavior</h4>
+              <p className="mt-1 text-xs text-slate-500">Control how the dashboard behaves for this account.</p>
             </div>
 
-            <div className="mt-5 flex justify-end">
+            <div className="space-y-1">
+              {[
+                { key: "emailNotifications", label: "Email notifications", desc: "Receive email updates about events and sessions" },
+                { key: "desktopNotifications", label: "Desktop notifications", desc: "Show system notifications for important alerts" },
+                { key: "soundEnabled", label: "Enable sounds", desc: "Play audio feedback for booth actions and alerts" },
+                { key: "autoLaunch", label: "Launch on startup", desc: "Automatically start the app when your computer boots" },
+              ].map(({ key, label, desc }) => (
+                <label key={key} className="flex items-center justify-between gap-4 rounded-xl p-3 hover:bg-slate-50 transition cursor-pointer">
+                  <div>
+                    <div className="text-sm font-medium text-slate-800">{label}</div>
+                    <div className="text-xs text-slate-400 mt-0.5">{desc}</div>
+                  </div>
+                  <div className="relative flex-shrink-0">
+                    <input
+                      type="checkbox"
+                      checked={accountPreferences[key]}
+                      onChange={(e) => updateAccountPreference(key, e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="h-6 w-11 rounded-full bg-slate-200 peer-checked:bg-indigo-600 transition-colors" />
+                    <div className="absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform peer-checked:translate-x-5" />
+                  </div>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-6">
+            <div className={`${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_CARD} p-6`}>
+              <h4 className="text-sm font-bold text-slate-900 mb-4">Appearance & Language</h4>
+              <div className="space-y-5">
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Theme</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { value: "system", label: "System" },
+                      { value: "light", label: "Light" },
+                      { value: "dark", label: "Dark" },
+                    ].map(({ value, label }) => (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() => updateAccountPreference("theme", value)}
+                        className={`rounded-xl border py-2.5 text-sm font-semibold transition-all ${accountPreferences.theme === value
+                          ? "border-indigo-300 bg-indigo-50 text-indigo-700 shadow-sm"
+                          : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50"
+                          }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Language</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      { value: "en", label: "English" },
+                      { value: "fil", label: "Filipino" },
+                    ].map(({ value, label }) => (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() => updateAccountPreference("language", value)}
+                        className={`rounded-xl border py-2.5 text-sm font-semibold transition-all ${accountPreferences.language === value
+                          ? "border-indigo-300 bg-indigo-50 text-indigo-700 shadow-sm"
+                          : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50"
+                          }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end">
               <button
                 type="button"
                 onClick={saveAccountPreferences}
                 disabled={prefsSaving}
-                className="inline-flex items-center justify-center rounded-full bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md shadow-indigo-200 transition hover:-translate-y-0.5 hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex items-center justify-center rounded-full bg-indigo-600 px-6 py-2.5 text-sm font-semibold text-white shadow-md shadow-indigo-200 transition hover:-translate-y-0.5 hover:bg-indigo-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {prefsSaving ? "Saving..." : "Save preferences"}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== GALLERY TAB ===== */}
+      {accountTab === "gallery" && (
+        <div className="space-y-6">
+          {/* Gallery header */}
+          <div className="text-center max-w-2xl mx-auto">
+            <h3 className="text-lg font-bold text-slate-900">Gallery & Video Archive Plans</h3>
+            <p className="mt-1 text-sm text-slate-500">Host event galleries, share via QR, and archive booth videos with a plan that fits your scale.</p>
+          </div>
+
+          {/* 3-tier pricing grid */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5 items-stretch">
+
+            {/* FREE tier */}
+            <div className={`rounded-3xl border ${galleryPlan === "free" ? "border-indigo-300 ring-2 ring-indigo-100" : "border-slate-200"} bg-white p-6 flex flex-col justify-between hover:shadow-md transition-all`}>
+              <div className="space-y-4">
+                <span className="inline-flex rounded-full bg-slate-100 px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest text-slate-600">Free</span>
+                <div>
+                  <div className="text-4xl font-black text-slate-900">₱0</div>
+                  <p className="text-xs text-slate-400 mt-1">No credit card required</p>
+                </div>
+
+                <div className="pt-3 space-y-3">
+                  <div className="flex items-start gap-2.5">
+                    <svg className="h-4 w-4 flex-shrink-0 text-indigo-500 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                    <div>
+                      <div className="text-sm font-semibold text-slate-800">Video Archive</div>
+                      <div className="text-xs text-slate-500">Up to 3 months</div>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2.5">
+                    <svg className="h-4 w-4 flex-shrink-0 text-indigo-500 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                    <div>
+                      <div className="text-sm font-semibold text-slate-800">Unlimited Events</div>
+                      <div className="text-xs text-slate-500">Capture an unlimited number of events</div>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2.5">
+                    <svg className="h-4 w-4 flex-shrink-0 text-indigo-500 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                    <div>
+                      <div className="text-sm font-semibold text-slate-800">Custom Event Colors</div>
+                      <div className="text-xs text-slate-500">Select background and text color</div>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2.5">
+                    <svg className="h-4 w-4 flex-shrink-0 text-indigo-500 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                    <div>
+                      <div className="text-sm font-semibold text-slate-800">Event Link</div>
+                      <div className="text-xs text-slate-500">Public link with all photos and videos</div>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2.5">
+                    <svg className="h-4 w-4 flex-shrink-0 text-indigo-500 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                    <div>
+                      <div className="text-sm font-semibold text-slate-800">Embed Event Album</div>
+                      <div className="text-xs text-slate-500">Embed event page on your site</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setGalleryPlan("free")}
+                className={`mt-6 w-full rounded-full py-3 text-sm font-bold transition-all ${galleryPlan === "free"
+                  ? "bg-indigo-600 text-white shadow-md"
+                  : "border border-slate-200 text-slate-700 hover:bg-slate-50 hover:-translate-y-0.5"
+                  }`}
+              >
+                {galleryPlan === "free" ? "Current Plan" : "Select Free"}
+              </button>
+            </div>
+
+            {/* PLUS tier — ₱19.99/mo */}
+            <div className={`relative rounded-3xl border-2 ${galleryPlan === "plus" ? "border-indigo-500 ring-2 ring-indigo-100" : "border-indigo-400"} bg-slate-900 p-6 flex flex-col justify-between text-white shadow-[0_24px_64px_rgba(79,70,229,0.18)] md:scale-[1.03]`}>
+              <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-indigo-600 px-4 py-1 text-[11px] font-bold uppercase tracking-widest text-white shadow-md">
+                Popular
+              </span>
+              <div className="space-y-4 mt-2">
+                <span className="inline-flex rounded-full bg-white/15 border border-white/20 px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest text-white">Plus</span>
+                <div>
+                  <div className="text-4xl font-black text-white">₱19.99<small className="text-sm font-semibold text-white/70">/mo</small></div>
+                  <p className="text-xs text-white/60 mt-1">Billed monthly</p>
+                </div>
+
+                <div className="pt-3 space-y-3">
+                  <div className="flex items-start gap-2.5">
+                    <svg className="h-4 w-4 flex-shrink-0 text-yellow-400 mt-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87L18.18 22 12 18.56 5.82 22 7 14.14l-5-4.87 6.91-1.01L12 2z" /></svg>
+                    <div>
+                      <div className="text-sm font-semibold text-white">Video Archive</div>
+                      <div className="text-xs text-white/60">Up to 6 months</div>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2.5">
+                    <svg className="h-4 w-4 flex-shrink-0 text-indigo-400 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                    <div>
+                      <div className="text-sm font-semibold text-white">Unlimited Events</div>
+                      <div className="text-xs text-white/60">No limits on event capture</div>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2.5">
+                    <svg className="h-4 w-4 flex-shrink-0 text-indigo-400 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                    <div>
+                      <div className="text-sm font-semibold text-white">Custom Event Colors</div>
+                      <div className="text-xs text-white/60">Background and text customization</div>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2.5">
+                    <svg className="h-4 w-4 flex-shrink-0 text-indigo-400 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                    <div>
+                      <div className="text-sm font-semibold text-white">Event Link & Embed</div>
+                      <div className="text-xs text-white/60">Public link + embeddable album</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => openGcashPayment("gallery", "plus")}
+                className={`mt-6 w-full rounded-full py-3 text-sm font-bold shadow-md transition-all ${galleryPlan === "plus"
+                  ? "bg-emerald-500 text-white"
+                  : "bg-indigo-600 text-white hover:bg-indigo-500 hover:-translate-y-0.5 hover:shadow-lg"
+                  } active:scale-[0.98]`}
+              >
+                {galleryPlan === "plus" ? "Current Plan" : "Pay via GCash — Plus"}
+              </button>
+            </div>
+
+            {/* BUSINESS tier — ₱39.99/mo */}
+            <div className={`rounded-3xl border ${galleryPlan === "business" ? "border-indigo-300 ring-2 ring-indigo-100" : "border-slate-200"} bg-white p-6 flex flex-col justify-between hover:shadow-md transition-all`}>
+              <div className="space-y-4">
+                <span className="inline-flex rounded-full bg-violet-50 px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest text-violet-600">Business</span>
+                <div>
+                  <div className="text-4xl font-black text-slate-900">₱39.99<small className="text-sm font-semibold text-slate-400">/mo</small></div>
+                  <p className="text-xs text-slate-400 mt-1">Best for high-volume operators</p>
+                </div>
+
+                <div className="pt-3 space-y-3">
+                  <div className="flex items-start gap-2.5">
+                    <svg className="h-4 w-4 flex-shrink-0 text-violet-500 mt-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87L18.18 22 12 18.56 5.82 22 7 14.14l-5-4.87 6.91-1.01L12 2z" /></svg>
+                    <div>
+                      <div className="text-sm font-semibold text-slate-800">Video Archive</div>
+                      <div className="text-xs text-slate-500">Up to 12 months</div>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2.5">
+                    <svg className="h-4 w-4 flex-shrink-0 text-indigo-500 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                    <div>
+                      <div className="text-sm font-semibold text-slate-800">Unlimited Events</div>
+                      <div className="text-xs text-slate-500">No limits on event capture</div>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2.5">
+                    <svg className="h-4 w-4 flex-shrink-0 text-indigo-500 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                    <div>
+                      <div className="text-sm font-semibold text-slate-800">Custom Event Colors</div>
+                      <div className="text-xs text-slate-500">Background and text customization</div>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2.5">
+                    <svg className="h-4 w-4 flex-shrink-0 text-indigo-500 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                    <div>
+                      <div className="text-sm font-semibold text-slate-800">Event Link & Embed</div>
+                      <div className="text-xs text-slate-500">Public link + embeddable album</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => openGcashPayment("gallery", "business")}
+                className={`mt-6 w-full rounded-full py-3 text-sm font-bold transition-all ${galleryPlan === "business"
+                  ? "bg-emerald-500 text-white shadow-md"
+                  : "border border-slate-200 text-slate-700 hover:bg-slate-50 hover:-translate-y-0.5 hover:shadow-md"
+                  } active:scale-[0.98]`}
+              >
+                {galleryPlan === "business" ? "Current Plan" : "Pay via GCash — Business"}
+              </button>
+            </div>
+          </div>
+
+          {/* Feature comparison */}
+          <div className={`${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_SOFT} overflow-hidden`}>
+            <div className="px-5 py-4 border-b border-slate-100">
+              <div className="text-sm font-bold text-slate-800">Plan Comparison</div>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-slate-50/80">
+                    <th className="text-left px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-400">Feature</th>
+                    <th className="text-center px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-400">Free</th>
+                    <th className="text-center px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-indigo-600 bg-indigo-50/50">Plus</th>
+                    <th className="text-center px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-400">Business</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {[
+                    { feature: "Video Archive", free: "3 months", plus: "6 months", business: "12 months" },
+                    { feature: "Unlimited Events", free: true, plus: true, business: true },
+                    { feature: "Custom Colors", free: true, plus: true, business: true },
+                    { feature: "Event Link", free: true, plus: true, business: true },
+                    { feature: "Embed Album", free: true, plus: true, business: true },
+                    { feature: "Price", free: "₱0", plus: "₱19.99/mo", business: "₱39.99/mo" },
+                  ].map(({ feature, free, plus, business }) => (
+                    <tr key={feature} className="hover:bg-slate-50/60">
+                      <td className="px-5 py-3 font-medium text-slate-700">{feature}</td>
+                      {[free, plus, business].map((val, i) => (
+                        <td key={i} className={`text-center px-4 py-3 ${i === 1 ? "bg-indigo-50/30" : ""}`}>
+                          {val === true ? (
+                            <svg className="h-4 w-4 text-emerald-500 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                          ) : val === false ? (
+                            <svg className="h-4 w-4 text-slate-300 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                          ) : (
+                            <span className="text-sm font-semibold text-slate-700">{val}</span>
+                          )}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== GCASH PAYMENT MODAL ===== */}
+      {showGcashModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4" onClick={() => setShowGcashModal(false)}>
+          <div className="w-full max-w-2xl rounded-3xl border border-slate-200 bg-white shadow-[0_32px_80px_rgba(0,0,0,0.15)] overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            {/* Modal header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+              <div>
+                <h3 className="text-lg font-bold text-slate-900">Pay via GCash</h3>
+                <p className="text-xs text-slate-500 mt-0.5">We'll verify and activate your plan manually — usually within a day.</p>
+              </div>
+              <button type="button" onClick={() => setShowGcashModal(false)} className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 text-slate-400 hover:bg-slate-50 hover:text-slate-600 transition">
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+
+            {/* Modal body — 2-column */}
+            <div className="grid grid-cols-1 sm:grid-cols-2">
+              {/* Left: QR + plan info */}
+              <div className="flex flex-col items-center justify-center gap-4 p-6 bg-slate-50 border-r border-slate-100">
+                <div className="rounded-2xl border border-slate-200 p-3 bg-white shadow-sm">
+                  <div className="w-44 h-44 bg-slate-100 rounded-xl flex items-center justify-center text-xs text-slate-400">
+                    <img
+                      src="gcash-qr.png"
+                      alt="GCash QR"
+                      className="w-full h-full object-contain"
+                      onError={(e) => { e.target.onerror = null; e.target.src = "https://placehold.co/300x300/f4f5f8/94a3b8?text=GCash+QR"; }}
+                    />
+                  </div>
+                </div>
+
+                {/* Billing toggle — only for Pro plans */}
+                {gcashPlanType === "pro" && (
+                  <div className="grid grid-cols-2 gap-1.5 rounded-full border border-slate-200 bg-white p-1">
+                    {["monthly", "yearly"].map((cycle) => (
+                      <button
+                        key={cycle}
+                        type="button"
+                        onClick={() => setGcashBilling(cycle)}
+                        className={`rounded-full px-4 py-1.5 text-xs font-bold transition-all ${gcashBilling === cycle ? "bg-slate-900 text-white shadow-sm" : "text-slate-500 hover:text-slate-800"}`}
+                      >
+                        {cycle === "monthly" ? "Monthly" : "Yearly"}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                <div className="text-center space-y-1">
+                  <div className="text-2xl font-black text-slate-900">
+                    ₱{getGcashAmount().toLocaleString("en-PH", { minimumFractionDigits: 2 })}
+                  </div>
+                  <div className="text-[11px] text-slate-500 leading-snug">
+                    {gcashPlanType === "pro"
+                      ? gcashBilling === "yearly"
+                        ? `₱${Math.round(getGcashAmount() / 12).toLocaleString("en-PH")}/mo equivalent`
+                        : "Billed monthly"
+                      : `Gallery ${gcashGalleryTier.charAt(0).toUpperCase() + gcashGalleryTier.slice(1)} — billed monthly`
+                    }
+                  </div>
+                  <p className="text-[11px] text-slate-400">Scan QR in GCash app, send the exact amount, then fill the form.</p>
+                </div>
+              </div>
+
+              {/* Right: proof form */}
+              <form onSubmit={handleGcashProofSubmit} className="flex flex-col gap-4 p-6">
+                <div className="text-[11px] font-bold uppercase tracking-widest text-slate-500">Payment Details</div>
+
+                <div className="space-y-1.5">
+                  <input
+                    type="text"
+                    value={gcashSenderName}
+                    onChange={(e) => setGcashSenderName(e.target.value)}
+                    placeholder="GCash account name"
+                    className={`${SURFACE_BG} ${SURFACE_BORDER} ${INPUT_RADIUS} w-full px-4 py-2.5 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 transition`}
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <input
+                    type="text"
+                    value={gcashRefNumber}
+                    onChange={(e) => setGcashRefNumber(e.target.value)}
+                    placeholder="Reference number (13 characters)"
+                    required
+                    minLength={6}
+                    className={`${SURFACE_BG} ${SURFACE_BORDER} ${INPUT_RADIUS} w-full px-4 py-2.5 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 transition`}
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                    Receipt screenshot <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    onChange={(e) => setGcashScreenshot(e.target.files?.[0] || null)}
+                    required
+                    className={`${SURFACE_BG} ${SURFACE_BORDER} ${INPUT_RADIUS} w-full px-4 py-2.5 text-sm file:mr-3 file:rounded-full file:border-0 file:bg-indigo-50 file:px-3 file:py-1 file:text-xs file:font-semibold file:text-indigo-600 hover:file:bg-indigo-100`}
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={gcashSubmitting}
+                  className="w-full rounded-full bg-indigo-600 py-3 text-sm font-bold text-white shadow-md transition-all hover:bg-indigo-500 hover:-translate-y-0.5 active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {gcashSubmitting ? "Submitting..." : "Submit Payment Proof"}
+                </button>
+
+                {gcashMessage && (
+                  <p className="text-center text-xs font-semibold text-red-600">{gcashMessage}</p>
+                )}
+              </form>
             </div>
           </div>
         </div>
@@ -3397,6 +3891,88 @@ This cannot be undone.`
             </div>
           </div>
         ))}
+      </div>
+
+      {/* Charts row — Photo Activity & Top Templates */}
+      <div className="grid grid-cols-1 xl:grid-cols-[2fr,1fr] gap-5">
+        {/* Photo Activity Line Chart */}
+        <div className={`${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_SOFT} p-5`}>
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <div className={EYEBROW}>Photo activity</div>
+              <p className="mt-0.5 text-xs text-slate-400">Sessions captured over the last 7 days</p>
+            </div>
+          </div>
+          <div className="h-56">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={(() => {
+                const days = [];
+                for (let i = 6; i >= 0; i--) {
+                  const d = new Date();
+                  d.setDate(d.getDate() - i);
+                  const label = d.toLocaleDateString("en", { month: "short", day: "numeric" });
+                  const count = events.reduce((sum, ev) =>
+                    sum + (ev.sessions ?? []).filter(s => {
+                      try {
+                        const sd = new Date(s.createdAt);
+                        return sd.toDateString() === d.toDateString();
+                      } catch { return false; }
+                    }).length, 0);
+                  days.push({ date: label, sessions: count });
+                }
+                return days;
+              })()}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#94a3b8" }} />
+                <YAxis tick={{ fontSize: 11, fill: "#94a3b8" }} allowDecimals={false} />
+                <Tooltip contentStyle={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: "12px", boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }} />
+                <Line type="monotone" dataKey="sessions" stroke="#4f46e5" strokeWidth={2.5} dot={{ fill: "#4f46e5", r: 3 }} activeDot={{ r: 5 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* Top Templates Donut Chart */}
+        <div className={`${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_SOFT} p-5`}>
+          <div className={`${EYEBROW} mb-4`}>Top templates</div>
+          {templates.length > 0 ? (
+            <>
+              <div className="h-44">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={templates.slice(0, 5).map((t, i) => ({
+                        name: t.name || `Template ${i + 1}`,
+                        value: t.usageCount || (t.sessions?.length ?? Math.max(1, 5 - i)),
+                      }))}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={45}
+                      outerRadius={68}
+                      paddingAngle={3}
+                      dataKey="value"
+                    >
+                      {templates.slice(0, 5).map((_, i) => (
+                        <Cell key={i} fill={["#4f46e5", "#06b6d4", "#8b5cf6", "#f59e0b", "#10b981"][i % 5]} />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="mt-2 space-y-1.5">
+                {templates.slice(0, 5).map((t, i) => (
+                  <div key={t.id || i} className="flex items-center gap-2 text-xs">
+                    <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: ["#4f46e5", "#06b6d4", "#8b5cf6", "#f59e0b", "#10b981"][i % 5] }} />
+                    <span className="text-slate-500 truncate flex-1">{t.name || `Template ${i + 1}`}</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : (
+            <div className="h-44 flex items-center justify-center text-sm text-slate-400">No templates yet</div>
+          )}
+        </div>
       </div>
 
       {/* Main grid */}
@@ -4131,6 +4707,154 @@ This cannot be undone.`
   const evTplUsage = currentEvent?.analytics?.templateUsage ?? {};
   const evTplEntries = Object.entries(evTplUsage).sort((a, b) => b[1] - a[1]).slice(0, 6);
   const evMaxTpl = evTplEntries.length ? evTplEntries[0][1] : 1;
+
+  // ---- Enhanced Report Analytics (for the Reports tab) ----
+
+  // Daily sessions trend — last 30 days (report-scoped)
+  const reportDailyTrend = useMemo(() => {
+    return Array.from({ length: 30 }, (_, i) => {
+      const day = new Date();
+      day.setDate(day.getDate() - (29 - i));
+      day.setHours(0, 0, 0, 0);
+      const next = new Date(day);
+      next.setDate(next.getDate() + 1);
+      const sessions = reportSessions.filter(s => {
+        try { const sd = new Date(s.createdAt); return sd >= day && sd < next; }
+        catch { return false; }
+      }).length;
+      const revenue = reportEvents.reduce((sum, ev) => {
+        const p = getEvPrice(ev);
+        return sum + (ev.sessions ?? []).filter(s => {
+          try { const sd = new Date(s.createdAt); return sd >= day && sd < next; }
+          catch { return false; }
+        }).length * p;
+      }, 0);
+      return {
+        date: day.toLocaleDateString("en", { month: "short", day: "numeric" }),
+        sessions,
+        revenue,
+      };
+    });
+  }, [reportSessions, reportEvents]);
+
+  // Weekly sessions trend — last 12 weeks (report-scoped)
+  const reportWeeklyTrend = useMemo(() => {
+    return Array.from({ length: 12 }, (_, i) => {
+      const weekEnd = new Date();
+      weekEnd.setDate(weekEnd.getDate() - (11 - i) * 7);
+      weekEnd.setHours(23, 59, 59, 999);
+      const weekStart = new Date(weekEnd);
+      weekStart.setDate(weekStart.getDate() - 6);
+      weekStart.setHours(0, 0, 0, 0);
+      const count = reportSessions.filter(s => {
+        try { const sd = new Date(s.createdAt); return sd >= weekStart && sd <= weekEnd; }
+        catch { return false; }
+      }).length;
+      return {
+        week: `W${weekStart.toLocaleDateString("en", { month: "numeric", day: "numeric" })}`,
+        sessions: count,
+      };
+    });
+  }, [reportSessions]);
+
+  // Per-event breakdown for the report table
+  const reportEventBreakdown = useMemo(() => {
+    return reportEvents.map(ev => {
+      const s = ev.sessions ?? [];
+      const p = getEvPrice(ev);
+      const completed = s.filter(sess => sess.completed !== false).length;
+      const photos = s.reduce((sum, sess) => sum + (sess.photosCount ?? 0), 0);
+      return {
+        id: ev.id,
+        name: ev.name || "Untitled",
+        date: ev.date || ev.created || "—",
+        sessions: s.length,
+        completed,
+        photos,
+        revenue: s.length * p,
+        rate: s.length > 0 ? Math.round((completed / s.length) * 100) : 0,
+        avgPhotos: s.length > 0 ? (photos / s.length).toFixed(1) : "0.0",
+      };
+    }).sort((a, b) => b.sessions - a.sessions);
+  }, [reportEvents]);
+
+  // Revenue by day-of-week (report-scoped)
+  const reportDayOfWeekData = useMemo(() => {
+    const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    const counts = Array(7).fill(0);
+    reportSessions.forEach(s => {
+      try { counts[new Date(s.createdAt).getDay()]++; } catch {}
+    });
+    return days.map((d, i) => ({ day: d, sessions: counts[i] }));
+  }, [reportSessions]);
+
+  // Report time-range computed values
+  const reportSessionsToday = reportSessions.filter(s => {
+    try { return isToday(s.createdAt); } catch { return false; }
+  }).length;
+
+  const reportSessionsThisWeek = reportSessions.filter(s => {
+    try { return isThisWeek(s.createdAt); } catch { return false; }
+  }).length;
+
+  const reportSessionsThisMonth = reportSessions.filter(s => {
+    try { return isThisMonth(s.createdAt); } catch { return false; }
+  }).length;
+
+  const reportRevenueToday = reportEvents.reduce((sum, ev) => {
+    const p = getEvPrice(ev);
+    return sum + (ev.sessions ?? []).filter(s => { try { return isToday(s.createdAt); } catch { return false; } }).length * p;
+  }, 0);
+
+  const reportRevenueThisWeek = reportEvents.reduce((sum, ev) => {
+    const p = getEvPrice(ev);
+    return sum + (ev.sessions ?? []).filter(s => { try { return isThisWeek(s.createdAt); } catch { return false; } }).length * p;
+  }, 0);
+
+  const reportRevenueThisMonth = reportEvents.reduce((sum, ev) => {
+    const p = getEvPrice(ev);
+    return sum + (ev.sessions ?? []).filter(s => { try { return isThisMonth(s.createdAt); } catch { return false; } }).length * p;
+  }, 0);
+
+  const reportAvgSessionsPerEvent = reportEvents.length > 0
+    ? Math.round(reportSessions.length / reportEvents.length)
+    : 0;
+
+  const reportAvgPhotosPerSession = reportSessions.length > 0
+    ? (reportPhotos / reportSessions.length).toFixed(1)
+    : "0.0";
+
+  const reportTotalCompleted = reportSessions.filter(s => s.completed !== false).length;
+
+  // Template usage across all report events
+  const reportTemplateUsage = useMemo(() => {
+    const usage = {};
+    reportEvents.forEach(ev => {
+      const tplUse = ev.analytics?.templateUsage ?? {};
+      Object.entries(tplUse).forEach(([name, count]) => {
+        usage[name] = (usage[name] || 0) + count;
+      });
+    });
+    return Object.entries(usage).sort((a, b) => b[1] - a[1]).slice(0, 8);
+  }, [reportEvents]);
+  const reportMaxTplUsage = reportTemplateUsage.length ? reportTemplateUsage[0][1] : 1;
+
+  // Export helpers for Reports
+  const exportReportCSV = () => {
+    const header = "Event,Date,Sessions,Completed,Photos,Revenue,Completion Rate,Avg Photos/Session";
+    const rows = reportEventBreakdown.map(ev =>
+      `"${ev.name}","${ev.date}",${ev.sessions},${ev.completed},${ev.photos},${ev.revenue},${ev.rate}%,${ev.avgPhotos}`
+    );
+    const csv = [header, ...rows].join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `photuna-report-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast("Report exported as CSV");
+  };
 
   // ---------------------------
   // Load persisted state (Electron)
@@ -4960,6 +5684,105 @@ This cannot be undone.`
     return Number.isFinite(n) && n >= 0 ? n : fallback;
   };
 
+  // ---------------------------
+  // GCASH PAYMENT FLOW
+  // ---------------------------
+  const GCASH_PHP_AMOUNTS = { monthly: 1800, yearly: 11400 };
+  const [showGcashModal, setShowGcashModal] = useState(false);
+  const [gcashBilling, setGcashBilling] = useState("yearly");
+  const [gcashSenderName, setGcashSenderName] = useState("");
+  const [gcashRefNumber, setGcashRefNumber] = useState("");
+  const [gcashScreenshot, setGcashScreenshot] = useState(null);
+  const [gcashSubmitting, setGcashSubmitting] = useState(false);
+  const [gcashMessage, setGcashMessage] = useState("");
+  const [gcashPlanType, setGcashPlanType] = useState("pro"); // "pro" | "gallery"
+  const [gcashGalleryTier, setGcashGalleryTier] = useState(""); // "free" | "plus" | "business"
+
+  const GALLERY_PHP_AMOUNTS = { plus: 1150, business: 2300 }; // ₱19.99 → ₱1,150/mo equiv, ₱39.99 → ₱2,300/mo equiv
+
+  const openGcashPayment = (planType = "pro", galleryTier = "") => {
+    setGcashPlanType(planType);
+    setGcashGalleryTier(galleryTier);
+    setGcashSenderName("");
+    setGcashRefNumber("");
+    setGcashScreenshot(null);
+    setGcashMessage("");
+    setShowGcashModal(true);
+  };
+
+  const getGcashAmount = () => {
+    if (gcashPlanType === "gallery") {
+      return GALLERY_PHP_AMOUNTS[gcashGalleryTier] || 0;
+    }
+    return GCASH_PHP_AMOUNTS[gcashBilling] || 0;
+  };
+
+  const handleGcashProofSubmit = async (e) => {
+    e.preventDefault();
+    if (!user?.id) { showToast?.("Please log in first."); return; }
+    if (!gcashScreenshot) { setGcashMessage("Please attach a screenshot of your GCash receipt."); return; }
+    if (!gcashRefNumber.trim()) { setGcashMessage("Please enter a valid reference number."); return; }
+
+    setGcashSubmitting(true);
+    setGcashMessage("");
+
+    try {
+      // Check for existing pending/active proofs
+      const { data: existing } = await supabase
+        .from("payment_proofs")
+        .select("id, status, billing, created_at")
+        .eq("user_id", user.id)
+        .in("status", ["pending", "approved"])
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (existing?.status === "pending") {
+        setGcashMessage("You already have a payment proof under review. Please wait for verification.");
+        setGcashSubmitting(false);
+        return;
+      }
+
+      // Upload screenshot
+      const ext = (gcashScreenshot.name?.split(".").pop() || "jpg").toLowerCase();
+      const path = `${user.id}/${Date.now()}.${ext}`;
+      const { error: uploadError } = await supabase.storage
+        .from("payment-proofs")
+        .upload(path, gcashScreenshot, { contentType: gcashScreenshot.type || "image/jpeg" });
+      if (uploadError) throw uploadError;
+
+      // Insert payment proof
+      const proofData = {
+        user_id: user.id,
+        billing: gcashPlanType === "gallery" ? `gallery_${gcashGalleryTier}` : gcashBilling,
+        amount_php: getGcashAmount(),
+        gcash_reference_number: gcashRefNumber.trim(),
+        gcash_sender_name: gcashSenderName.trim() || null,
+        screenshot_path: path,
+        status: "pending",
+      };
+      const { error: insertError } = await supabase.from("payment_proofs").insert(proofData);
+      if (insertError) throw insertError;
+
+      // Update license state
+      await supabase.from("licenses").upsert(
+        { user_id: user.id, payment_provider: "manual_gcash", state: "pending_verification" },
+        { onConflict: "user_id" }
+      );
+
+      showToast?.("Payment proof submitted! We'll verify and activate your plan shortly.");
+      setShowGcashModal(false);
+      await refreshLicense();
+    } catch (err) {
+      console.error("GCash payment submission error:", err);
+      setGcashMessage(err?.message || "Could not submit proof. Please try again.");
+    } finally {
+      setGcashSubmitting(false);
+    }
+  };
+
+  // Gallery plan state
+  const [galleryPlan, setGalleryPlan] = useState("free"); // "free" | "plus" | "business"
 
   // ---------------------------
   // TEMPLATE EDITOR FUNCTIONS
@@ -6119,7 +6942,7 @@ This cannot be undone.`
               {activeMain === "reports" && (
                 <div className="space-y-5">
 
-                  {/* Header */}
+                  {/* ===== Header — gradient banner ===== */}
                   <div className="relative overflow-hidden rounded-3xl border border-white/20 bg-gradient-to-br from-indigo-500 via-indigo-600 to-violet-700 px-6 py-6 text-white shadow-[0_24px_64px_rgba(79,70,229,0.25)]">
                     <WavePattern />
                     <div className="relative z-10 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -6128,65 +6951,243 @@ This cannot be undone.`
                         <h2 className="mt-3 text-2xl font-bold tracking-tight" style={{ fontFamily: '"Fraunces", ui-serif, Georgia, serif' }}>Reports</h2>
                         <p className="mt-1.5 text-sm text-white/80">Session activity, revenue, and performance metrics.</p>
                       </div>
-                      <select
-                        value={reportEventId}
-                        onChange={(e) => setReportEventId(e.target.value)}
-                        className="rounded-full border border-white/25 bg-white/15 px-4 py-2 text-sm text-white font-medium outline-none hover:bg-white/25 transition"
-                      >
-                        <option value="all" className="text-slate-900">All events</option>
-                        {events.map(ev => (
-                          <option key={ev.id} value={ev.id} className="text-slate-900">{ev.name}</option>
-                        ))}
-                      </select>
+                      <div className="flex items-center gap-3">
+                        <select
+                          value={reportEventId}
+                          onChange={(e) => setReportEventId(e.target.value)}
+                          className="rounded-full border border-white/25 bg-white/15 px-4 py-2 text-sm text-white font-medium outline-none hover:bg-white/25 transition"
+                        >
+                          <option value="all" className="text-slate-900">All events</option>
+                          {events.map(ev => (
+                            <option key={ev.id} value={ev.id} className="text-slate-900">{ev.name}</option>
+                          ))}
+                        </select>
+                        <button onClick={exportReportCSV} className="inline-flex items-center justify-center rounded-full bg-white px-5 py-2 text-sm font-semibold text-indigo-700 shadow-md transition hover:-translate-y-0.5 hover:shadow-lg active:scale-[0.98]">
+                          Export CSV
+                        </button>
+                      </div>
                     </div>
                   </div>
 
-                  {/* Summary KPIs */}
+                  {/* ===== Time-scoped KPI grid ===== */}
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                    {[
+                      { label: "Today", sessions: reportSessionsToday, revenue: reportRevenueToday },
+                      { label: "This Week", sessions: reportSessionsThisWeek, revenue: reportRevenueThisWeek },
+                      { label: "This Month", sessions: reportSessionsThisMonth, revenue: reportRevenueThisMonth },
+                      { label: "All Time", sessions: reportSessions.length, revenue: reportGross },
+                    ].map(({ label, sessions, revenue }) => (
+                      <div key={label} className={`${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_SOFT} p-4`}>
+                        <div className={EYEBROW}>{label}</div>
+                        <div className="mt-2 text-xl font-bold tabular-nums text-slate-900">{sessions}</div>
+                        <div className="text-xs text-slate-400">sessions</div>
+                        <div className="mt-1 text-lg font-semibold tabular-nums text-indigo-600">{peso(revenue)}</div>
+                        <div className="text-xs text-slate-400">revenue</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* ===== Summary stat pills ===== */}
                   <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
                     {[
-                      { label: "Sessions", value: reportSessions.length, color: "text-gray-900" },
-                      { label: "Photos", value: reportPhotos, color: "text-gray-900" },
-                      { label: "Gross Revenue", value: peso(reportGross), color: "text-indigo-600" },
-                      { label: "Conversion", value: `${reportConversionRate}%`, color: "text-emerald-600" },
-                      { label: "Peak Hour", value: `${peakHour}:00`, color: "text-gray-900" },
+                      { label: "Total Photos", value: reportPhotos.toLocaleString(), color: "text-slate-900" },
+                      { label: "Completion Rate", value: `${reportConversionRate}%`, color: reportConversionRate >= 80 ? "text-emerald-600" : reportConversionRate >= 50 ? "text-amber-600" : "text-red-500" },
+                      { label: "Avg Sessions / Event", value: reportAvgSessionsPerEvent, color: "text-slate-900" },
+                      { label: "Avg Photos / Session", value: reportAvgPhotosPerSession, color: "text-slate-900" },
+                      { label: "Peak Hour", value: `${peakHour}:00`, color: "text-indigo-600" },
                     ].map(({ label, value, color }) => (
                       <div key={label} className={`${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_SOFT} p-4`}>
-                        <div className="text-[11px] font-medium text-gray-400 uppercase tracking-wide">{label}</div>
+                        <div className="text-[11px] font-medium text-slate-400 uppercase tracking-wide">{label}</div>
                         <div className={`mt-1.5 text-xl font-bold tabular-nums ${color}`}>{value}</div>
                       </div>
                     ))}
                   </div>
 
-                  {/* Chart */}
+                  {/* ===== 30-Day Trend — Sessions & Revenue LineChart ===== */}
                   <div className={`${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_SOFT} p-5`}>
                     <div className="flex items-center justify-between mb-4">
-                      <div className="text-sm font-semibold text-gray-800">Sessions per hour</div>
-                      <div className="text-xs text-gray-400">All-time across selected filter</div>
+                      <div>
+                        <div className="text-sm font-semibold text-slate-800">30-Day Trend</div>
+                        <div className="text-xs text-slate-400 mt-0.5">Daily sessions and revenue</div>
+                      </div>
                     </div>
-                    <div className="h-32 flex items-end gap-px">
-                      {reportSessionsPerHour.map((v, i) => (
-                        <div
-                          key={i}
-                          className="flex-1 rounded-sm bg-indigo-500/70 hover:bg-indigo-600 transition-colors"
-                          style={{ height: `${(v / reportMaxHour) * 100}%`, minHeight: v > 0 ? 3 : 1 }}
-                          title={`${v} sessions at ${i}:00`}
-                        />
-                      ))}
-                    </div>
-                    <div className="flex justify-between text-[10px] text-gray-400 mt-2">
-                      <span>12am</span><span>6am</span><span>12pm</span><span>6pm</span><span>11pm</span>
+                    <div className="h-64">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={reportDailyTrend} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                          <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#94a3b8" }} tickLine={false} axisLine={{ stroke: "#e2e8f0" }} interval={4} />
+                          <YAxis yAxisId="sessions" tick={{ fontSize: 11, fill: "#94a3b8" }} tickLine={false} axisLine={false} />
+                          <YAxis yAxisId="revenue" orientation="right" tick={{ fontSize: 11, fill: "#94a3b8" }} tickLine={false} axisLine={false} tickFormatter={(v) => `₱${v}`} />
+                          <Tooltip
+                            contentStyle={{ borderRadius: 12, border: "1px solid #e2e8f0", boxShadow: "0 4px 12px rgba(0,0,0,0.08)", fontSize: 13 }}
+                            formatter={(value, name) => [name === "revenue" ? peso(value) : value, name === "revenue" ? "Revenue" : "Sessions"]}
+                          />
+                          <Legend verticalAlign="top" height={30} iconType="circle" wrapperStyle={{ fontSize: 12, color: "#64748b" }} />
+                          <Line yAxisId="sessions" type="monotone" dataKey="sessions" stroke="#4f46e5" strokeWidth={2.5} dot={false} activeDot={{ r: 5, fill: "#4f46e5" }} name="Sessions" />
+                          <Line yAxisId="revenue" type="monotone" dataKey="revenue" stroke="#10b981" strokeWidth={2} dot={false} strokeDasharray="5 3" activeDot={{ r: 4, fill: "#10b981" }} name="Revenue" />
+                        </LineChart>
+                      </ResponsiveContainer>
                     </div>
                   </div>
 
-                  {/* Actions */}
-                  <div className="flex items-center gap-2">
-                    <button className={BTN_GHOST}>
-                      Export CSV
-                    </button>
-                    <button className={BTN_GHOST}>
-                      Export PDF
-                    </button>
+                  {/* ===== Two-column: Sessions per Hour + Day of Week ===== */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+
+                    {/* Sessions per hour BarChart */}
+                    <div className={`${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_SOFT} p-5`}>
+                      <div className="text-sm font-semibold text-slate-800 mb-1">Sessions by Hour</div>
+                      <div className="text-xs text-slate-400 mb-4">Distribution across 24 hours</div>
+                      <div className="h-48">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={reportSessionsPerHour.map((v, i) => ({ hour: `${i}`, sessions: v }))} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                            <XAxis dataKey="hour" tick={{ fontSize: 10, fill: "#94a3b8" }} tickLine={false} axisLine={{ stroke: "#e2e8f0" }} interval={2} />
+                            <YAxis tick={{ fontSize: 10, fill: "#94a3b8" }} tickLine={false} axisLine={false} allowDecimals={false} />
+                            <Tooltip contentStyle={{ borderRadius: 12, border: "1px solid #e2e8f0", fontSize: 13 }} formatter={(v) => [v, "Sessions"]} labelFormatter={(h) => `${h}:00`} />
+                            <Bar dataKey="sessions" fill="#4f46e5" radius={[4, 4, 0, 0]} maxBarSize={20} />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+
+                    {/* Day-of-week BarChart */}
+                    <div className={`${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_SOFT} p-5`}>
+                      <div className="text-sm font-semibold text-slate-800 mb-1">Sessions by Day of Week</div>
+                      <div className="text-xs text-slate-400 mb-4">Which days are busiest</div>
+                      <div className="h-48">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={reportDayOfWeekData} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                            <XAxis dataKey="day" tick={{ fontSize: 11, fill: "#94a3b8" }} tickLine={false} axisLine={{ stroke: "#e2e8f0" }} />
+                            <YAxis tick={{ fontSize: 11, fill: "#94a3b8" }} tickLine={false} axisLine={false} allowDecimals={false} />
+                            <Tooltip contentStyle={{ borderRadius: 12, border: "1px solid #e2e8f0", fontSize: 13 }} formatter={(v) => [v, "Sessions"]} />
+                            <Bar dataKey="sessions" fill="#8b5cf6" radius={[4, 4, 0, 0]} maxBarSize={36} />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
                   </div>
+
+                  {/* ===== 12-Week Trend BarChart ===== */}
+                  <div className={`${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_SOFT} p-5`}>
+                    <div className="flex items-center justify-between mb-4">
+                      <div>
+                        <div className="text-sm font-semibold text-slate-800">Weekly Trend</div>
+                        <div className="text-xs text-slate-400 mt-0.5">Sessions per week — last 12 weeks</div>
+                      </div>
+                    </div>
+                    <div className="h-48">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={reportWeeklyTrend} margin={{ top: 0, right: 10, left: -20, bottom: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                          <XAxis dataKey="week" tick={{ fontSize: 10, fill: "#94a3b8" }} tickLine={false} axisLine={{ stroke: "#e2e8f0" }} />
+                          <YAxis tick={{ fontSize: 11, fill: "#94a3b8" }} tickLine={false} axisLine={false} allowDecimals={false} />
+                          <Tooltip contentStyle={{ borderRadius: 12, border: "1px solid #e2e8f0", fontSize: 13 }} formatter={(v) => [v, "Sessions"]} />
+                          <Bar dataKey="sessions" fill="#4f46e5" radius={[4, 4, 0, 0]} maxBarSize={28} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+
+                  {/* ===== Template Usage ===== */}
+                  {reportTemplateUsage.length > 0 && (
+                    <div className={`${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_SOFT} p-5`}>
+                      <div className="text-sm font-semibold text-slate-800 mb-1">Top Templates</div>
+                      <div className="text-xs text-slate-400 mb-4">Most-used templates across selected events</div>
+                      <div className="space-y-2.5">
+                        {reportTemplateUsage.map(([name, count], i) => (
+                          <div key={name} className="flex items-center gap-3">
+                            <div className="w-5 text-xs text-slate-400 text-right font-medium">{i + 1}</div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between mb-1">
+                                <span className="text-sm text-slate-700 font-medium truncate">{name}</span>
+                                <span className="text-xs text-slate-500 font-medium tabular-nums ml-2">{count} uses</span>
+                              </div>
+                              <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
+                                <div
+                                  className="h-full rounded-full transition-all duration-500"
+                                  style={{
+                                    width: `${(count / reportMaxTplUsage) * 100}%`,
+                                    background: `linear-gradient(90deg, #4f46e5, #8b5cf6)`,
+                                  }}
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ===== Event Breakdown Table ===== */}
+                  {reportEventBreakdown.length > 0 && (
+                    <div className={`${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_SOFT} overflow-hidden`}>
+                      <div className="px-5 py-4 border-b border-slate-100">
+                        <div className="text-sm font-semibold text-slate-800">Event Breakdown</div>
+                        <div className="text-xs text-slate-400 mt-0.5">Per-event performance metrics</div>
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="bg-slate-50/80">
+                              <th className="text-left px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-400">Event</th>
+                              <th className="text-right px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-400">Sessions</th>
+                              <th className="text-right px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-400">Completed</th>
+                              <th className="text-right px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-400">Photos</th>
+                              <th className="text-right px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-400">Revenue</th>
+                              <th className="text-right px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-400">Rate</th>
+                              <th className="text-right px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-400">Avg Photos</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {reportEventBreakdown.map((ev) => (
+                              <tr key={ev.id} className="hover:bg-slate-50/60 transition-colors">
+                                <td className="px-5 py-3">
+                                  <div className="font-medium text-slate-800 truncate max-w-[200px]">{ev.name}</div>
+                                  <div className="text-[11px] text-slate-400 mt-0.5">{ev.date}</div>
+                                </td>
+                                <td className="text-right px-4 py-3 font-medium tabular-nums text-slate-700">{ev.sessions}</td>
+                                <td className="text-right px-4 py-3 tabular-nums text-slate-600">{ev.completed}</td>
+                                <td className="text-right px-4 py-3 tabular-nums text-slate-600">{ev.photos.toLocaleString()}</td>
+                                <td className="text-right px-4 py-3 font-medium tabular-nums text-indigo-600">{peso(ev.revenue)}</td>
+                                <td className="text-right px-4 py-3">
+                                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums ${
+                                    ev.rate >= 80 ? "bg-emerald-50 text-emerald-700" :
+                                    ev.rate >= 50 ? "bg-amber-50 text-amber-700" :
+                                    "bg-red-50 text-red-600"
+                                  }`}>
+                                    {ev.rate}%
+                                  </span>
+                                </td>
+                                <td className="text-right px-5 py-3 tabular-nums text-slate-600">{ev.avgPhotos}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                          {reportEventBreakdown.length > 1 && (
+                            <tfoot>
+                              <tr className="bg-slate-50/80 border-t border-slate-200">
+                                <td className="px-5 py-3 font-semibold text-slate-700">Total</td>
+                                <td className="text-right px-4 py-3 font-semibold tabular-nums text-slate-800">{reportSessions.length}</td>
+                                <td className="text-right px-4 py-3 font-semibold tabular-nums text-slate-700">{reportTotalCompleted}</td>
+                                <td className="text-right px-4 py-3 font-semibold tabular-nums text-slate-700">{reportPhotos.toLocaleString()}</td>
+                                <td className="text-right px-4 py-3 font-semibold tabular-nums text-indigo-600">{peso(reportGross)}</td>
+                                <td className="text-right px-4 py-3">
+                                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums ${
+                                    reportConversionRate >= 80 ? "bg-emerald-50 text-emerald-700" :
+                                    reportConversionRate >= 50 ? "bg-amber-50 text-amber-700" :
+                                    "bg-red-50 text-red-600"
+                                  }`}>
+                                    {reportConversionRate}%
+                                  </span>
+                                </td>
+                                <td className="text-right px-5 py-3 font-semibold tabular-nums text-slate-700">{reportAvgPhotosPerSession}</td>
+                              </tr>
+                            </tfoot>
+                          )}
+                        </table>
+                      </div>
+                    </div>
+                  )}
 
                 </div>
               )}
