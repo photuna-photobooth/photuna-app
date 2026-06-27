@@ -1,8 +1,38 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { supabase } from '../services/supabase.js';
+import { trackRegistration } from '../services/analyticsTracker.js';
 
 const AuthCtx = createContext(null);
 export function useAuth() { return useContext(AuthCtx); }
+
+function clearSupabaseAuthStorage() {
+  if (typeof window === 'undefined') return;
+
+  const shouldRemove = (key) =>
+    key === 'supabase.auth.token' ||
+    key.startsWith('sb-') ||
+    key.includes('supabase') ||
+    key.includes('auth-token');
+
+  [window.localStorage, window.sessionStorage].forEach((storage) => {
+    if (!storage) return;
+    try {
+      Object.keys(storage)
+        .filter(shouldRemove)
+        .forEach((key) => storage.removeItem(key));
+    } catch (_error) {
+      // Ignore storage access errors so logout can still finish.
+    }
+  });
+}
+
+async function clearNativeIdentity() {
+  await Promise.allSettled([
+    window.secureStore?.clearIdentity?.(),
+    window.secureStore?.setCurrentUser?.(null),
+    window.sessionStore?.clear?.(),
+  ]);
+}
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
@@ -36,8 +66,8 @@ export function AuthProvider({ children }) {
         );
       } else {
         // No valid Supabase session — wipe any stale local identity immediately
-        window.secureStore?.clearIdentity?.()?.catch?.(() => {});
-        window.secureStore?.setCurrentUser?.(null)?.catch?.(() => {});
+        clearSupabaseAuthStorage();
+        clearNativeIdentity();
       }
 
       if (mounted) {
@@ -57,8 +87,8 @@ export function AuthProvider({ children }) {
       } else {
         setUser(null);
         setProfile(null);
-        window.secureStore?.clearIdentity?.()?.catch?.(() => {});
-        window.secureStore?.setCurrentUser?.(null)?.catch?.(() => {});
+        clearSupabaseAuthStorage();
+        clearNativeIdentity();
       }
     });
 
@@ -85,9 +115,9 @@ export function AuthProvider({ children }) {
       console.warn('[AuthContext] Profile not found — forcing sign-out');
       setUser(null);
       setProfile(null);
-      window.secureStore?.clearIdentity?.()?.catch?.(() => {});
-      window.secureStore?.setCurrentUser?.(null)?.catch?.(() => {});
-      supabase.auth.signOut().catch(() => {});
+      clearSupabaseAuthStorage();
+      clearNativeIdentity();
+      supabase.auth.signOut({ scope: 'local' }).catch(() => {});
     }
   };
 
@@ -110,22 +140,30 @@ export function AuthProvider({ children }) {
         { id: data.user.id, full_name: name, email, subscription_plan: 'free' },
         { onConflict: 'id' }
       );
+
+      // Track registration analytics
+      const source = new URLSearchParams(window.location.search).get('source') || 'website';
+      const utmSource = new URLSearchParams(window.location.search).get('utm_source');
+      trackRegistration(data.user.id, source, utmSource).catch(err =>
+        console.warn('[AuthContext] Analytics tracking failed:', err)
+      );
     }
   }, []);
 
   const logout = useCallback(async () => {
     setUser(null);
     setProfile(null);
+    clearSupabaseAuthStorage();
+    await clearNativeIdentity();
 
     try {
-      await supabase.auth.signOut();
+      await supabase.auth.signOut({ scope: 'local' });
     } catch (e) {
       console.warn('[AuthContext] signOut error (state already cleared):', e.message);
     }
 
-    window.secureStore?.clearIdentity?.()?.catch?.(() => {});
-    window.secureStore?.setCurrentUser?.(null)?.catch?.(() => {});
-    window.sessionStore?.clear?.()?.catch?.(() => {});
+    clearSupabaseAuthStorage();
+    await clearNativeIdentity();
   }, []);
 
   const sendPasswordReset = async (email) => {

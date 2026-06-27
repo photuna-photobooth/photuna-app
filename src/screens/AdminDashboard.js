@@ -14,6 +14,7 @@ import * as licensingApi from "../services/licensingApi";
 import SubscriptionSummary from "../components/subscription/SubscriptionSummary";
 import TemplateEditor from "../components/TemplateEditor";
 import { initSettingsSync, pullSettings, pushSettings } from "../services/settingsSync.js";
+import AnalyticsDashboard from "../components/AnalyticsDashboard";
 
 const native =
   typeof window !== "undefined"
@@ -1136,9 +1137,9 @@ This cannot be undone.`
   };
 
   const prices = {
-    currency: "PHP",
-    monthly: { display: "₱1,400 / mo", amount: 1400 },
-    yearly: { display: "₱10,000 / yr", amount: 10000 },
+    currency: "USD",
+    monthly: { display: "$30 / mo", amount: 30 },
+    yearly: { display: "$204 / yr", amount: 204 },
   };
 
   const [appMode, setAppMode] = useState(DEFAULT_APP_MODE);
@@ -2872,7 +2873,7 @@ This cannot be undone.`
           </div>
           <div className="rounded-2xl border border-white/15 bg-white/10 p-3 backdrop-blur-sm">
             <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/70">Best value</div>
-            <div className="mt-1 text-sm font-bold text-white">{prices?.yearly?.display ?? "₱10,000 / yr"}</div>
+            <div className="mt-1 text-sm font-bold text-white">{prices?.yearly?.display ?? "$204 / yr"}</div>
           </div>
         </div>
       </div>
@@ -3122,11 +3123,12 @@ This cannot be undone.`
               <PlanCards
                 plan={subscription?.plan || license?.plan || gating?.plan || "free"}
                 trialEligible={trialEligible}
-                monthlyPriceText={prices?.monthly?.display ?? "₱1,400 / mo"}
-                yearlyPriceText={prices?.yearly?.display ?? "₱10,000 / yr"}
-                trialPriceText="₱0"
-                monthlyPriceAmount={prices?.monthly?.amount ?? 1400}
-                yearlyPriceAmount={prices?.yearly?.amount ?? 10000}
+                monthlyPriceText={prices?.monthly?.display ?? "$30 / mo"}
+                yearlyPriceText={prices?.yearly?.display ?? "$204 / yr"}
+                trialPriceText="$0"
+                monthlyPriceAmount={prices?.monthly?.amount ?? 30}
+                yearlyPriceAmount={prices?.yearly?.amount ?? 204}
+                currency={prices?.currency ?? "USD"}
                 onStartTrial={async () => {
                   try {
                     await licensingApi.redeemTrial();
@@ -9159,6 +9161,11 @@ This cannot be undone.`
                         </div>
                       </div>
 
+                      {/* User Analytics Dashboard */}
+                      <div className="mt-8 border-t pt-8">
+                        <div className={`${EYEBROW} mb-4`}>Account Analytics</div>
+                        <AnalyticsDashboard userId={identity.userId} />
+                      </div>
                     </div>
                   )}
                 </div>
