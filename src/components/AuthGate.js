@@ -348,7 +348,7 @@ export default function AuthGate({ children }) {
 
               <div className="relative z-10 w-full max-w-[500px]">
                 <div className="mb-6 flex justify-center">
-                  <img src="/logo.png" alt="Studio Photuna" className="h-16 w-auto sm:h-[72px]" />
+                  <img src="https://studiophotuna.com/logo.png" alt="Studio Photuna" className="h-16 w-auto sm:h-[72px]" />
                 </div>
 
                 {/* Google sign-in — full width, single button */}
