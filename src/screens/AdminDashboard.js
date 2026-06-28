@@ -1160,9 +1160,9 @@ This cannot be undone.`
   };
 
   const prices = {
-    currency: "USD",
-    monthly: { display: "$30 / mo", amount: 30 },
-    yearly: { display: "$204 / yr", amount: 204 },
+    currency: "PHP",
+    monthly: { display: "₱1,800 / mo", amount: 1800 },
+    yearly: { display: "₱950 / mo", amount: 950, annual: "₱11,400", monthlyEquivalent: "₱950/mo" },
   };
 
   const [appMode, setAppMode] = useState(DEFAULT_APP_MODE);
@@ -4810,7 +4810,7 @@ This cannot be undone.`
     const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
     const counts = Array(7).fill(0);
     reportSessions.forEach(s => {
-      try { counts[new Date(s.createdAt).getDay()]++; } catch {}
+      try { counts[new Date(s.createdAt).getDay()]++; } catch { }
     });
     return days.map((d, i) => ({ day: d, sessions: counts[i] }));
   }, [reportSessions]);
@@ -7161,11 +7161,10 @@ This cannot be undone.`
                                 <td className="text-right px-4 py-3 tabular-nums text-slate-600">{ev.photos.toLocaleString()}</td>
                                 <td className="text-right px-4 py-3 font-medium tabular-nums text-indigo-600">{peso(ev.revenue)}</td>
                                 <td className="text-right px-4 py-3">
-                                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums ${
-                                    ev.rate >= 80 ? "bg-emerald-50 text-emerald-700" :
-                                    ev.rate >= 50 ? "bg-amber-50 text-amber-700" :
-                                    "bg-red-50 text-red-600"
-                                  }`}>
+                                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums ${ev.rate >= 80 ? "bg-emerald-50 text-emerald-700" :
+                                      ev.rate >= 50 ? "bg-amber-50 text-amber-700" :
+                                        "bg-red-50 text-red-600"
+                                    }`}>
                                     {ev.rate}%
                                   </span>
                                 </td>
@@ -7182,11 +7181,10 @@ This cannot be undone.`
                                 <td className="text-right px-4 py-3 font-semibold tabular-nums text-slate-700">{reportPhotos.toLocaleString()}</td>
                                 <td className="text-right px-4 py-3 font-semibold tabular-nums text-indigo-600">{peso(reportGross)}</td>
                                 <td className="text-right px-4 py-3">
-                                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums ${
-                                    reportConversionRate >= 80 ? "bg-emerald-50 text-emerald-700" :
-                                    reportConversionRate >= 50 ? "bg-amber-50 text-amber-700" :
-                                    "bg-red-50 text-red-600"
-                                  }`}>
+                                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums ${reportConversionRate >= 80 ? "bg-emerald-50 text-emerald-700" :
+                                      reportConversionRate >= 50 ? "bg-amber-50 text-amber-700" :
+                                        "bg-red-50 text-red-600"
+                                    }`}>
                                     {reportConversionRate}%
                                   </span>
                                 </td>

@@ -78,11 +78,17 @@ export function AuthProvider({ children }) {
 
     init();
 
-    const { data: listener } = supabase.auth.onAuthStateChange(async (_, session) => {
+    const { data: listener } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (session?.user) {
         const u = session.user;
         setUser(u);
         window.secureStore?.setCurrentUser?.(u.id)?.catch?.(() => {});
+
+        // For OAuth sign-ins, ensure a profile row exists (first-time Google login)
+        if (event === 'SIGNED_IN') {
+          await ensureProfile(u);
+        }
+
         await loadProfile(u.id);
       } else {
         setUser(null);
@@ -121,6 +127,38 @@ export function AuthProvider({ children }) {
     }
   };
 
+  /**
+   * Ensure a profile row exists for OAuth users signing in for the first time.
+   * Uses upsert so it's safe to call on every sign-in — existing rows are untouched.
+   */
+  const ensureProfile = async (u) => {
+    try {
+      const meta = u.user_metadata || {};
+      const fullName = meta.full_name || meta.name || '';
+      const email = u.email || meta.email || '';
+      const avatarUrl = meta.avatar_url || meta.picture || null;
+
+      await supabase.from('profiles').upsert(
+        {
+          id: u.id,
+          full_name: fullName,
+          email,
+          avatar_url: avatarUrl,
+          subscription_plan: 'free',
+        },
+        { onConflict: 'id', ignoreDuplicates: true }
+      );
+
+      // Track registration for new OAuth users
+      const source = u.app_metadata?.provider || 'google';
+      trackRegistration(u.id, source).catch((err) =>
+        console.warn('[AuthContext] Analytics tracking failed:', err)
+      );
+    } catch (err) {
+      console.warn('[AuthContext] ensureProfile error:', err?.message);
+    }
+  };
+
   const login = useCallback(async (email, password) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw error;
@@ -150,6 +188,25 @@ export function AuthProvider({ children }) {
     }
   }, []);
 
+  /**
+   * Sign in with Google via Supabase OAuth.
+   * Opens a popup/redirect to Google's consent screen.
+   * On success, onAuthStateChange fires and sets the user.
+   */
+  const loginWithGoogle = useCallback(async () => {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: window.location.origin,
+        queryParams: {
+          access_type: 'offline',
+          prompt: 'consent',
+        },
+      },
+    });
+    if (error) throw error;
+  }, []);
+
   const logout = useCallback(async () => {
     setUser(null);
     setProfile(null);
@@ -171,7 +228,16 @@ export function AuthProvider({ children }) {
     if (error) throw error;
   };
 
-  const value = { user, profile, loading, login, register, logout, sendPasswordReset };
+  const value = {
+    user,
+    profile,
+    loading,
+    login,
+    loginWithGoogle,
+    register,
+    logout,
+    sendPasswordReset,
+  };
 
   return <AuthCtx.Provider value={value}>{children}</AuthCtx.Provider>;
 }

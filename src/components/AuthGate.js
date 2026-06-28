@@ -16,12 +16,6 @@ const GoogleIcon = () => (
   </svg>
 );
 
-const AppleIcon = () => (
-  <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-current">
-    <path d="M16.365 12.159c.03 3.304 2.887 4.404 2.919 4.42-.025.08-.456 1.565-1.508 3.104-.908 1.332-1.852 2.662-3.334 2.689-1.458.026-1.927-.873-3.593-.873-1.667 0-2.191.846-3.571.899-1.44.054-2.539-1.44-3.455-2.766-1.878-2.716-3.315-7.664-1.388-11.007.956-1.666 2.664-2.724 4.514-2.75 1.41-.028 2.738.953 3.593.953.856 0 2.475-1.179 4.178-1.005.711.029 2.71.287 3.99 2.165-.103.064-2.383 1.39-2.345 4.171zM13.58 3.658c.764-.925 1.275-2.215 1.137-3.5-1.1.045-2.434.732-3.231 1.655-.71.816-1.328 2.128-1.163 3.388 1.229.095 2.492-.619 3.257-1.543z" />
-  </svg>
-);
-
 /* ------------------------------------------------------------------ */
 /*  Small subcomponents                                                */
 /* ------------------------------------------------------------------ */
@@ -34,7 +28,7 @@ function Footer() {
         <a href="mailto:support@photuna.app?subject=Studio%20Photuna%20Terms" className="hover:text-slate-700 transition-colors">Terms &amp; Conditions</a>
         <a href="mailto:support@photuna.app?subject=Studio%20Photuna%20Privacy" className="hover:text-slate-700 transition-colors">Privacy Policy</a>
       </nav>
-      <p className="mt-2">© {new Date().getFullYear()} Studio Photuna. All Rights Reserved.</p>
+      <p className="mt-2">&copy; {new Date().getFullYear()} Studio Photuna. All Rights Reserved.</p>
     </footer>
   );
 }
@@ -137,8 +131,8 @@ const authInfoSlides = [
     copy: 'The account layer keeps trial, subscription, and device access attached to the correct operator so refreshes and restarts stay predictable.',
     cards: [
       ['01', '14-day trial', 'Start with full access before choosing a paid plan.'],
-      ['02', 'Monthly plan', '$30 per month for operators who need flexibility.'],
-      ['03', 'Yearly plan', '$204 yearly, equal to $17 per month for the best value.'],
+      ['02', 'Monthly plan', '₱1,800 per month for operators who need flexibility.'],
+      ['03', 'Yearly plan', '₱11,400 yearly, equal to ₱950 per month for the best value.'],
       ['04', 'Secure logout', 'Clears stored identity so the next restart does not restore the old user.'],
     ],
   },
@@ -155,7 +149,6 @@ export default function AuthGate({ children }) {
     register,
     logout,
     loginWithGoogle,
-    loginWithApple,
     sendPasswordReset,
   } = useAuth();
   const { gating, refreshLicense } = useLicense();
@@ -177,7 +170,7 @@ export default function AuthGate({ children }) {
     monthly: {
       label: 'Monthly',
       plan: 'monthly',
-      price: '$30/mo',
+      price: '₱1,800/mo',
       note: 'Best for operators who want monthly flexibility before committing.',
       cta: 'Subscribe Monthly',
       chips: ['Monthly billing', 'Full software access', 'Cancel when needed'],
@@ -185,8 +178,8 @@ export default function AuthGate({ children }) {
     yearly: {
       label: 'Yearly',
       plan: 'yearly',
-      price: '$17/mo',
-      note: '$204 billed yearly. Save 43% compared with monthly billing.',
+      price: '₱950/mo',
+      note: '₱11,400 billed yearly. Save 47% compared with monthly billing.',
       cta: 'Subscribe Yearly',
       chips: ['Best value', 'Priority support', '12-month business access'],
     },
@@ -229,7 +222,7 @@ export default function AuthGate({ children }) {
     };
   }, [loading, mode]);
 
-  /* -------------------- handlers (unchanged behavior) -------------------- */
+  /* -------------------- handlers -------------------- */
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -268,20 +261,14 @@ export default function AuthGate({ children }) {
     }
   };
 
-  const handleSocialLogin = async (provider) => {
+  const handleGoogleLogin = async () => {
     setMsg('');
     setLoading(true);
     try {
-      if (provider === 'google') {
-        if (!loginWithGoogle) throw new Error('Google sign-in not available.');
-        await loginWithGoogle();
-      }
-      if (provider === 'apple') {
-        if (!loginWithApple) throw new Error('Apple sign-in not available.');
-        await loginWithApple();
-      }
+      if (!loginWithGoogle) throw new Error('Google sign-in not available.');
+      await loginWithGoogle();
     } catch (error) {
-      setMsg(error?.message ? String(error.message) : `${provider} sign-in failed.`);
+      setMsg(error?.message ? String(error.message) : 'Google sign-in failed.');
     } finally {
       setLoading(false);
     }
@@ -364,27 +351,16 @@ export default function AuthGate({ children }) {
                   <img src="/logo.png" alt="Studio Photuna" className="h-16 w-auto sm:h-[72px]" />
                 </div>
 
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <button
-                    type="button"
-                    onClick={() => handleSocialLogin('google')}
-                    disabled={loading}
-                    className="inline-flex min-h-[52px] w-full items-center justify-center gap-3 rounded-full border border-[#dedfe6] bg-white px-5 text-sm font-black text-[#111827] transition hover:bg-[#f4f5f8] disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    <GoogleIcon />
-                    Sign in with Google
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleSocialLogin('apple')}
-                    disabled={loading}
-                    className="inline-flex min-h-[52px] w-full items-center justify-center gap-3 rounded-full border border-[#dedfe6] bg-white px-5 text-sm font-black text-[#111827] transition hover:bg-[#f4f5f8] disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    <AppleIcon />
-                    Sign in with Apple
-                  </button>
-                </div>
+                {/* Google sign-in — full width, single button */}
+                <button
+                  type="button"
+                  onClick={handleGoogleLogin}
+                  disabled={loading}
+                  className="inline-flex min-h-[52px] w-full items-center justify-center gap-3 rounded-full border border-[#dedfe6] bg-white px-5 text-sm font-black text-[#111827] transition hover:bg-[#f4f5f8] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <GoogleIcon />
+                  Sign in with Google
+                </button>
 
                 {/* Divider */}
                 <div className="my-5 flex items-center gap-4">
@@ -533,7 +509,7 @@ export default function AuthGate({ children }) {
     );
   }
 
-  /* -------------------- LOGGED IN — account center (refreshed) -------------------- */
+  /* -------------------- LOGGED IN — account center -------------------- */
 
   return (
     <div className="min-h-screen bg-white px-4 py-6 font-sans text-[#5f6678] sm:px-6 lg:px-8" style={{ fontFamily: 'Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
