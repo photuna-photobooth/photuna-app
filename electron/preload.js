@@ -118,6 +118,10 @@ const apiImpl = {
   getCurrentSubTab: () => ipcRenderer.invoke("store:getCurrentSubTab"),
   setCurrentSubTab: (tab) => ipcRenderer.invoke("store:setCurrentSubTab", tab),
 
+  /* ====== ADDED: Active main-tab persistence ====== */
+  getActiveMain: () => ipcRenderer.invoke("store:getActiveMain"),
+  setActiveMain: (tab) => ipcRenderer.invoke("store:setActiveMain", tab),
+
   createOnlineGallery: async (payload = {}) => {
     const ctx = await withIdentityCtx();
     const settings = await ipcRenderer.invoke("store:getSettings", ctx);
@@ -183,7 +187,6 @@ const apiImpl = {
   },
 
   /* Capture / Photos / Printing */
-  /* Capture / Photos / Printing */
 
   capturePhoto: async (args = {}) => {
     const settings = await ipcRenderer.invoke("store:getSettings", await withIdentityCtx());
@@ -211,8 +214,7 @@ const apiImpl = {
   getPrinters: () => ipcRenderer.invoke("get-printers"),
   testPrint: (job) => ipcRenderer.invoke("test-print", job),
 
-
-  // FRAMES / TONES (added)
+  // FRAMES / TONES
   getFrames: async (ctx) => ipcRenderer.invoke("store:getFrames", await withIdentityCtx(ctx)),
   setFrames: async (frames, ctx) => ipcRenderer.invoke("store:setFrames", frames, await withIdentityCtx(ctx)),
 
@@ -263,6 +265,9 @@ const apiImpl = {
   clearCache: () => ipcRenderer.invoke('app:clear-cache'),
   getStorageInfo: (path) => ipcRenderer.invoke('storage:info', path),
   cleanupStorage: (opts) => ipcRenderer.invoke('storage:cleanup', opts),
+
+  /* ====== ADDED: Delete stored photos (used in Settings > Storage) ====== */
+  deleteStoredPhotos: (opts) => ipcRenderer.invoke('storage:delete-stored-photos', opts),
 
   // Software update helpers
   checkUpdates: () => ipcRenderer.invoke('app:check-updates'),
@@ -343,17 +348,6 @@ const apiImpl = {
       }
     );
   },
-
-  buildFinalMotion: async (payload = {}) => {
-    const ctx = await withIdentityCtx();
-    const settings = await ipcRenderer.invoke("store:getSettings", ctx);
-    const storagePath = settings?.storagePath ?? "";
-    return ipcRenderer.invoke("output:build-final-motion", {
-      ...payload,
-      userId: payload?.userId ?? ctx?.userId ?? null,
-      storagePath,
-    });
-  },
 };
 
 // Expose both names so older renderer code (window.api) and newer code (window.electron) work
@@ -381,11 +375,11 @@ contextBridge.exposeInMainWorld("electron", apiImpl);
 contextBridge.exposeInMainWorld("api", apiImpl);
 
 /* ============================================
- * ✅ Secure Auth Bridge (ADDED, non-breaking)
+ * Secure Auth Bridge (non-breaking)
  * Matches main.js handlers:
- *   - secureStore:registerCredentials
- *   - secureStore:validateCredentials
- *   - secureStore:getUsername
+ *   - secureStore:getIdentity
+ *   - secureStore:clearIdentity
+ *   - auth:syncUser
  * ============================================ */
 contextBridge.exposeInMainWorld("secureStore", {
   getIdentity: () => ipcRenderer.invoke("secureStore:getIdentity"),
@@ -394,4 +388,3 @@ contextBridge.exposeInMainWorld("secureStore", {
   // Pass null on logout to clear the stored userId.
   setCurrentUser: (userId) => ipcRenderer.invoke("auth:syncUser", { userId }),
 });
-
