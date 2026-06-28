@@ -3464,7 +3464,14 @@ This cannot be undone.`
                     <svg className="h-4 w-4 flex-shrink-0 text-indigo-500 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
                     <div>
                       <div className="text-sm font-semibold text-slate-800">Video Archive</div>
-                      <div className="text-xs text-slate-500">Up to 3 months</div>
+                      <div className="text-xs text-slate-500">Up to 1 week</div>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2.5">
+                    <svg className="h-4 w-4 flex-shrink-0 text-indigo-500 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                    <div>
+                      <div className="text-sm font-semibold text-slate-800">Photo Archive</div>
+                      <div className="text-xs text-slate-500">Up to 1 week</div>
                     </div>
                   </div>
                   <div className="flex items-start gap-2.5">
@@ -3509,7 +3516,7 @@ This cannot be undone.`
               </button>
             </div>
 
-            {/* PLUS tier — ₱19.99/mo */}
+            {/* PLUS tier — ₱900/mo */}
             <div className={`relative rounded-3xl border-2 ${galleryPlan === "plus" ? "border-indigo-500 ring-2 ring-indigo-100" : "border-indigo-400"} bg-slate-900 p-6 flex flex-col justify-between text-white shadow-[0_24px_64px_rgba(79,70,229,0.18)] md:scale-[1.03]`}>
               <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-indigo-600 px-4 py-1 text-[11px] font-bold uppercase tracking-widest text-white shadow-md">
                 Popular
@@ -3517,7 +3524,7 @@ This cannot be undone.`
               <div className="space-y-4 mt-2">
                 <span className="inline-flex rounded-full bg-white/15 border border-white/20 px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest text-white">Plus</span>
                 <div>
-                  <div className="text-4xl font-black text-white">₱19.99<small className="text-sm font-semibold text-white/70">/mo</small></div>
+                  <div className="text-4xl font-black text-white">₱900<small className="text-sm font-semibold text-white/70">/mo</small></div>
                   <p className="text-xs text-white/60 mt-1">Billed monthly</p>
                 </div>
 
@@ -3526,6 +3533,13 @@ This cannot be undone.`
                     <svg className="h-4 w-4 flex-shrink-0 text-yellow-400 mt-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87L18.18 22 12 18.56 5.82 22 7 14.14l-5-4.87 6.91-1.01L12 2z" /></svg>
                     <div>
                       <div className="text-sm font-semibold text-white">Video Archive</div>
+                      <div className="text-xs text-white/60">Up to 6 months</div>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2.5">
+                    <svg className="h-4 w-4 flex-shrink-0 text-yellow-400 mt-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87L18.18 22 12 18.56 5.82 22 7 14.14l-5-4.87 6.91-1.01L12 2z" /></svg>
+                    <div>
+                      <div className="text-sm font-semibold text-white">Photo Archive</div>
                       <div className="text-xs text-white/60">Up to 6 months</div>
                     </div>
                   </div>
@@ -3564,12 +3578,12 @@ This cannot be undone.`
               </button>
             </div>
 
-            {/* BUSINESS tier — ₱39.99/mo */}
+            {/* BUSINESS tier — ₱1,700/mo */}
             <div className={`rounded-3xl border ${galleryPlan === "business" ? "border-indigo-300 ring-2 ring-indigo-100" : "border-slate-200"} bg-white p-6 flex flex-col justify-between hover:shadow-md transition-all`}>
               <div className="space-y-4">
                 <span className="inline-flex rounded-full bg-violet-50 px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest text-violet-600">Business</span>
                 <div>
-                  <div className="text-4xl font-black text-slate-900">₱39.99<small className="text-sm font-semibold text-slate-400">/mo</small></div>
+                  <div className="text-4xl font-black text-slate-900">₱1,700<small className="text-sm font-semibold text-slate-400">/mo</small></div>
                   <p className="text-xs text-slate-400 mt-1">Best for high-volume operators</p>
                 </div>
 
@@ -3578,6 +3592,13 @@ This cannot be undone.`
                     <svg className="h-4 w-4 flex-shrink-0 text-violet-500 mt-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87L18.18 22 12 18.56 5.82 22 7 14.14l-5-4.87 6.91-1.01L12 2z" /></svg>
                     <div>
                       <div className="text-sm font-semibold text-slate-800">Video Archive</div>
+                      <div className="text-xs text-slate-500">Up to 12 months</div>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2.5">
+                    <svg className="h-4 w-4 flex-shrink-0 text-violet-500 mt-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87L18.18 22 12 18.56 5.82 22 7 14.14l-5-4.87 6.91-1.01L12 2z" /></svg>
+                    <div>
+                      <div className="text-sm font-semibold text-slate-800">Photo Archive</div>
                       <div className="text-xs text-slate-500">Up to 12 months</div>
                     </div>
                   </div>
@@ -3634,12 +3655,13 @@ This cannot be undone.`
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {[
-                    { feature: "Video Archive", free: "3 months", plus: "6 months", business: "12 months" },
+                    { feature: "Video Archive", free: "1 week", plus: "6 months", business: "12 months" },
+                    { feature: "Photo Archive", free: "1 week", plus: "6 months", business: "12 months" },
                     { feature: "Unlimited Events", free: true, plus: true, business: true },
                     { feature: "Custom Colors", free: true, plus: true, business: true },
                     { feature: "Event Link", free: true, plus: true, business: true },
                     { feature: "Embed Album", free: true, plus: true, business: true },
-                    { feature: "Price", free: "₱0", plus: "₱19.99/mo", business: "₱39.99/mo" },
+                    { feature: "Price", free: "₱0", plus: "₱900/mo", business: "₱1,700/mo" },
                   ].map(({ feature, free, plus, business }) => (
                     <tr key={feature} className="hover:bg-slate-50/60">
                       <td className="px-5 py-3 font-medium text-slate-700">{feature}</td>
@@ -5698,7 +5720,7 @@ This cannot be undone.`
   const [gcashPlanType, setGcashPlanType] = useState("pro"); // "pro" | "gallery"
   const [gcashGalleryTier, setGcashGalleryTier] = useState(""); // "free" | "plus" | "business"
 
-  const GALLERY_PHP_AMOUNTS = { plus: 1150, business: 2300 }; // ₱19.99 → ₱1,150/mo equiv, ₱39.99 → ₱2,300/mo equiv
+  const GALLERY_PHP_AMOUNTS = { plus: 900, business: 1700 }; // ₱900/mo, ₱1,700/mo
 
   const openGcashPayment = (planType = "pro", galleryTier = "") => {
     setGcashPlanType(planType);
