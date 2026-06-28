@@ -139,15 +139,15 @@ const SURFACE_BORDER = "border border-slate-200";
 const BODY_TEXT = "text-slate-900";
 const MUTED_TEXT = "text-slate-600";
 const SOFT_TEXT = "text-slate-500";
-const CARD_RADIUS = "rounded-3xl";
-const SMALL_CARD_RADIUS = "rounded-2xl";
-const INPUT_RADIUS = "rounded-xl";
-const TOOLBAR_RADIUS = "rounded-2xl";
+const CARD_RADIUS = "rounded-xl";
+const SMALL_CARD_RADIUS = "rounded-lg";
+const INPUT_RADIUS = "rounded-lg";
+const TOOLBAR_RADIUS = "rounded-lg";
 const CHIP_RADIUS = "rounded-full";
 const FOCUS_RING_INDIGO = "focus:ring-2 focus:ring-indigo-200";
-const BTN_PRIMARY = "inline-flex items-center justify-center rounded-full bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md shadow-indigo-200 transition hover:-translate-y-0.5 hover:bg-indigo-700 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-60";
-const BTN_SECONDARY = "inline-flex items-center justify-center rounded-full border border-indigo-200 bg-indigo-50 px-5 py-2.5 text-sm font-semibold text-indigo-700 transition hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-60";
-const BTN_GHOST = "inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60";
+const BTN_PRIMARY = "inline-flex items-center justify-center rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md shadow-indigo-200 transition hover:-translate-y-0.5 hover:bg-indigo-700 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-60";
+const BTN_SECONDARY = "inline-flex items-center justify-center rounded-lg border border-indigo-200 bg-indigo-50 px-5 py-2.5 text-sm font-semibold text-indigo-700 transition hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-60";
+const BTN_GHOST = "inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60";
 const EYEBROW = "text-xs font-semibold uppercase tracking-[0.18em] text-slate-500";
 
 // Shadows
@@ -2844,12 +2844,12 @@ This cannot be undone.`
   const renderAccountBilling = () => (
     <div className="space-y-6">
       {/* ===== HERO — gradient header ===== */}
-      <div className="relative overflow-hidden rounded-3xl border border-white/20 bg-gradient-to-br from-indigo-500 via-indigo-600 to-violet-700 px-6 py-7 text-white shadow-[0_24px_64px_rgba(79,70,229,0.25)]">
+      <div className="relative overflow-hidden rounded-xl border border-white/20 bg-gradient-to-br from-indigo-500 via-indigo-600 to-violet-700 px-6 py-7 text-white shadow-[0_24px_64px_rgba(79,70,229,0.25)]">
         <WavePattern />
         <div className="relative z-10 flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-center gap-5">
             {/* Avatar */}
-            <div className="h-16 w-16 flex-shrink-0 overflow-hidden rounded-2xl border-2 border-white/30 bg-white/10 shadow-lg">
+            <div className="h-16 w-16 flex-shrink-0 overflow-hidden rounded-lg border-2 border-white/30 bg-white/10 shadow-lg">
               {accountForm.badgePhoto ? (
                 <img src={accountForm.badgePhoto} alt="Avatar" className="h-full w-full object-cover" />
               ) : (
@@ -2885,7 +2885,7 @@ This cannot be undone.`
                     })
                     .catch((e) => { showToast?.(`Open portal failed: ${e?.message ?? "unknown error"}`); });
                 }}
-                className="inline-flex items-center justify-center rounded-full bg-white px-5 py-2.5 text-sm font-semibold text-indigo-700 shadow-md transition hover:-translate-y-0.5 hover:shadow-lg"
+                className="inline-flex items-center justify-center rounded-lg bg-white px-5 py-2.5 text-sm font-semibold text-indigo-700 shadow-md transition hover:-translate-y-0.5 hover:shadow-lg"
               >
                 Manage billing
               </button>
@@ -2895,7 +2895,7 @@ This cannot be undone.`
                 try { await refreshLicense(); showToast?.("License refreshed"); }
                 catch (e) { showToast?.("Failed to refresh"); }
               }}
-              className="inline-flex items-center justify-center rounded-full border border-white/25 bg-white/15 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-white/25"
+              className="inline-flex items-center justify-center rounded-lg border border-white/25 bg-white/15 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-white/25"
             >
               Refresh status
             </button>
@@ -2912,7 +2912,7 @@ This cannot be undone.`
             { label: "Gallery", value: galleryAddonEnabled ? "Enabled" : "Off" },
             { label: "Best Value", value: prices?.yearly?.display ?? "$204 / yr" },
           ].map(({ label, value }) => (
-            <div key={label} className="rounded-2xl border border-white/15 bg-white/10 p-3 backdrop-blur-sm">
+            <div key={label} className="rounded-lg border border-white/15 bg-white/10 p-3 backdrop-blur-sm">
               <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/70">{label}</div>
               <div className="mt-1 text-sm font-bold text-white truncate">{value}</div>
             </div>
@@ -2949,7 +2949,7 @@ This cannot be undone.`
           {/* Left — avatar card */}
           <div className={`${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_CARD} p-6`}>
             <div className="flex flex-col items-center text-center">
-              <div className="h-28 w-28 overflow-hidden rounded-3xl border-2 border-slate-200 bg-slate-100 shadow-inner">
+              <div className="h-28 w-28 overflow-hidden rounded-xl border-2 border-slate-200 bg-slate-100 shadow-inner">
                 {accountForm.badgePhoto ? (
                   <img src={accountForm.badgePhoto} alt="Badge" className="h-full w-full object-cover" />
                 ) : (
@@ -2966,7 +2966,7 @@ This cannot be undone.`
               <button
                 type="button"
                 onClick={chooseBadgePhoto}
-                className="mt-5 inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-5 py-2.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 hover:border-slate-300"
+                className="mt-5 inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-5 py-2.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 hover:border-slate-300"
               >
                 Update photo
               </button>
@@ -3056,7 +3056,7 @@ This cannot be undone.`
                 type="button"
                 onClick={saveAccountProfile}
                 disabled={profileSaving}
-                className="inline-flex items-center justify-center rounded-full bg-indigo-600 px-6 py-2.5 text-sm font-semibold text-white shadow-md shadow-indigo-200 transition hover:-translate-y-0.5 hover:bg-indigo-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex items-center justify-center rounded-lg bg-indigo-600 px-6 py-2.5 text-sm font-semibold text-white shadow-md shadow-indigo-200 transition hover:-translate-y-0.5 hover:bg-indigo-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {profileSaving ? "Saving..." : "Save profile"}
               </button>
@@ -3115,7 +3115,7 @@ This cannot be undone.`
                 type="button"
                 onClick={changePassword}
                 disabled={passwordSaving}
-                className="inline-flex items-center justify-center rounded-full bg-indigo-600 px-6 py-2.5 text-sm font-semibold text-white shadow-md shadow-indigo-200 transition hover:-translate-y-0.5 hover:bg-indigo-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex items-center justify-center rounded-lg bg-indigo-600 px-6 py-2.5 text-sm font-semibold text-white shadow-md shadow-indigo-200 transition hover:-translate-y-0.5 hover:bg-indigo-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {passwordSaving ? "Updating..." : "Change password"}
               </button>
@@ -3213,7 +3213,7 @@ This cannot be undone.`
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5 items-stretch">
               {/* Trial Card */}
-              <div className="rounded-3xl border border-slate-200 bg-white p-6 flex flex-col justify-between hover:shadow-md transition-shadow">
+              <div className="rounded-xl border border-slate-200 bg-white p-6 flex flex-col justify-between hover:shadow-md transition-shadow">
                 <div className="space-y-4">
                   <span className="inline-flex rounded-full bg-indigo-50 px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest text-indigo-600">Trial</span>
                   <h3 className="text-xl font-bold text-slate-900">14-Day Free Trial</h3>
@@ -3241,7 +3241,7 @@ This cannot be undone.`
                       showToast?.(`Trial failed: ${e?.message ?? "unknown error"}`);
                     }
                   }}
-                  className={`mt-6 w-full rounded-full py-3 text-sm font-bold transition-all duration-200 ${trialEligible
+                  className={`mt-6 w-full rounded-lg py-3 text-sm font-bold transition-all duration-200 ${trialEligible
                     ? "border border-slate-200 text-slate-800 hover:bg-slate-50 hover:-translate-y-0.5 hover:shadow-md"
                     : "border border-slate-100 text-slate-400 cursor-not-allowed bg-slate-50"
                     }`}
@@ -3251,7 +3251,7 @@ This cannot be undone.`
               </div>
 
               {/* Pro Card — with billing cycle toggle */}
-              <div className="relative rounded-3xl border-2 border-indigo-500 bg-slate-900 p-6 flex flex-col justify-between text-white shadow-[0_24px_64px_rgba(79,70,229,0.2)] md:scale-[1.02]">
+              <div className="relative rounded-xl border-2 border-indigo-500 bg-slate-900 p-6 flex flex-col justify-between text-white shadow-[0_24px_64px_rgba(79,70,229,0.2)] md:scale-[1.02]">
                 <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-indigo-600 px-4 py-1 text-[11px] font-bold uppercase tracking-widest text-white shadow-md">
                   Best Value
                 </span>
@@ -3313,7 +3313,7 @@ This cannot be undone.`
                     setGcashBilling(billingCycle);
                     openGcashPayment("pro");
                   }}
-                  className="mt-6 w-full rounded-full bg-indigo-600 py-3 text-sm font-bold text-white shadow-md transition-all duration-200 hover:bg-indigo-500 hover:-translate-y-0.5 hover:shadow-lg active:scale-[0.98]"
+                  className="mt-6 w-full rounded-lg bg-indigo-600 py-3 text-sm font-bold text-white shadow-md transition-all duration-200 hover:bg-indigo-500 hover:-translate-y-0.5 hover:shadow-lg active:scale-[0.98]"
                 >
                   {(plan === "monthly" || plan === "yearly") ? "Manage Plan" : `Pay via GCash — ${billingCycle === "yearly" ? "Yearly" : "Monthly"}`}
                 </button>
@@ -3434,7 +3434,7 @@ This cannot be undone.`
                 type="button"
                 onClick={saveAccountPreferences}
                 disabled={prefsSaving}
-                className="inline-flex items-center justify-center rounded-full bg-indigo-600 px-6 py-2.5 text-sm font-semibold text-white shadow-md shadow-indigo-200 transition hover:-translate-y-0.5 hover:bg-indigo-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex items-center justify-center rounded-lg bg-indigo-600 px-6 py-2.5 text-sm font-semibold text-white shadow-md shadow-indigo-200 transition hover:-translate-y-0.5 hover:bg-indigo-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {prefsSaving ? "Saving..." : "Save preferences"}
               </button>
@@ -3456,7 +3456,7 @@ This cannot be undone.`
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5 items-stretch">
 
             {/* FREE tier */}
-            <div className={`rounded-3xl border ${galleryPlan === "free" ? "border-indigo-300 ring-2 ring-indigo-100" : "border-slate-200"} bg-white p-6 flex flex-col justify-between hover:shadow-md transition-all`}>
+            <div className={`rounded-xl border ${galleryPlan === "free" ? "border-indigo-300 ring-2 ring-indigo-100" : "border-slate-200"} bg-white p-6 flex flex-col justify-between hover:shadow-md transition-all`}>
               <div className="space-y-4">
                 <span className="inline-flex rounded-full bg-slate-100 px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest text-slate-600">Free</span>
                 <div>
@@ -3512,7 +3512,7 @@ This cannot be undone.`
               <button
                 type="button"
                 onClick={() => setGalleryPlan("free")}
-                className={`mt-6 w-full rounded-full py-3 text-sm font-bold transition-all ${galleryPlan === "free"
+                className={`mt-6 w-full rounded-lg py-3 text-sm font-bold transition-all ${galleryPlan === "free"
                   ? "bg-indigo-600 text-white shadow-md"
                   : "border border-slate-200 text-slate-700 hover:bg-slate-50 hover:-translate-y-0.5"
                   }`}
@@ -3522,7 +3522,7 @@ This cannot be undone.`
             </div>
 
             {/* PLUS tier — ₱900/mo */}
-            <div className={`relative rounded-3xl border-2 ${galleryPlan === "plus" ? "border-indigo-500 ring-2 ring-indigo-100" : "border-indigo-400"} bg-slate-900 p-6 flex flex-col justify-between text-white shadow-[0_24px_64px_rgba(79,70,229,0.18)] md:scale-[1.03]`}>
+            <div className={`relative rounded-xl border-2 ${galleryPlan === "plus" ? "border-indigo-500 ring-2 ring-indigo-100" : "border-indigo-400"} bg-slate-900 p-6 flex flex-col justify-between text-white shadow-[0_24px_64px_rgba(79,70,229,0.18)] md:scale-[1.03]`}>
               <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-indigo-600 px-4 py-1 text-[11px] font-bold uppercase tracking-widest text-white shadow-md">
                 Popular
               </span>
@@ -3574,7 +3574,7 @@ This cannot be undone.`
               <button
                 type="button"
                 onClick={() => openGcashPayment("gallery", "plus")}
-                className={`mt-6 w-full rounded-full py-3 text-sm font-bold shadow-md transition-all ${galleryPlan === "plus"
+                className={`mt-6 w-full rounded-lg py-3 text-sm font-bold shadow-md transition-all ${galleryPlan === "plus"
                   ? "bg-emerald-500 text-white"
                   : "bg-indigo-600 text-white hover:bg-indigo-500 hover:-translate-y-0.5 hover:shadow-lg"
                   } active:scale-[0.98]`}
@@ -3584,7 +3584,7 @@ This cannot be undone.`
             </div>
 
             {/* BUSINESS tier — ₱1,700/mo */}
-            <div className={`rounded-3xl border ${galleryPlan === "business" ? "border-indigo-300 ring-2 ring-indigo-100" : "border-slate-200"} bg-white p-6 flex flex-col justify-between hover:shadow-md transition-all`}>
+            <div className={`rounded-xl border ${galleryPlan === "business" ? "border-indigo-300 ring-2 ring-indigo-100" : "border-slate-200"} bg-white p-6 flex flex-col justify-between hover:shadow-md transition-all`}>
               <div className="space-y-4">
                 <span className="inline-flex rounded-full bg-violet-50 px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest text-violet-600">Business</span>
                 <div>
@@ -3633,7 +3633,7 @@ This cannot be undone.`
               <button
                 type="button"
                 onClick={() => openGcashPayment("gallery", "business")}
-                className={`mt-6 w-full rounded-full py-3 text-sm font-bold transition-all ${galleryPlan === "business"
+                className={`mt-6 w-full rounded-lg py-3 text-sm font-bold transition-all ${galleryPlan === "business"
                   ? "bg-emerald-500 text-white shadow-md"
                   : "border border-slate-200 text-slate-700 hover:bg-slate-50 hover:-translate-y-0.5 hover:shadow-md"
                   } active:scale-[0.98]`}
@@ -3693,14 +3693,14 @@ This cannot be undone.`
       {/* ===== GCASH PAYMENT MODAL ===== */}
       {showGcashModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4" onClick={() => setShowGcashModal(false)}>
-          <div className="w-full max-w-2xl rounded-3xl border border-slate-200 bg-white shadow-[0_32px_80px_rgba(0,0,0,0.15)] overflow-hidden" onClick={(e) => e.stopPropagation()}>
+          <div className="w-full max-w-2xl rounded-xl border border-slate-200 bg-white shadow-[0_32px_80px_rgba(0,0,0,0.15)] overflow-hidden" onClick={(e) => e.stopPropagation()}>
             {/* Modal header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
               <div>
                 <h3 className="text-lg font-bold text-slate-900">Pay via GCash</h3>
                 <p className="text-xs text-slate-500 mt-0.5">We'll verify and activate your plan manually — usually within a day.</p>
               </div>
-              <button type="button" onClick={() => setShowGcashModal(false)} className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 text-slate-400 hover:bg-slate-50 hover:text-slate-600 transition">
+              <button type="button" onClick={() => setShowGcashModal(false)} className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-400 hover:bg-slate-50 hover:text-slate-600 transition">
                 <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
               </button>
             </div>
@@ -3709,7 +3709,7 @@ This cannot be undone.`
             <div className="grid grid-cols-1 sm:grid-cols-2">
               {/* Left: QR + plan info */}
               <div className="flex flex-col items-center justify-center gap-4 p-6 bg-slate-50 border-r border-slate-100">
-                <div className="rounded-2xl border border-slate-200 p-3 bg-white shadow-sm">
+                <div className="rounded-lg border border-slate-200 p-3 bg-white shadow-sm">
                   <div className="w-44 h-44 bg-slate-100 rounded-xl flex items-center justify-center text-xs text-slate-400">
                     <img
                       src="gcash-qr.png"
@@ -3794,7 +3794,7 @@ This cannot be undone.`
                 <button
                   type="submit"
                   disabled={gcashSubmitting}
-                  className="w-full rounded-full bg-indigo-600 py-3 text-sm font-bold text-white shadow-md transition-all hover:bg-indigo-500 hover:-translate-y-0.5 active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed"
+                  className="w-full rounded-lg bg-indigo-600 py-3 text-sm font-bold text-white shadow-md transition-all hover:bg-indigo-500 hover:-translate-y-0.5 active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   {gcashSubmitting ? "Submitting..." : "Submit Payment Proof"}
                 </button>
@@ -3848,7 +3848,7 @@ This cannot be undone.`
   const renderHomeDashboard = () => (
     <div className="space-y-5">
       {/* Hero */}
-      <div className="relative overflow-hidden rounded-3xl border border-white/20 bg-gradient-to-br from-indigo-500 via-indigo-600 to-violet-700 px-6 py-6 text-white shadow-[0_24px_64px_rgba(79,70,229,0.25)]">
+      <div className="relative overflow-hidden rounded-xl border border-white/20 bg-gradient-to-br from-indigo-500 via-indigo-600 to-violet-700 px-6 py-6 text-white shadow-[0_24px_64px_rgba(79,70,229,0.25)]">
         <WavePattern />
         <div className="relative z-10 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
@@ -3864,14 +3864,14 @@ This cannot be undone.`
             <button
               type="button"
               onClick={createNewEventFromHome}
-              className="inline-flex items-center justify-center rounded-full bg-white px-5 py-2.5 text-sm font-semibold text-indigo-700 shadow-md transition hover:-translate-y-0.5 hover:shadow-lg active:scale-[0.98]"
+              className="inline-flex items-center justify-center rounded-lg bg-white px-5 py-2.5 text-sm font-semibold text-indigo-700 shadow-md transition hover:-translate-y-0.5 hover:shadow-lg active:scale-[0.98]"
             >
               + New event
             </button>
             <button
               type="button"
               onClick={openLatestEventFromHome}
-              className="inline-flex items-center justify-center rounded-full border border-white/25 bg-white/15 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-white/25 active:scale-[0.98]"
+              className="inline-flex items-center justify-center rounded-lg border border-white/25 bg-white/15 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-white/25 active:scale-[0.98]"
             >
               Resume latest
             </button>
@@ -4024,7 +4024,7 @@ This cannot be undone.`
                   key={label}
                   type="button"
                   onClick={onClick}
-                  className="rounded-2xl border border-slate-200 bg-white p-4 text-left hover:border-indigo-200 hover:bg-indigo-50/40 transition-all group active:scale-[0.98]"
+                  className="rounded-lg border border-slate-200 bg-white p-4 text-left hover:border-indigo-200 hover:bg-indigo-50/40 transition-all group active:scale-[0.98]"
                 >
                   <div className="text-sm font-semibold text-slate-800 group-hover:text-indigo-700 transition-colors">{label}</div>
                   <div className="mt-0.5 text-[11px] text-slate-400">{sub}</div>
@@ -4051,7 +4051,7 @@ This cannot be undone.`
                   key={ev.id}
                   type="button"
                   onClick={() => openEventEditor(ev)}
-                  className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left hover:border-indigo-200 hover:bg-indigo-50/30 transition-all group active:scale-[0.98]"
+                  className="flex w-full items-center justify-between rounded-lg border border-slate-200 bg-white px-4 py-3 text-left hover:border-indigo-200 hover:bg-indigo-50/30 transition-all group active:scale-[0.98]"
                 >
                   <div className="min-w-0">
                     <div className="text-sm font-semibold text-slate-800 truncate group-hover:text-indigo-700 transition-colors">
@@ -4068,7 +4068,7 @@ This cannot be undone.`
               ))}
 
               {events.length === 0 && (
-                <div className="rounded-2xl border border-dashed border-slate-200 p-6 text-center">
+                <div className="rounded-lg border border-dashed border-slate-200 p-6 text-center">
                   <div className="text-sm text-slate-400">No events yet.</div>
                   <button
                     onClick={createNewEventFromHome}
@@ -6507,7 +6507,7 @@ This cannot be undone.`
                       <button
                         key={id}
                         onClick={() => setActiveMain(id)}
-                        className={`w-full flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-medium transition-all active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 ${active
+                        className={`w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 ${active
                           ? "bg-indigo-50 text-indigo-700 shadow-[inset_0_0_0_1px_rgba(99,102,241,0.12)]"
                           : "text-slate-600 hover:bg-white hover:text-slate-900"
                           }`}
@@ -6540,7 +6540,7 @@ This cannot be undone.`
                 </div>
                 <button
                   onClick={() => setActiveMain("settings")}
-                  className={`w-full flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-medium transition-all active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 ${activeMain === "settings"
+                  className={`w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 ${activeMain === "settings"
                     ? "bg-indigo-50 text-indigo-700 shadow-[inset_0_0_0_1px_rgba(99,102,241,0.12)]"
                     : "text-slate-600 hover:bg-white hover:text-slate-900"
                     }`}
@@ -6564,7 +6564,7 @@ This cannot be undone.`
 
                 <button
                   onClick={() => setActiveMain("booths")}
-                  className={`w-full flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-medium transition-all active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 ${activeMain === "booths"
+                  className={`w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 ${activeMain === "booths"
                     ? "bg-indigo-50 text-indigo-700 shadow-[inset_0_0_0_1px_rgba(99,102,241,0.12)]"
                     : "text-slate-600 hover:bg-white hover:text-slate-900"
                     }`}
@@ -6593,7 +6593,7 @@ This cannot be undone.`
                 </div>
                 <button
                   onClick={() => setActiveMain("reports")}
-                  className={`w-full flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-medium transition-all active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 ${activeMain === "reports"
+                  className={`w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 ${activeMain === "reports"
                     ? "bg-indigo-50 text-indigo-700 shadow-[inset_0_0_0_1px_rgba(99,102,241,0.12)]"
                     : "text-slate-600 hover:bg-white hover:text-slate-900"
                     }`}
@@ -6623,7 +6623,7 @@ This cannot be undone.`
                   </div>
                   <button
                     onClick={() => setActiveMain("dashboard")}
-                    className="w-full rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-50 to-white px-3 py-3 text-left transition-all hover:border-indigo-200 hover:shadow-sm active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
+                    className="w-full rounded-lg border border-indigo-100 bg-gradient-to-br from-indigo-50 to-white px-3 py-3 text-left transition-all hover:border-indigo-200 hover:shadow-sm active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     <div className="flex items-center justify-between gap-2">
                       <div className="truncate text-xs font-semibold text-indigo-900">
@@ -6660,7 +6660,7 @@ This cannot be undone.`
                 <button
                   key={id}
                   onClick={() => setActiveMain(id)}
-                  className={`w-full flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-medium transition-all active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 ${activeMain === id
+                  className={`w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 ${activeMain === id
                     ? "bg-indigo-50 text-indigo-700 shadow-[inset_0_0_0_1px_rgba(99,102,241,0.12)]"
                     : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
                     }`}
@@ -6682,7 +6682,7 @@ This cannot be undone.`
             <div className="border-t border-slate-200/80 pt-4">
               <button
                 onClick={handleLogoutClick}
-                className="w-full flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-medium text-red-500 transition-all hover:bg-red-50 hover:text-red-600 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
+                className="w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-red-500 transition-all hover:bg-red-50 hover:text-red-600 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
               >
                 <svg
                   className="h-4 w-4 flex-shrink-0"
@@ -6723,7 +6723,7 @@ This cannot be undone.`
                     <button
                       type="button"
                       onClick={() => setActiveMain("events")}
-                      className="mt-4 inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 active:scale-[0.98]"
+                      className="mt-4 inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 active:scale-[0.98]"
                     >
                       Go to Events
                     </button>
@@ -6840,57 +6840,31 @@ This cannot be undone.`
 
               {/* DASHBOARD SUB-TABS */}
               {activeMain === "dashboard" && currentEvent && (
-                <div className={`${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_SOFT} mb-6 p-4`}>
-                  <div className="space-y-3">
-                    <div>
-                      <div className={`${EYEBROW} mb-2`}>Creative Setup</div>
-                      <div className="flex flex-wrap gap-2">
-                        {[
-                          ["branding", "Branding"],
-                          ["templates", "Templates"],
-                          ["frames", "Frames"],
-                          ["tones", "Tones"],
-                          ["background color", "Background Color"],
-                        ].map(([tab, label]) => (
-                          <button
-                            key={tab}
-                            type="button"
-                            onClick={() => setActiveSub(tab)}
-                            className={`px-4 py-2 text-sm font-semibold rounded-full transition-all active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed ${activeSub === tab
-                              ? "bg-indigo-600 text-white shadow-md shadow-indigo-200"
-                              : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-                              }`}
-                          >
-                            {label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    <hr className="border-slate-100" />
-
-                    <div>
-                      <div className={`${EYEBROW} mb-2`}>Controls & Analytics</div>
-                      <div className="flex flex-wrap gap-2">
-                        {[
-                          ["controls", "Controls"],
-                          ["analytics", "Analytics"],
-                          ["sharing", "Sharing"],
-                        ].map(([tab, label]) => (
-                          <button
-                            key={tab}
-                            type="button"
-                            onClick={() => setActiveSub(tab)}
-                            className={`px-4 py-2 text-sm font-semibold rounded-full transition-all active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed ${activeSub === tab
-                              ? "bg-indigo-600 text-white shadow-md shadow-indigo-200"
-                              : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-                              }`}
-                          >
-                            {label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
+                <div className={`${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_SOFT} mb-6 p-1.5`}>
+                  <div className="flex flex-wrap gap-1">
+                    {[
+                      ["branding", "Branding", "M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"],
+                      ["templates", "Templates", "M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zm0 8a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zm10 0a1 1 0 011-1h4a1 1 0 011 1v6a1 1 0 01-1 1h-4a1 1 0 01-1-1v-6z"],
+                      ["frames", "Frames", "M4 16V4a2 2 0 012-2h8a2 2 0 012 2v12m-6 4h.01M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"],
+                      ["tones", "Tones", "M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2z"],
+                      ["background color", "Colors", "M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485"],
+                      ["controls", "Controls", "M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"],
+                      ["analytics", "Analytics", "M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"],
+                      ["sharing", "Sharing", "M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"],
+                    ].map(([tab, label, icon]) => (
+                      <button
+                        key={tab}
+                        type="button"
+                        onClick={() => setActiveSub(tab)}
+                        className={`inline-flex items-center gap-1.5 px-3.5 py-2 text-sm font-medium rounded-md transition-all active:scale-[0.98] ${activeSub === tab
+                          ? "bg-indigo-600 text-white shadow-sm"
+                          : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                          }`}
+                      >
+                        <svg className="h-3.5 w-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d={icon} /></svg>
+                        {label}
+                      </button>
+                    ))}
                   </div>
                 </div>
               )}
@@ -6904,7 +6878,7 @@ This cannot be undone.`
 
               {activeMain === "booths" && (
                 <div className="space-y-4">
-                  <div className="relative overflow-hidden rounded-3xl border border-white/20 bg-gradient-to-br from-indigo-500 via-indigo-600 to-violet-700 px-6 py-6 text-white shadow-[0_24px_64px_rgba(79,70,229,0.25)]">
+                  <div className="relative overflow-hidden rounded-xl border border-white/20 bg-gradient-to-br from-indigo-500 via-indigo-600 to-violet-700 px-6 py-6 text-white shadow-[0_24px_64px_rgba(79,70,229,0.25)]">
                     <WavePattern />
                     <div className="relative z-10">
                       <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/15 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white">Remote</div>
@@ -6979,7 +6953,7 @@ This cannot be undone.`
                 <div className="space-y-5">
 
                   {/* ===== Header — gradient banner ===== */}
-                  <div className="relative overflow-hidden rounded-3xl border border-white/20 bg-gradient-to-br from-indigo-500 via-indigo-600 to-violet-700 px-6 py-6 text-white shadow-[0_24px_64px_rgba(79,70,229,0.25)]">
+                  <div className="relative overflow-hidden rounded-xl border border-white/20 bg-gradient-to-br from-indigo-500 via-indigo-600 to-violet-700 px-6 py-6 text-white shadow-[0_24px_64px_rgba(79,70,229,0.25)]">
                     <WavePattern />
                     <div className="relative z-10 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                       <div>
@@ -6991,14 +6965,14 @@ This cannot be undone.`
                         <select
                           value={reportEventId}
                           onChange={(e) => setReportEventId(e.target.value)}
-                          className="rounded-full border border-white/25 bg-white/15 px-4 py-2 text-sm text-white font-medium outline-none hover:bg-white/25 transition"
+                          className="rounded-lg border border-white/25 bg-white/15 px-4 py-2 text-sm text-white font-medium outline-none hover:bg-white/25 transition"
                         >
                           <option value="all" className="text-slate-900">All events</option>
                           {events.map(ev => (
                             <option key={ev.id} value={ev.id} className="text-slate-900">{ev.name}</option>
                           ))}
                         </select>
-                        <button onClick={exportReportCSV} className="inline-flex items-center justify-center rounded-full bg-white px-5 py-2 text-sm font-semibold text-indigo-700 shadow-md transition hover:-translate-y-0.5 hover:shadow-lg active:scale-[0.98]">
+                        <button onClick={exportReportCSV} className="inline-flex items-center justify-center rounded-lg bg-white px-5 py-2 text-sm font-semibold text-indigo-700 shadow-md transition hover:-translate-y-0.5 hover:shadow-lg active:scale-[0.98]">
                           Export CSV
                         </button>
                       </div>
@@ -7231,7 +7205,7 @@ This cannot be undone.`
               {activeMain === "settings" && (
                 <div className="space-y-6">
                   {/* ================= Header ================= */}
-                  <div className="relative overflow-hidden rounded-3xl border border-white/20 bg-gradient-to-br from-indigo-500 via-indigo-600 to-violet-700 px-6 py-6 text-white shadow-[0_24px_64px_rgba(79,70,229,0.25)]">
+                  <div className="relative overflow-hidden rounded-xl border border-white/20 bg-gradient-to-br from-indigo-500 via-indigo-600 to-violet-700 px-6 py-6 text-white shadow-[0_24px_64px_rgba(79,70,229,0.25)]">
                     <WavePattern />
                     <div className="relative z-10 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                       <div>
@@ -7249,14 +7223,14 @@ This cannot be undone.`
                         <button
                           type="button"
                           onClick={saveSettings}
-                          className="inline-flex items-center justify-center rounded-full bg-white px-5 py-2.5 text-sm font-semibold text-indigo-700 shadow-md transition hover:-translate-y-0.5 hover:shadow-lg active:scale-[0.98]"
+                          className="inline-flex items-center justify-center rounded-lg bg-white px-5 py-2.5 text-sm font-semibold text-indigo-700 shadow-md transition hover:-translate-y-0.5 hover:shadow-lg active:scale-[0.98]"
                         >
                           Save settings
                         </button>
                         <button
                           type="button"
                           onClick={resetSettingsToDefault}
-                          className="inline-flex items-center justify-center rounded-full border border-white/25 bg-white/15 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-white/25 active:scale-[0.98]"
+                          className="inline-flex items-center justify-center rounded-lg border border-white/25 bg-white/15 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-white/25 active:scale-[0.98]"
                         >
                           Reset to defaults
                         </button>
@@ -7336,7 +7310,7 @@ This cannot be undone.`
                           key={tab.id}
                           type="button"
                           onClick={() => setActiveSettingsTab(tab.id)}
-                          className={`px-4 py-2 text-sm font-semibold transition-all active:scale-[0.98] rounded-full ${activeSettingsTab === tab.id
+                          className={`px-4 py-2 text-sm font-semibold transition-all active:scale-[0.98] rounded-lg ${activeSettingsTab === tab.id
                             ? "bg-indigo-600 text-white shadow-md shadow-indigo-200"
                             : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
                             }`}
@@ -7946,51 +7920,7 @@ This cannot be undone.`
                           </div>
                         </div>
 
-                        {/* Session behavior */}
-                        <div className={`${SURFACE_BG} ${SURFACE_BORDER} ${SMALL_CARD_RADIUS} p-4`}>
-                          <div className="text-sm font-medium text-gray-900">Session behavior</div>
-                          <div className="text-xs text-gray-500 mt-1">
-                            Control how each photo session runs.
-                          </div>
-
-                          <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <label className="block text-xs text-gray-700">
-                              Countdown (seconds)
-                              <input
-                                type="number"
-                                min={1}
-                                max={30}
-                                value={countdown}
-                                onChange={(e) => setCountdown(Number(e.target.value) || 5)}
-                                className={`${SURFACE_BG} ${SURFACE_BORDER} ${INPUT_RADIUS} px-3 py-2 mt-1 w-full`}
-                              />
-                            </label>
-
-                            <label className="block text-xs text-gray-700">
-                              Number of shots
-                              <input
-                                type="number"
-                                min={1}
-                                max={10}
-                                value={numberOfShots}
-                                onChange={(e) => setNumberOfShots(Number(e.target.value) || 3)}
-                                className={`${SURFACE_BG} ${SURFACE_BORDER} ${INPUT_RADIUS} px-3 py-2 mt-1 w-full`}
-                              />
-                            </label>
-
-                            <label className="block text-xs text-gray-700">
-                              Retake limit
-                              <input
-                                type="number"
-                                min={0}
-                                max={20}
-                                value={retakeLimit}
-                                onChange={(e) => setRetakeLimit(Number(e.target.value) || 0)}
-                                className={`${SURFACE_BG} ${SURFACE_BORDER} ${INPUT_RADIUS} px-3 py-2 mt-1 w-full`}
-                              />
-                            </label>
-                          </div>
-                        </div>
+                        {/* Note: Session behavior (countdown, shots, retakes) is configured per-event in Dashboard > Controls */}
 
                         {/* Idle & display */}
                         <div className={`${SURFACE_BG} ${SURFACE_BORDER} ${SMALL_CARD_RADIUS} p-4`}>
@@ -8413,7 +8343,7 @@ This cannot be undone.`
                         <button
                           type="submit"
                           disabled={!ready || !newEventName.trim()}
-                          className="flex-shrink-0 inline-flex items-center justify-center rounded-full bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md shadow-indigo-200 transition hover:-translate-y-0.5 hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+                          className="flex-shrink-0 inline-flex items-center justify-center rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md shadow-indigo-200 transition hover:-translate-y-0.5 hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           Create
                         </button>
@@ -8456,11 +8386,11 @@ This cannot be undone.`
                     {!hydrated ? (
                       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
                         {Array.from({ length: 6 }).map((_, index) => (
-                          <div key={`event-skeleton-${index}`} className="animate-pulse bg-slate-100 rounded-2xl h-20 w-full" />
+                          <div key={`event-skeleton-${index}`} className="animate-pulse bg-slate-100 rounded-lg h-20 w-full" />
                         ))}
                       </div>
                     ) : events.length === 0 ? (
-                      <div className="rounded-3xl border border-dashed border-slate-200 p-12 text-center">
+                      <div className="rounded-xl border border-dashed border-slate-200 p-12 text-center">
                         <div className="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center mx-auto mb-3">
                           <svg className="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
@@ -8471,7 +8401,7 @@ This cannot be undone.`
                         <button
                           type="button"
                           onClick={() => document.getElementById("create-event-input")?.focus()}
-                          className="mt-4 inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 active:scale-[0.98]"
+                          className="mt-4 inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 active:scale-[0.98]"
                         >
                           Create event
                         </button>
@@ -8487,7 +8417,7 @@ This cannot be undone.`
                           return (
                             <div
                               key={ev.id}
-                              className={`flex flex-col rounded-3xl border bg-white p-4 shadow-sm transition-all ${isActive ? "border-indigo-300 ring-2 ring-indigo-100 shadow-[0_8px_30px_rgba(79,70,229,0.10)]" : "border-slate-200 hover:border-slate-300 hover:shadow-md"
+                              className={`flex flex-col rounded-xl border bg-white p-4 shadow-sm transition-all ${isActive ? "border-indigo-300 ring-2 ring-indigo-100 shadow-[0_8px_30px_rgba(79,70,229,0.10)]" : "border-slate-200 hover:border-slate-300 hover:shadow-md"
                                 }`}
                             >
                               {/* Card header */}
@@ -8551,7 +8481,7 @@ This cannot be undone.`
                                     setActiveMain("dashboard");
                                     setActiveSub("branding");
                                   }}
-                                  className="flex-1 inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 active:scale-[0.98]"
+                                  className="flex-1 inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 active:scale-[0.98]"
                                 >
                                   Open editor
                                 </button>
@@ -8580,7 +8510,7 @@ This cannot be undone.`
                                       console.error("Start Photo booth failed:", e);
                                     }
                                   }}
-                                  className="flex-1 inline-flex items-center justify-center rounded-full bg-indigo-600 px-3 py-2 text-xs font-semibold text-white shadow-sm shadow-indigo-200 transition hover:-translate-y-0.5 hover:bg-indigo-700 active:scale-[0.98]"
+                                  className="flex-1 inline-flex items-center justify-center rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white shadow-sm shadow-indigo-200 transition hover:-translate-y-0.5 hover:bg-indigo-700 active:scale-[0.98]"
                                 >
                                   Start booth
                                 </button>
@@ -9013,7 +8943,7 @@ This cannot be undone.`
                       {/* Template List */}
                       <div className="mt-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                         {!hydrated ? Array.from({ length: 6 }).map((_, index) => (
-                          <div key={`template-skeleton-${index}`} className="animate-pulse bg-slate-100 rounded-2xl h-20 w-full" />
+                          <div key={`template-skeleton-${index}`} className="animate-pulse bg-slate-100 rounded-lg h-20 w-full" />
                         )) : templates.map((tpl) => {
                           const layout = tpl.previewMeta?.layout ?? "4x6";
                           const aspectMap = {
@@ -9032,7 +8962,7 @@ This cannot be undone.`
                           return (
                             <div
                               key={tpl.id}
-                              className="p-4 rounded-2xl border border-slate-200 bg-white flex flex-col gap-3"
+                              className="p-4 rounded-lg border border-slate-200 bg-white flex flex-col gap-3"
                             >
                               <div>
                                 <div className="text-sm font-medium truncate">{tpl.name}</div>
@@ -9087,7 +9017,7 @@ This cannot be undone.`
                                     setSelectionIds([]);
                                     setIsTemplateModalOpen(true);
                                   }}
-                                  className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed"
+                                  className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed"
                                 >
                                   Edit
                                 </button>
@@ -9207,7 +9137,7 @@ This cannot be undone.`
 
                       <div className="mt-4 grid grid-cols-2 md:grid-cols-2 xl:grid-cols-4 gap-2">
                         {!hydrated ? Array.from({ length: 8 }).map((_, index) => (
-                          <div key={`frame-skeleton-${index}`} className="animate-pulse bg-slate-100 rounded-2xl h-20 w-full" />
+                          <div key={`frame-skeleton-${index}`} className="animate-pulse bg-slate-100 rounded-lg h-20 w-full" />
                         )) : frames.map((frame) => {
                           const applied = currentEvent.appliedFrames?.some((f) => f.id === frame.id);
                           const appliedEntry = (currentEvent.appliedFrames ?? []).find(f => f.id === frame.id);
@@ -9222,7 +9152,7 @@ This cannot be undone.`
                           const thumbSrc = firstKey ? frame.previews[firstKey].originalDataUrl : null;
 
                           return (
-                            <div key={frame.id} className="p-4 rounded-2xl border border-slate-200 bg-white flex flex-col gap-3">
+                            <div key={frame.id} className="p-4 rounded-lg border border-slate-200 bg-white flex flex-col gap-3">
                               {/* Title: "<aspect> - <frame name>" */}
                               <div className="text-sm font-medium truncate">
                                 {aspectLabel} - {frame.name}
@@ -9440,7 +9370,7 @@ This cannot be undone.`
                             currentEvent.appliedTones?.some((t) => t.id === tone.id);
 
                           return (
-                            <div key={tone.id} className="p-4 rounded-2xl border border-slate-200 bg-white">
+                            <div key={tone.id} className="p-4 rounded-lg border border-slate-200 bg-white">
                               <div className="text-sm font-medium">{tone.name}</div>
 
                               <div className="mt-2 text-xs text-gray-600">
@@ -9527,7 +9457,7 @@ This cannot be undone.`
                           const isActiveForFrames = selectedBgColorId === p.id;
 
                           return (
-                            <div key={p.id} className="p-4 rounded-2xl border border-slate-200 bg-white flex flex-col gap-3">
+                            <div key={p.id} className="p-4 rounded-lg border border-slate-200 bg-white flex flex-col gap-3">
                               <div>{paletteName(p)}</div>
                               {/* Swatch/Gradient */}
                               <div
@@ -9736,7 +9666,7 @@ This cannot be undone.`
                                 setTimersEnabled(true);
                                 showToast("Using current timers for this event");
                               }}
-                              className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 active:scale-[0.98]"
+                              className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 active:scale-[0.98]"
                             >
                               Use timers
                             </button>
@@ -9746,7 +9676,7 @@ This cannot be undone.`
                                 setTimersEnabled(true);
                                 showToast("Reset to default timers");
                               }}
-                              className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 active:scale-[0.98]"
+                              className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 active:scale-[0.98]"
                             >
                               Reset
                             </button>
@@ -9996,42 +9926,163 @@ This cannot be undone.`
                     </div>
                   )}
 
-                  {/* Socials Sharing */}
+                  {/* Sharing & Delivery */}
                   {activeMain === "dashboard" && currentEvent && activeSub === "sharing" && (
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="space-y-4">
+
+                      {/* Sharing Methods */}
                       <div className={cardClass}>
-                        <div className="text-sm font-semibold text-slate-800">Overview</div>
-                        <div className="mt-3 grid grid-cols-2 gap-3">
-                          <div className={smallCardClass}>
-                            <div className="text-xs text-gray-600">Sessions Today</div>
-                            <div className="text-xl font-semibold">
-                              {completedSessionsToday(currentEvent)}
-                            </div>
-                            <div className="text-xs text-gray-600">Completed sessions</div>
-                          </div>
-                          <div className={smallCardClass}>
-                            <div className="text-xs text-gray-600">Revenue Today</div>
-                            <div className="text-xl font-semibold">
-                              ₱{currentEvent?.analytics?.revenueToday ?? 0}
-                            </div>
-                            <div className="text-xs text-gray-600">Payments & add-ons</div>
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <div className="text-sm font-semibold text-slate-800">Sharing Methods</div>
+                            <div className="text-xs text-slate-500 mt-0.5">Choose how guests receive their photos and videos after each session.</div>
                           </div>
                         </div>
-                      </div>
-                      <div className={cardClass}>
-                        <div className="text-sm font-semibold text-slate-800">Weekly Sessions</div>
-                        <div className="mt-3 text-2xl font-semibold">
-                          {currentEvent?.analytics?.sessionsWeekly ?? 0}
+                        <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+                          {[
+                            { key: "qrCode", label: "QR Code", desc: "Guests scan a QR code on screen to view and download their media.", icon: "M3 4a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H4a1 1 0 01-1-1V4zm2 1v2h2V5H5zm-2 8a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H4a1 1 0 01-1-1v-4zm2 1v2h2v-2H5zm8-10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1V4zm2 1v2h2V5h-2z" },
+                            { key: "airdrop", label: "AirDrop", desc: "Send photos directly to nearby Apple devices via AirDrop.", icon: "M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.858 15.355-5.858 21.213 0" },
+                            { key: "email", label: "Email", desc: "Guests enter their email to receive a download link.", icon: "M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" },
+                            { key: "download", label: "Direct Download", desc: "Allow guests to download directly from the booth kiosk screen.", icon: "M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" },
+                          ].map(({ key, label, desc, icon }) => {
+                            const enabled = currentEvent?.sharing?.[key] ?? (key === "qrCode" || key === "download");
+                            return (
+                              <div key={key} className={`flex items-start gap-3 ${SURFACE_BG} ${SURFACE_BORDER} ${SMALL_CARD_RADIUS} p-3.5 transition ${enabled ? "ring-1 ring-indigo-200 border-indigo-200" : ""}`}>
+                                <div className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg ${enabled ? "bg-indigo-100 text-indigo-600" : "bg-slate-100 text-slate-400"}`}>
+                                  <svg className="h-4.5 w-4.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d={icon} /></svg>
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center justify-between">
+                                    <div className="text-sm font-semibold text-slate-800">{label}</div>
+                                    <label className="relative inline-flex items-center cursor-pointer">
+                                      <input
+                                        type="checkbox"
+                                        className="sr-only peer"
+                                        checked={enabled}
+                                        onChange={(e) => {
+                                          const updated = { ...currentEvent, sharing: { ...(currentEvent.sharing || {}), [key]: e.target.checked } };
+                                          setCurrentEvent(updated);
+                                        }}
+                                      />
+                                      <div className="w-9 h-5 bg-slate-200 peer-focus:ring-2 peer-focus:ring-indigo-100 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600" />
+                                    </label>
+                                  </div>
+                                  <div className="text-xs text-slate-500 mt-0.5">{desc}</div>
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
-                        <div className="text-xs text-gray-600">Chart</div>
                       </div>
-                      <div className={cardClass}>
-                        <div className="text-sm font-semibold text-slate-800">Monthly Revenue</div>
-                        <div className="mt-3 text-2xl font-semibold">
-                          ₱{currentEvent?.analytics?.revenueMonthly ?? 0}
+
+                      {/* Delivery Flow */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className={cardClass}>
+                          <div className="text-sm font-semibold text-slate-800">Delivery Screen</div>
+                          <div className="text-xs text-slate-500 mt-0.5">Configure the post-session delivery screen guests see.</div>
+                          <div className="mt-4 space-y-3">
+                            <label className="block text-xs text-gray-700">
+                              Screen title
+                              <input
+                                type="text"
+                                value={currentEvent?.sharing?.screenTitle ?? "Your photos are ready!"}
+                                onChange={(e) => {
+                                  const updated = { ...currentEvent, sharing: { ...(currentEvent.sharing || {}), screenTitle: e.target.value } };
+                                  setCurrentEvent(updated);
+                                }}
+                                placeholder="Your photos are ready!"
+                                className={`${SURFACE_BG} ${SURFACE_BORDER} w-full ${INPUT_RADIUS} px-3 py-2 text-sm outline-none mt-1 focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 transition`}
+                              />
+                            </label>
+                            <label className="block text-xs text-gray-700">
+                              Screen message
+                              <textarea
+                                value={currentEvent?.sharing?.screenMessage ?? "Scan the QR code or choose a delivery method below."}
+                                onChange={(e) => {
+                                  const updated = { ...currentEvent, sharing: { ...(currentEvent.sharing || {}), screenMessage: e.target.value } };
+                                  setCurrentEvent(updated);
+                                }}
+                                placeholder="Scan the QR code or choose a delivery method below."
+                                rows={2}
+                                className={`${SURFACE_BG} ${SURFACE_BORDER} w-full ${INPUT_RADIUS} px-3 py-2 text-sm outline-none mt-1 focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 transition resize-none`}
+                              />
+                            </label>
+                            <label className="block text-xs text-gray-700">
+                              Screen timeout (seconds)
+                              <input
+                                type="number"
+                                min={5}
+                                max={120}
+                                value={currentEvent?.sharing?.screenTimeout ?? 30}
+                                onChange={(e) => {
+                                  const updated = { ...currentEvent, sharing: { ...(currentEvent.sharing || {}), screenTimeout: Number(e.target.value) } };
+                                  setCurrentEvent(updated);
+                                }}
+                                className={`${SURFACE_BG} ${SURFACE_BORDER} w-full ${INPUT_RADIUS} px-3 py-2 text-sm outline-none mt-1 focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 transition`}
+                              />
+                            </label>
+                          </div>
                         </div>
-                        <div className="text-xs text-gray-600">Chart</div>
+
+                        <div className={cardClass}>
+                          <div className="text-sm font-semibold text-slate-800">Guest Output</div>
+                          <div className="text-xs text-slate-500 mt-0.5">Control what guests receive and output quality.</div>
+                          <div className="mt-4 space-y-3">
+                            <label className="block text-xs text-gray-700">
+                              Output format
+                              <select
+                                value={currentEvent?.sharing?.outputFormat ?? "jpg"}
+                                onChange={(e) => {
+                                  const updated = { ...currentEvent, sharing: { ...(currentEvent.sharing || {}), outputFormat: e.target.value } };
+                                  setCurrentEvent(updated);
+                                }}
+                                className={`${SURFACE_BG} ${SURFACE_BORDER} w-full ${INPUT_RADIUS} px-3 py-2 text-sm outline-none mt-1 focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 transition`}
+                              >
+                                <option value="jpg">JPEG (smaller file size)</option>
+                                <option value="png">PNG (lossless quality)</option>
+                              </select>
+                            </label>
+                            <label className="block text-xs text-gray-700">
+                              Image quality
+                              <select
+                                value={currentEvent?.sharing?.imageQuality ?? "high"}
+                                onChange={(e) => {
+                                  const updated = { ...currentEvent, sharing: { ...(currentEvent.sharing || {}), imageQuality: e.target.value } };
+                                  setCurrentEvent(updated);
+                                }}
+                                className={`${SURFACE_BG} ${SURFACE_BORDER} w-full ${INPUT_RADIUS} px-3 py-2 text-sm outline-none mt-1 focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 transition`}
+                              >
+                                <option value="original">Original (full resolution)</option>
+                                <option value="high">High (optimized)</option>
+                                <option value="medium">Medium (web-friendly)</option>
+                              </select>
+                            </label>
+                            <label className="flex items-center gap-2 text-sm text-gray-700">
+                              <input
+                                type="checkbox"
+                                checked={currentEvent?.sharing?.includeVideo ?? true}
+                                onChange={(e) => {
+                                  const updated = { ...currentEvent, sharing: { ...(currentEvent.sharing || {}), includeVideo: e.target.checked } };
+                                  setCurrentEvent(updated);
+                                }}
+                              />
+                              Include video in delivery
+                            </label>
+                            <label className="flex items-center gap-2 text-sm text-gray-700">
+                              <input
+                                type="checkbox"
+                                checked={currentEvent?.sharing?.watermark ?? false}
+                                onChange={(e) => {
+                                  const updated = { ...currentEvent, sharing: { ...(currentEvent.sharing || {}), watermark: e.target.checked } };
+                                  setCurrentEvent(updated);
+                                }}
+                              />
+                              Add watermark to shared photos
+                            </label>
+                          </div>
+                        </div>
                       </div>
+
                     </div>
                   )}
 
@@ -10229,7 +10280,7 @@ This cannot be undone.`
                   <div className="mt-5 flex items-center justify-end gap-3">
                     <button
                       onClick={() => setDeleteTarget(null)}
-                      className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
+                      className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
                     >
                       Cancel
                     </button>
@@ -10347,7 +10398,7 @@ This cannot be undone.`
                           setDeleteTarget(null);
                         }
                       }}
-                      className="inline-flex items-center justify-center rounded-full bg-red-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md shadow-red-200 transition hover:-translate-y-0.5 hover:bg-red-700"
+                      className="inline-flex items-center justify-center rounded-lg bg-red-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md shadow-red-200 transition hover:-translate-y-0.5 hover:bg-red-700"
                     >
                       Delete
                     </button>
