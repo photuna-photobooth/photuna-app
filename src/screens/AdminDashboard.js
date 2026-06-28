@@ -2367,7 +2367,7 @@ This cannot be undone.`
       const [
         persistedEvents, appearance, settings,
         persistedTemplates, persistedFrames, persistedTones, persistedPalettes,
-        currentEventId, currentSubTab
+        currentEventId, currentSubTab, persistedActiveMain
       ] = await Promise.all([
         native.getEvents?.(ctx),
         native.getAppearance?.(ctx),
@@ -2378,6 +2378,7 @@ This cannot be undone.`
         native.getPalettes?.(ctx),
         native.getCurrentEventId?.(),
         native.getCurrentSubTab?.(),
+        native.getActiveMain?.(),
       ]);
 
       // Events
@@ -2505,9 +2506,13 @@ This cannot be undone.`
         const found = persistedEvents.find((e) => e.id === currentEventId);
         if (found) {
           setCurrentEvent(JSON.parse(JSON.stringify(found)));
-          setActiveMain("dashboard");
           setActiveSub(currentSubTab ?? "branding");
         }
+      }
+
+      // Restore active main tab (default to "home" if nothing persisted)
+      if (persistedActiveMain) {
+        setActiveMain(persistedActiveMain);
       }
 
       setHydrated(true);
@@ -4888,7 +4893,7 @@ This cannot be undone.`
       try {
         const ctx = { userId: identity.userId };
         const [
-          persistedEvents, appearance, settings, persistedTemplates, persistedFrames, persistedTones, persistedPalettes, currentEventId, currentSubTab,
+          persistedEvents, appearance, settings, persistedTemplates, persistedFrames, persistedTones, persistedPalettes, currentEventId, currentSubTab, persistedActiveMain,
         ] = await Promise.all([
           native?.getEvents?.(ctx),
           native?.getAppearance?.(ctx),
@@ -4899,6 +4904,7 @@ This cannot be undone.`
           native?.getPalettes?.(ctx),
           native?.getCurrentEventId?.(), // can remain global pin, or scope by user if desired
           native?.getCurrentSubTab?.(),
+          native?.getActiveMain?.(),
         ]);
 
         if (Array.isArray(persistedEvents)) setEvents(persistedEvents);
@@ -5019,9 +5025,13 @@ This cannot be undone.`
           const found = persistedEvents.find((e) => e.id === currentEventId);
           if (found) {
             setCurrentEvent(JSON.parse(JSON.stringify(found)));
-            setActiveMain("dashboard");
             setActiveSub(currentSubTab ?? "branding");
           }
+        }
+
+        // Restore active main tab (default to "home" if nothing persisted)
+        if (persistedActiveMain) {
+          setActiveMain(persistedActiveMain);
         }
         setHydrated(true); // <- mark hydration complete
       } catch (err) {
@@ -5271,6 +5281,10 @@ This cannot be undone.`
     if (!native?.setCurrentSubTab) return;
     native?.setCurrentSubTab(activeSub).catch?.(() => { });
   }, [activeSub, native]);
+  useEffect(() => {
+    if (!native?.setActiveMain || !hydrated) return;
+    native.setActiveMain(activeMain).catch?.(() => { });
+  }, [activeMain, native, hydrated]);
 
   useEffect(() => {
     if (!currentEvent) return;
