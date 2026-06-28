@@ -50,8 +50,8 @@
   "scripts": {
     "start": "concurrently \"npm run react-start\" \"npm run electron-start\"",
     "react-start": "cross-env BROWSER=none react-scripts start",
-    "electron": "cross-env ELECTRON_START_URL=http://localhost:3000 electron . --no-watcher",
-    "electron-start": "wait-on http://localhost:3000 && cross-env ELECTRON_START_URL=http://localhost:3000 electron . --no-watcher",
+    "electron": "cross-env ELECTRON_START_URL=https://app.studiophotuna.com electron . --no-watcher",
+    "electron-start": "wait-on https://app.studiophotuna.com && cross-env ELECTRON_START_URL=https://app.studiophotuna.com electron . --no-watcher",
     "build": "react-scripts build",
     "test": "react-scripts test",
     "dist": "electron-builder",
@@ -77,10 +77,6 @@
       "node_modules/ffmpeg-static/**/*"
     ],
     "extraResources": [
-      {
-        "from": ".env",
-        "to": ".env"
-      },
       {
         "from": "electron/bin/photo-print-helper.exe",
         "to": "bin/photo-print-helper.exe"
