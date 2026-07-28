@@ -4200,8 +4200,9 @@ app.whenReady().then(async () => {
   safeHandle("store:getPalettes", (_e, { userId } = {}) => {
     try {
       const key = `users.${String(userId || getUserIdFromStore())}.palettes`;
-      return (typeof store.get === "function" ? (store.get(key) || {}) : {});
-    } catch (err) { console.error("store:getPalettes error", err); return {}; }
+      const v = typeof store.get === "function" ? store.get(key) : [];
+      return Array.isArray(v) ? v : [];
+    } catch (err) { console.error("store:getPalettes error", err); return []; }
   });
 
   safeHandle("store:setPalettes", (_e, appearance, { userId } = {}) => {
@@ -4213,8 +4214,9 @@ app.whenReady().then(async () => {
   safeHandle("store:getFrames", (_e, { userId } = {}) => {
     try {
       const key = `users.${String(userId || getUserIdFromStore())}.frames`;
-      return (typeof store.get === "function" ? (store.get(key) || {}) : {});
-    } catch (err) { console.error("store:getFrames error", err); return {}; }
+      const v = typeof store.get === "function" ? store.get(key) : [];
+      return Array.isArray(v) ? v : [];
+    } catch (err) { console.error("store:getFrames error", err); return []; }
   });
 
   safeHandle("store:setFrames", (_e, appearance, { userId } = {}) => {
@@ -4226,8 +4228,9 @@ app.whenReady().then(async () => {
   safeHandle("store:getTones", (_e, { userId } = {}) => {
     try {
       const key = `users.${String(userId || getUserIdFromStore())}.tones`;
-      return (typeof store.get === "function" ? (store.get(key) || {}) : {});
-    } catch (err) { console.error("store:getTones error", err); return {}; }
+      const v = typeof store.get === "function" ? store.get(key) : [];
+      return Array.isArray(v) ? v : [];
+    } catch (err) { console.error("store:getTones error", err); return []; }
   });
 
   safeHandle("store:setTones", (_e, appearance, { userId } = {}) => {

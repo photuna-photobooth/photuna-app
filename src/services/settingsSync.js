@@ -35,14 +35,18 @@ export async function pullSettings() {
   const ctx = { userId: _userId };
   if (data.settings) await store.setSettings?.(data.settings, ctx);
   if (data.appearance) await store.setAppearance?.(data.appearance, ctx);
-  if (Array.isArray(data.events)) {
-    // Preserve sessions recorded locally — Supabase never stores booth-run session records
+  if (Array.isArray(data.events) && data.events.length > 0) {
+    // Preserve sessions recorded locally — Supabase never stores booth-run session records.
+    // Only overwrite local when Supabase has events; if Supabase is empty, keep local data
+    // (handles the case where the app was closed before the 2-second push debounce fired).
     const localEvents = (await store.getEvents?.(ctx)) ?? [];
     const merged = data.events.map((e) => {
       const local = localEvents.find((le) => String(le.id) === String(e.id));
       return local?.sessions?.length ? { ...e, sessions: local.sessions } : e;
     });
-    await store.setEvents?.(merged, ctx);
+    // Include local events not yet synced to Supabase (created after last successful push)
+    const unsynced = localEvents.filter(le => !data.events.find(e => String(e.id) === String(le.id)));
+    await store.setEvents?.([...merged, ...unsynced], ctx);
   }
   // For arrays: only overwrite local if Supabase has data.
   // An empty Supabase array means the push hadn't synced yet — don't clobber local.
