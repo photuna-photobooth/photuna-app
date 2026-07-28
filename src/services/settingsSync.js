@@ -33,8 +33,11 @@ export async function pullSettings() {
   if (!store) return data;
 
   const ctx = { userId: _userId };
-  if (data.settings) await store.setSettings?.(data.settings, ctx);
-  if (data.appearance) await store.setAppearance?.(data.appearance, ctx);
+  // Only overwrite local if Supabase has non-empty data — {} means the push
+  // hadn't synced yet, so clobbering local would destroy the user's settings.
+  const nonEmpty = (v) => v && typeof v === 'object' && Object.keys(v).length > 0;
+  if (nonEmpty(data.settings)) await store.setSettings?.(data.settings, ctx);
+  if (nonEmpty(data.appearance)) await store.setAppearance?.(data.appearance, ctx);
   if (Array.isArray(data.events) && data.events.length > 0) {
     // Preserve sessions recorded locally — Supabase never stores booth-run session records.
     // Only overwrite local when Supabase has events; if Supabase is empty, keep local data
