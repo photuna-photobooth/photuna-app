@@ -4187,7 +4187,7 @@ app.whenReady().then(async () => {
       const key = `users.${String(userId || getUserIdFromStore())}.templates`;
       const v = typeof store.get === "function" ? store.get(key) : [];
       return Array.isArray(v) ? v : [];
-    } catch (err) { console.error("store:getTemplates error", err); return {}; }
+    } catch (err) { console.error("store:getTemplates error", err); return []; }
   });
 
   safeHandle("store:setTemplates", (_e, appearance, { userId } = {}) => {

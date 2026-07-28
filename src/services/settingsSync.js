@@ -44,9 +44,11 @@ export async function pullSettings() {
     });
     await store.setEvents?.(merged, ctx);
   }
-  if (Array.isArray(data.templates)) await store.setTemplates?.(data.templates, ctx);
-  if (Array.isArray(data.frames)) await store.setFrames?.(data.frames, ctx);
-  if (Array.isArray(data.palettes)) await store.setPalettes?.(data.palettes, ctx);
+  // For arrays: only overwrite local if Supabase has data.
+  // An empty Supabase array means the push hadn't synced yet — don't clobber local.
+  if (Array.isArray(data.templates) && data.templates.length > 0) await store.setTemplates?.(data.templates, ctx);
+  if (Array.isArray(data.frames) && data.frames.length > 0) await store.setFrames?.(data.frames, ctx);
+  if (Array.isArray(data.palettes) && data.palettes.length > 0) await store.setPalettes?.(data.palettes, ctx);
 
   console.log('[settingsSync] pulled from Supabase');
   return data;
