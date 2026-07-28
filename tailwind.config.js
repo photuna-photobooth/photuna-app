@@ -6,6 +6,11 @@ module.exports = {
   ],
   theme: {
     extend: {
+      screens: {
+        // Tablet breakpoints used with portrait:/landscape: variants
+        // e.g. portrait:tablet:grid-cols-2
+        tablet: "768px",
+      },
       fontFamily: {
         roboto: ['Roboto', 'sans-serif'],
         openSans: ['Open Sans', 'sans-serif'],

@@ -17,10 +17,10 @@ if (!TARGET_USER_ID) {
 }
 
 const ENTITLEMENTS = {
-  free:    { watermark: true,  maxEvents: 1,    templates: 3,   prioritySupport: false, galleryAddon: false, galleryEnabled: false, plan: 'free' },
+  free:    { watermark: true,  maxEvents: 0,    templates: 0,   prioritySupport: false, galleryAddon: false, galleryEnabled: false, plan: 'free' },
   trial:   { watermark: true,  maxEvents: 3,    templates: 5,   prioritySupport: false, galleryAddon: false, galleryEnabled: false, plan: 'trial' },
-  monthly: { watermark: false, maxEvents: 100,  templates: 25,  prioritySupport: false, galleryAddon: false, galleryEnabled: false, plan: 'monthly' },
-  yearly:  { watermark: false, maxEvents: 1200, templates: 100, prioritySupport: true,  galleryAddon: false, galleryEnabled: false, plan: 'yearly' },
+  monthly: { watermark: false, maxEvents: 20,  templates: 30,  prioritySupport: false, galleryAddon: false, galleryEnabled: false, plan: 'monthly' },
+  yearly:  { watermark: false, maxEvents: 50, templates: 100, prioritySupport: true,  galleryAddon: false, galleryEnabled: false, plan: 'yearly' },
 };
 
 if (!ENTITLEMENTS[PLAN]) {
@@ -33,7 +33,7 @@ const nowSec = () => Math.floor(Date.now() / 1000);
 function expiresFor(plan) {
   if (plan === 'yearly')  return nowSec() + 365 * 24 * 3600;
   if (plan === 'monthly') return nowSec() + 30  * 24 * 3600;
-  if (plan === 'trial')   return nowSec() + 7   * 24 * 3600;
+  if (plan === 'trial')   return nowSec() + 14  * 24 * 3600;
   return 0; // free = no expiry
 }
 

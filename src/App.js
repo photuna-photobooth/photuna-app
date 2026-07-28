@@ -1,18 +1,181 @@
 
 // src/App.js
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, useCallback } from "react";
 import AdminDashboard from "./screens/AdminDashboard";
 import PhotoBooth from "./screens/PhotoBooth";
 import AuthGate from "./components/AuthGate"; // from earlier step
 import { useAuth } from "./context/AuthContext";
 import { useLicense } from "./context/LicenseContext";
+import * as licensingApi from "./services/licensingApi";
 import { registerBooth, unregisterBooth } from './services/boothRegistry';
 import { sendRemoteAck, subscribeToRemoteCommands } from './services/remoteControl';
+
+// ─── Soft announcement banner (dismissible) ──────────────────────────────────
+function UpdateBanner({ version, onUpdateNow, onDismiss }) {
+  return (
+    <div className="fixed top-0 left-0 right-0 z-[9998] flex items-center justify-between gap-3 bg-blue-600 px-4 py-2.5 shadow-lg">
+      <div className="flex items-center gap-2.5 min-w-0">
+        <svg className="h-4 w-4 flex-shrink-0 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+            d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+        </svg>
+        <span className="text-sm font-medium text-white truncate">
+          {version ? `Photuna ${version} is available` : "A new update is available"}
+        </span>
+      </div>
+      <div className="flex items-center gap-3 flex-shrink-0">
+        <button
+          type="button"
+          onClick={onUpdateNow}
+          className="rounded-md bg-white/20 hover:bg-white/30 active:bg-white/40 px-3 py-1 text-xs font-bold text-white transition"
+        >
+          Update now
+        </button>
+        <button
+          type="button"
+          onClick={onDismiss}
+          aria-label="Dismiss"
+          className="text-white/70 hover:text-white transition"
+        >
+          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Forced update modal (no dismiss, no "Later") ────────────────────────────
+function UpdateModal({ status, version, percent, onInstall }) {
+  const isDownloading = status === "downloading";
+  const isReady       = status === "downloaded";
+
+  if (!isDownloading && !isReady) return null;
+
+  return (
+    // Pointer-events cover the whole screen so the UI behind is unreachable
+    <div className="fixed inset-0 z-[9999] flex items-end justify-center sm:items-center p-4 bg-slate-900/60 backdrop-blur-sm pointer-events-auto">
+      <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white shadow-[0_32px_80px_rgba(0,0,0,0.25)] overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center gap-3 px-5 py-4 border-b border-slate-100 bg-gradient-to-r from-blue-700 to-blue-500">
+          <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-white/20">
+            <svg className="h-5 w-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                d={isReady ? "M5 13l4 4L19 7" : "M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"} />
+            </svg>
+          </div>
+          <div>
+            <p className="text-sm font-bold text-white">
+              {isReady ? "Update ready to install" : "Downloading required update…"}
+            </p>
+            {version && <p className="text-[11px] text-white/70">Version {version}</p>}
+          </div>
+        </div>
+
+        {/* Body */}
+        <div className="px-5 py-4 space-y-4">
+          {isDownloading && (
+            <div className="space-y-1.5">
+              <div className="flex justify-between text-[11px] font-semibold text-slate-500">
+                <span>Downloading…</span>
+                <span>{Math.round(percent ?? 0)}%</span>
+              </div>
+              <div className="h-2 w-full rounded-full bg-slate-100 overflow-hidden">
+                <div
+                  className="h-full rounded-full bg-blue-500 transition-all duration-300"
+                  style={{ width: `${Math.round(percent ?? 0)}%` }}
+                />
+              </div>
+              <p className="text-xs text-slate-400">A required update is downloading. Please do not close the app.</p>
+            </div>
+          )}
+
+          {isReady && (
+            <p className="text-sm text-slate-600">
+              The update has finished downloading. Restart now to apply it — the app will reopen automatically.
+            </p>
+          )}
+
+          {/* Single action — no "Later" */}
+          {isReady && (
+            <button
+              type="button"
+              onClick={onInstall}
+              className="w-full rounded-lg bg-blue-600 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-blue-500 transition active:scale-[0.98]"
+            >
+              Restart &amp; Install
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Free-trial benefits modal ───────────────────────────────────────────────
+function TrialBenefitsModal({ onStartTrial, onDismiss, loading }) {
+  const BENEFITS = [
+    "Full photobooth kiosk experience — capture, select, print",
+    "Template & frame editor with 10 built-in layouts",
+    "Up to 3 events and 5 templates to test your setup",
+    "Custom booth branding — name, logo, fonts, colors",
+    "Frame & filter overlays during the booth session",
+    "Session analytics and sharing dashboard",
+  ];
+  return (
+    <div className="fixed inset-0 z-[9000] flex items-center justify-center p-4 bg-slate-900/55 backdrop-blur-sm">
+      <div className="w-full max-w-md rounded-2xl overflow-hidden bg-white shadow-[0_32px_80px_rgba(0,0,0,0.22)]">
+        {/* Header */}
+        <div className="bg-gradient-to-br from-blue-700 to-blue-500 px-6 py-5">
+          <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-blue-200 mb-1">Limited-time offer</p>
+          <h2 className="text-xl font-extrabold text-white leading-tight">Try Photuna Pro free<br/>for 14 days</h2>
+          <p className="mt-1 text-sm text-blue-100">No credit card required. No commitment.</p>
+        </div>
+        {/* Benefits */}
+        <div className="px-6 py-5">
+          <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-400 mb-3">What you get</p>
+          <ul className="space-y-2.5">
+            {BENEFITS.map((b) => (
+              <li key={b} className="flex items-start gap-2.5">
+                <svg className="mt-0.5 h-4 w-4 flex-shrink-0 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                </svg>
+                <span className="text-sm text-slate-700 leading-snug">{b}</span>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-4 text-[11px] text-slate-400 leading-snug">
+            Trial prints include a small watermark. Upgrade to Pro any time for clean, unbranded output.
+          </p>
+        </div>
+        {/* Actions */}
+        <div className="px-6 pb-6 flex flex-col gap-2.5">
+          <button
+            type="button"
+            onClick={onStartTrial}
+            disabled={loading}
+            className="w-full rounded-xl bg-blue-600 py-3 text-sm font-bold text-white shadow-md shadow-blue-200 hover:bg-blue-700 active:scale-[0.98] transition disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            {loading ? "Starting trial…" : "Start Free Trial"}
+          </button>
+          <button
+            type="button"
+            onClick={onDismiss}
+            className="w-full text-center text-sm text-slate-400 hover:text-slate-600 transition py-1"
+          >
+            Not now
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function AppLoadingScreen({ message }) {
   return (
     <div className="flex h-screen w-full flex-col items-center justify-center gap-4 bg-slate-50">
-      <div className="h-9 w-9 animate-spin rounded-full border-[3px] border-slate-200 border-t-indigo-600" />
+      <div className="h-9 w-9 animate-spin rounded-full border-[3px] border-slate-200 border-t-blue-600" />
       <p className="text-sm font-medium text-slate-500">{message}</p>
     </div>
   );
@@ -22,10 +185,48 @@ export default function App() {
   const { user, logout, loading: authLoading } = useAuth();
   const unsubRef = useRef(null);
   const boothIdRef = useRef(null);
-  const { gating } = useLicense(); // { allow, reason, plan, watermark, maxEvents, templates, expiresAt }
+  const { gating, license, loading: licenseLoading, refreshLicense } = useLicense();
   const [mode, setMode] = useState("admin"); // "admin" | "photobooth"
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [frames, setFrames] = useState([]);
+  const [jumpToUpdate, setJumpToUpdate] = useState(false);
+  const [jumpToBilling, setJumpToBilling] = useState(false);
+  const [showTrialModal, setShowTrialModal] = useState(false);
+  const [trialStarting, setTrialStarting] = useState(false);
+
+  // ── Forced update state (no dismiss) ────────────────────────────────────
+  const [updateStatus, setUpdateStatus]   = useState("idle");
+  const [updateVersion, setUpdateVersion] = useState("");
+  const [updatePercent, setUpdatePercent] = useState(0);
+
+  useEffect(() => {
+    const api = window.api || window.electron;
+    if (!api?.onUpdaterStatus) return;
+
+    const unsub = api.onUpdaterStatus((payload) => {
+      const incoming = payload?.status || "idle";
+
+      if (incoming === "available") {
+        // Show announcement banner — let the user choose to download.
+        setUpdateStatus("available");
+        if (payload?.version) setUpdateVersion(payload.version);
+        return;
+      }
+
+      // "downloaded" is sticky — never revert to a lesser state
+      setUpdateStatus((prev) => (prev === "downloaded" && incoming !== "downloaded") ? prev : incoming);
+      if (payload?.version) setUpdateVersion(payload.version);
+      if (incoming === "downloading") setUpdatePercent(Math.round(payload?.percent ?? 0));
+    });
+
+    return unsub;
+  }, []);
+
+  const handleUpdateInstall = useCallback(async () => {
+    if (updateStatus === "downloaded") {
+      await (window.api || window.electron)?.invoke?.("app:install-update");
+    }
+  }, [updateStatus]);
 
   // Optional: load frames or other assets once
   useEffect(() => {
@@ -38,6 +239,21 @@ export default function App() {
       }
     })();
   }, []);
+
+  // Show trial modal once per session for free-plan users who haven't redeemed yet
+  useEffect(() => {
+    // Wait until both auth and license have fully resolved AND a license object exists.
+    // Without the `!license` guard, `trialRedeemed` reads as undefined (falsy) when the
+    // license object hasn't arrived yet even though licenseLoading is already false.
+    if (licenseLoading || authLoading || !user?.id || !license) return;
+    const dismissed = sessionStorage.getItem(`trial_prompt_seen_${user.id}`);
+    if (dismissed) return;
+    // gating.active is true for both trial and paid plans — covers all non-free states
+    if (gating.active) return;
+    const isFreePlan = !gating.plan || gating.plan === 'free';
+    const trialNotUsed = !license.trialRedeemed && !license.trialExpired;
+    if (isFreePlan && trialNotUsed) setShowTrialModal(true);
+  }, [licenseLoading, authLoading, user?.id, license, gating.active, gating.plan]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -77,12 +293,16 @@ export default function App() {
   // Called by AdminDashboard when user chooses to start photobooth for an event
   const handleStartPhotobooth = async (eventObj) => {
     if (!eventObj) return;
-    // License gate: only allow photobooth if license is usable
     if (!gating.allow) {
-      // You can show a toast/modal prompting to Redeem Trial / Upgrade
       alert(
         `Your license is restricted (${gating.reason}). Please redeem the free trial or upgrade to continue.`
       );
+      return;
+    }
+
+    const hasTemplates = Array.isArray(eventObj.appliedTemplates) && eventObj.appliedTemplates.length > 0;
+    if (!hasTemplates) {
+      alert("This event has no templates. Please create and apply at least one template before starting the booth.");
       return;
     }
 
@@ -103,6 +323,13 @@ export default function App() {
     setSelectedEvent(null);
     setMode("admin");
   };
+
+  const handleBannerUpdateNow = useCallback(async () => {
+    setJumpToUpdate(true);
+    await (window.api || window.electron)?.invoke?.("app:download-update").catch(() => {});
+    setUpdateStatus("downloading");
+    setUpdatePercent(0);
+  }, []);
 
   // Block render while Supabase session is restoring (Ctrl+R, cold start).
   // Without this gate, the app briefly shows AuthGate or a null-license dashboard
@@ -170,6 +397,53 @@ export default function App() {
   return (
     <div className="w-full h-screen">
 
+      {/* Free trial benefits modal — shown once per session for eligible free-plan users */}
+      {mode === "admin" && showTrialModal && (
+        <TrialBenefitsModal
+          loading={trialStarting}
+          onDismiss={() => {
+            sessionStorage.setItem(`trial_prompt_seen_${user?.id}`, "1");
+            setShowTrialModal(false);
+          }}
+          onStartTrial={async () => {
+            setTrialStarting(true);
+            try {
+              await licensingApi.redeemTrial();
+              await refreshLicense();
+              sessionStorage.setItem(`trial_prompt_seen_${user?.id}`, "1");
+              setShowTrialModal(false);
+            } catch (e) {
+              console.error("Trial start failed", e);
+              // Fall back to billing tab so they can try again
+              sessionStorage.setItem(`trial_prompt_seen_${user?.id}`, "1");
+              setShowTrialModal(false);
+              setJumpToBilling(true);
+            } finally {
+              setTrialStarting(false);
+            }
+          }}
+        />
+      )}
+
+      {/* Soft announcement banner — shown in admin mode when update is available */}
+      {mode === "admin" && updateStatus === "available" && (
+        <UpdateBanner
+          version={updateVersion}
+          onUpdateNow={handleBannerUpdateNow}
+          onDismiss={() => setUpdateStatus("dismissed")}
+        />
+      )}
+
+      {/* Forced update modal — takes over during download / install */}
+      {mode === "admin" && (
+        <UpdateModal
+          status={updateStatus}
+          version={updateVersion}
+          percent={updatePercent}
+          onInstall={handleUpdateInstall}
+        />
+      )}
+
       {mode === "photobooth" && selectedEvent ? (
         <PhotoBooth
           frames={frames}
@@ -187,6 +461,10 @@ export default function App() {
             // Nothing extra needed.
           }}
           onStartPhotobooth={handleStartPhotobooth}
+          jumpToUpdate={jumpToUpdate}
+          onJumpToUpdateHandled={() => setJumpToUpdate(false)}
+          jumpToBilling={jumpToBilling}
+          onJumpToBillingHandled={() => setJumpToBilling(false)}
         />
       )}
     </div>

@@ -26,7 +26,41 @@ const DEFAULT_SCREEN_TIMERS = {
   thankyou: 6,
 };
 
-export default function PhotoBooth({ frames = [], onShortcut, initialEvent = null }) {
+function RentalStatusBar({ timerEnabled, timerHours, startTime, expired, limitEnabled, sessionCount, sessionLimit, limitReached }) {
+  const [remaining, setRemaining] = useState("");
+
+  useEffect(() => {
+    if (!timerEnabled) return;
+    const update = () => {
+      const ms = timerHours * 60 * 60 * 1000 - (Date.now() - startTime);
+      if (ms <= 0) { setRemaining("0:00:00"); return; }
+      const h = Math.floor(ms / 3600000);
+      const m = Math.floor((ms % 3600000) / 60000);
+      const s = Math.floor((ms % 60000) / 1000);
+      setRemaining(`${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`);
+    };
+    update();
+    const interval = setInterval(update, 1000);
+    return () => clearInterval(interval);
+  }, [timerEnabled, timerHours, startTime]);
+
+  return (
+    <div className="absolute top-0 left-0 right-0 z-40 flex items-center justify-center gap-6 bg-black/60 backdrop-blur-sm px-4 py-1.5 text-[11px] font-mono text-white/70">
+      {timerEnabled && (
+        <span className={expired ? "text-red-400 font-bold" : ""}>
+          {expired ? "TIME EXPIRED" : `Time left: ${remaining}`}
+        </span>
+      )}
+      {limitEnabled && (
+        <span className={limitReached ? "text-red-400 font-bold" : ""}>
+          {limitReached ? `SESSION LIMIT REACHED (${sessionCount}/${sessionLimit})` : `Sessions: ${sessionCount} / ${sessionLimit}`}
+        </span>
+      )}
+    </div>
+  );
+}
+
+export default function PhotoBooth({ frames = [], onShortcut, initialEvent = null, onExit }) {
   const { gating } = useLicense();
   const [screen, setScreen] = useState("WELCOME");
   const [session, setSession] = useState(null);
@@ -56,6 +90,80 @@ export default function PhotoBooth({ frames = [], onShortcut, initialEvent = nul
   const [motionBackgroundColor, setMotionBackgroundColor] = useState("#ffffff");
   const [frameOverlayDataUrl, setFrameOverlayDataUrl] = useState(null);
   const sessionRecordedRef = useRef(false);
+  const sessionStartTimeRef = useRef(null);
+  const [sessionPricing, setSessionPricing] = useState(null);
+  const [sessionPayment, setSessionPayment] = useState(null);
+  const [sessionQuantity, setSessionQuantity] = useState(1);
+  const [sessionTone, setSessionTone] = useState(null);
+  const [sessionFrameStyle, setSessionFrameStyle] = useState(null);
+
+  // ---- Idle dimming ----
+  const [idleDimmed, setIdleDimmed] = useState(false);
+  const [dimEnabled, setDimEnabled] = useState(true);
+  const [dimTimeout, setDimTimeout] = useState(60);
+  const idleTimerRef = useRef(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const s = await window.electron?.invoke?.("store:getSettings", {});
+        if (s) {
+          setDimEnabled(s.dimWhenIdle ?? true);
+          setDimTimeout(s.idleTimeout ?? 60);
+        }
+      } catch {}
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (!dimEnabled || screen !== "WELCOME") {
+      clearTimeout(idleTimerRef.current);
+      setIdleDimmed(false);
+      return;
+    }
+
+    const resetTimer = () => {
+      setIdleDimmed(false);
+      clearTimeout(idleTimerRef.current);
+      idleTimerRef.current = setTimeout(() => setIdleDimmed(true), dimTimeout * 1000);
+    };
+
+    const events = ["mousemove", "mousedown", "keydown", "touchstart", "pointerdown"];
+    events.forEach((e) => window.addEventListener(e, resetTimer, { passive: true }));
+    resetTimer();
+
+    return () => {
+      clearTimeout(idleTimerRef.current);
+      events.forEach((e) => window.removeEventListener(e, resetTimer));
+    };
+  }, [dimEnabled, dimTimeout, screen]);
+
+  // ---- Rental timer ----
+  const rentalSettings = initialEvent?.settings?.rental ?? {};
+  const rentalTimerEnabled = !!rentalSettings.timerEnabled;
+  const rentalTimerHours = Number(rentalSettings.timerHours) || 2;
+  const [rentalExpired, setRentalExpired] = useState(false);
+  const rentalStartRef = useRef(Date.now());
+
+  useEffect(() => {
+    if (!rentalTimerEnabled) return;
+    const ms = rentalTimerHours * 60 * 60 * 1000;
+    const remaining = ms - (Date.now() - rentalStartRef.current);
+    if (remaining <= 0) { setRentalExpired(true); return; }
+    const timer = setTimeout(() => setRentalExpired(true), remaining);
+    return () => clearTimeout(timer);
+  }, [rentalTimerEnabled, rentalTimerHours]);
+
+  // ---- Session usage limit ----
+  const sessionLimitEnabled = !!rentalSettings.sessionLimitEnabled;
+  const sessionLimitMax = Number(rentalSettings.sessionLimit) || 100;
+  const [sessionCount, setSessionCount] = useState(0);
+  const sessionLimitReached = sessionLimitEnabled && sessionCount >= sessionLimitMax;
+
+  const boothLocked = rentalExpired || sessionLimitReached;
+  const offlineMode = !!rentalSettings.offlineModeEnabled;
+  const autoSaveTarget = rentalSettings.autoSaveTarget ?? "local";
+  const endSessionSummaryEnabled = !!rentalSettings.endSessionSummaryEnabled;
 
   async function dataUrlToBlob(dataUrl) {
     const response = await fetch(dataUrl);
@@ -116,7 +224,7 @@ export default function PhotoBooth({ frames = [], onShortcut, initialEvent = nul
     const enabled = !!business.paymentEnabled;
     const providers = business.payment?.providers || {};
     const anyProvider =
-      !!providers.cash || !!providers.gcash || !!providers.paypal || !!providers.stripe;
+      !!providers.cash || !!providers.gcash || !!providers.maya || !!providers.grabpay || !!providers.card || !!providers.stripe;
 
     // Only do payment in Business mode, with payment enabled AND at least one provider toggled on
     return appMode === "business" && enabled && anyProvider;
@@ -213,18 +321,50 @@ export default function PhotoBooth({ frames = [], onShortcut, initialEvent = nul
   const recordSession = async (completed = true) => {
     if (sessionRecordedRef.current) return;
     sessionRecordedRef.current = true;
+    if (completed) setSessionCount((c) => c + 1);
     try {
       const evId = selectedEvent?.id ?? activeEventId;
       if (!evId || !window.api?.getEvents || !window.api?.setEvents) return;
 
-      const sessionRecord = {
+      const appMode = selectedEvent?.settings?.appMode ?? sessionPricing?.appMode ?? "rental";
+      const durationSec = sessionStartTimeRef.current
+        ? Math.round((Date.now() - sessionStartTimeRef.current) / 1000)
+        : null;
+
+      const base = {
         id: String(Date.now()),
         createdAt: new Date().toISOString(),
-        photosCount: photos.length,
+        appMode,
         completed,
+        photosCount: photos.length,
         template: selectedTemplate?.name ?? selectedTemplate?.id ?? null,
+        layout: composedLayout ?? null,
+        tone: sessionTone ?? null,
+        frameStyle: sessionFrameStyle ?? null,
         retakes: retakenIndices.length,
+        durationSec,
+        offlineMode,
       };
+
+      // Business sessions include full revenue analytics; rental sessions do not.
+      const sessionRecord = appMode === "business" && sessionPricing
+        ? {
+            ...base,
+            revenue: {
+              currency: sessionPricing.currency ?? "PHP",
+              pricingModel: sessionPricing.pricingModel ?? "perSession",
+              baseAmount: sessionPricing.baseAmount ?? 0,
+              additionalPrints: sessionPricing.additionalPrints ?? 0,
+              additionalFee: sessionPricing.additionalFee ?? 0,
+              taxEnabled: sessionPricing.taxEnabled ?? false,
+              taxRate: sessionPricing.taxRate ?? 0,
+              taxAmount: sessionPricing.taxAmount ?? 0,
+              totalAmount: sessionPricing.totalAmount ?? sessionPricing.baseAmount ?? 0,
+              paymentProvider: sessionPayment?.method ?? null,
+            },
+            printQuantity: sessionQuantity ?? 1,
+          }
+        : base;
 
       const all = await window.api.getEvents();
       if (!Array.isArray(all)) return;
@@ -245,7 +385,14 @@ export default function PhotoBooth({ frames = [], onShortcut, initialEvent = nul
     if (!sessionRecordedRef.current && photos.length > 0) {
       await recordSession(false);
     }
+
     sessionRecordedRef.current = false;
+    sessionStartTimeRef.current = null;
+    setSessionPricing(null);
+    setSessionPayment(null);
+    setSessionQuantity(1);
+    setSessionTone(null);
+    setSessionFrameStyle(null);
     setPhotos([]);
     setSession(null);
     {
@@ -328,15 +475,58 @@ export default function PhotoBooth({ frames = [], onShortcut, initialEvent = nul
   const thankyouTimer = effective.timers.thankyou;    // replaces 10
 
   return (
-    <div className="w-full h-screen bg-black text-white overflow-hidden">
+    <div className="w-full h-screen bg-black text-white overflow-hidden relative">
+      {/* Rental status bar — visible to operator */}
+      {(rentalTimerEnabled || sessionLimitEnabled) && (
+        <RentalStatusBar
+          timerEnabled={rentalTimerEnabled}
+          timerHours={rentalTimerHours}
+          startTime={rentalStartRef.current}
+          expired={rentalExpired}
+          limitEnabled={sessionLimitEnabled}
+          sessionCount={sessionCount}
+          sessionLimit={sessionLimitMax}
+          limitReached={sessionLimitReached}
+        />
+      )}
+      {idleDimmed && (
+        <div
+          className="absolute inset-0 z-50 bg-black/80 transition-opacity duration-700 flex items-center justify-center cursor-pointer"
+          onPointerDown={() => setIdleDimmed(false)}
+        >
+          <p className="text-white/40 text-lg font-medium animate-pulse">Tap to start</p>
+        </div>
+      )}
       <AnimatePresence mode="wait">
         {screen === "WELCOME" && (
-          <WelcomeScreen
-            key="welcome"
-            event={selectedEvent}
-            eventConfig={eventConfig}
-            onNext={() => setScreen("TEMPLATE")}
-          />
+          <>
+            <WelcomeScreen
+              key="welcome"
+              event={selectedEvent}
+              eventConfig={eventConfig}
+              onNext={boothLocked ? undefined : () => setScreen("TEMPLATE")}
+            />
+            {boothLocked && (
+              <div className="absolute inset-0 z-40 bg-black/70 backdrop-blur-sm flex items-center justify-center">
+                <div className="max-w-md text-center px-8 py-10 rounded-2xl bg-white/10 border border-white/20 backdrop-blur-md">
+                  <svg className="w-14 h-14 mx-auto text-amber-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                  </svg>
+                  <h2 className="text-2xl font-bold text-white">
+                    {rentalExpired ? "Session Time Expired" : "Session Limit Reached"}
+                  </h2>
+                  <p className="mt-3 text-base text-white/70">
+                    {rentalExpired
+                      ? "The rental period for this booth has ended."
+                      : `All ${sessionLimitMax} sessions have been used.`}
+                  </p>
+                  <p className="mt-4 text-lg font-semibold text-amber-300 animate-pulse">
+                    Please call the operator for assistance.
+                  </p>
+                </div>
+              </div>
+            )}
+          </>
         )}
 
         {screen === "TEMPLATE" && (
@@ -352,6 +542,7 @@ export default function PhotoBooth({ frames = [], onShortcut, initialEvent = nul
             onNext={async () => {
               // Create preview session before entering PHOTO
               await ensurePreviewSession(selectedTemplate);
+              sessionStartTimeRef.current = Date.now();
               wantsPayment(selectedEvent) ? setScreen("PAYMENT") : setScreen("PHOTO");
             }}
             onSelect={async (tpl) => {
@@ -397,6 +588,7 @@ export default function PhotoBooth({ frames = [], onShortcut, initialEvent = nul
 
             onNext={async () => {
               await ensurePreviewSession(selectedTemplate);
+              sessionStartTimeRef.current = Date.now();
               setScreen("PHOTO");
             }}
 
@@ -613,6 +805,13 @@ export default function PhotoBooth({ frames = [], onShortcut, initialEvent = nul
               }
               setFrameOverlayDataUrl(payload?.frameOverlayDataUrl || null);
 
+              // Capture pricing/payment data for session analytics
+              if (payload?.pricing) setSessionPricing(payload.pricing);
+              if (payload?.payment) setSessionPayment(payload.payment);
+              if (payload?.quantity) setSessionQuantity(payload.quantity ?? 1);
+              if (payload?.selectedToneEffectId) setSessionTone(payload.selectedToneEffectId);
+              if (payload?.selectedFrameStyleId) setSessionFrameStyle(payload.selectedFrameStyleId);
+
               setGalleryQrUrl(null);
               setScreen("PRINT");
             }}
@@ -647,7 +846,9 @@ export default function PhotoBooth({ frames = [], onShortcut, initialEvent = nul
             frameOverlayDataUrl={frameOverlayDataUrl}
             motionBackgroundColor={motionBackgroundColor}
             watermark={Boolean(gating?.watermark)}
-            galleryEnabled={Boolean(gating?.galleryEnabled || gating?.galleryAddon)}
+            galleryEnabled={!offlineMode && Boolean(gating?.galleryEnabled || gating?.galleryAddon)}
+            offlineMode={offlineMode}
+            autoSaveTarget={autoSaveTarget}
             onPrintComplete={() => { }}
             onNextPage={() => { recordSession(true); setScreen("THANK_YOU"); }}
           />
@@ -659,6 +860,11 @@ export default function PhotoBooth({ frames = [], onShortcut, initialEvent = nul
             event={selectedEvent}
             countdownStart={thankyouTimer}
             onRestart={restartSession}
+            sessionSummary={endSessionSummaryEnabled ? {
+              photoCount: photos.length,
+              sessionNumber: sessionCount,
+              offlineMode,
+            } : null}
           />
         )}
       </AnimatePresence>

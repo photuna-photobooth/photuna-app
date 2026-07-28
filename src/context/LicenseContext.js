@@ -56,23 +56,32 @@ async function fetchLicenseViaIpc(userId) {
     if (!data?.plan) return null;
 
     const expiresMs = data.expires_at ? new Date(data.expires_at).getTime() : null;
-    const trialExpired = data.plan === 'trial' && expiresMs !== null && expiresMs < Date.now();
+    const isExpired = expiresMs !== null && expiresMs < Date.now() && data.plan !== 'free';
 
     // Apply safe defaults for optional columns that may not exist in older Supabase schemas.
     const isPaid = data.plan !== 'free' && data.plan !== 'trial';
     return {
       plan: data.plan,
-      state: data.state || 'active',
+      state: isExpired ? 'expired' : (data.state || 'active'),
       expiresAt: data.expires_at ?? null,
       trialRedeemed: Boolean(data.trial_redeemed),
-      trialExpired,
-      entitlements: {
+      trialExpired: isExpired && data.plan === 'trial',
+      entitlements: isExpired ? {
+        watermark: true,
+        maxEvents: 0,
+        templates: 1,
+        prioritySupport: false,
+        galleryTier: 'free',
+        galleryAddon: false,
+        galleryEnabled: false,
+      } : {
         watermark:       data.watermark       ?? (isPaid ? false : true),
         maxEvents:       data.max_events      ?? (isPaid ? 100   : 1),
         templates:       data.templates       ?? (isPaid ? 25    : 3),
-        prioritySupport: data.priority_support ?? (data.plan === 'yearly'),
-        galleryAddon:    Boolean(data.gallery_addon),
-        galleryEnabled:  Boolean(data.gallery_addon),
+        prioritySupport: data.priority_support ?? (data.plan === 'yearly' || data.plan === 'pro_yearly'),
+        galleryTier:     data.gallery_tier || (data.gallery_addon ? 'plus' : 'free'),
+        galleryAddon:    Boolean(data.gallery_addon || (data.gallery_tier && data.gallery_tier !== 'free')),
+        galleryEnabled:  Boolean(data.gallery_addon || (data.gallery_tier && data.gallery_tier !== 'free')),
       },
     };
   } catch {
@@ -92,7 +101,13 @@ async function writeLicenseCache(userId, licenseData, signedLicense, publicKey) 
   } catch { /* best-effort */ }
 }
 
-const PLAN_RANK = { free: 0, trial: 1, monthly: 2, yearly: 3 };
+async function clearLicenseCache(userId) {
+  try {
+    await window.electron.invoke('license:cache-write', userId, { licenseData: null, signedLicense: null, publicKey: null });
+  } catch { /* best-effort */ }
+}
+
+const PLAN_RANK = { free: 0, trial: 1, monthly: 2, pro_monthly: 2, pro: 2, yearly: 3, pro_yearly: 3 };
 
 // Reasons where we trust the Supabase-sourced license data instead of requiring
 // a signed JWT (JWT unavailable = no private key configured or API server down).
@@ -191,10 +206,11 @@ export function LicenseProvider({ children }) {
         licenseData = billingResult.license;
       }
 
-      // If live sources returned nothing or only a free plan, try the local cache.
-      // The cache is written only after a confirmed paid plan, so it's safe to trust.
+      // If ALL live sources returned nothing, try the local cache (e.g. API + Supabase
+      // both unreachable). Do NOT restore when DB explicitly returned 'free' / 'expired'
+      // — that means the admin has set the account to expired and the cache would lie.
       const livePlanRank = PLAN_RANK[licenseData?.plan] ?? -1;
-      if (livePlanRank <= PLAN_RANK.free) {
+      if (livePlanRank < 0) {
         const cached = await readLicenseCache(user.id);
         const cachePlanRank = PLAN_RANK[cached?.licenseData?.plan] ?? -1;
         if (cachePlanRank > livePlanRank) {
@@ -205,6 +221,10 @@ export function LicenseProvider({ children }) {
           setPublicKey(cached.publicKey || null);
           return { license: licenseData };
         }
+      } else if (livePlanRank === PLAN_RANK.free) {
+        // DB explicitly says free/expired — evict any stale paid-plan cache so
+        // the old plan never resurfaces when the app is offline later.
+        clearLicenseCache(user.id);
       }
 
       if (!licenseData) {
@@ -284,10 +304,16 @@ export function LicenseProvider({ children }) {
   // licenseActive is true if the license JWT confirms an active paid plan,
   // OR if the Supabase profile row already reflects a paid plan (reliable fallback
   // when the JWT is unavailable or hasn't been fetched yet).
-  const licenseActive = (
-    ['active', 'trialing'].includes(license?.state) && license?.plan !== 'free'
-  ) || (
-    ['monthly', 'yearly', 'trial'].includes(profile?.subscription_plan)
+  // Consider any license with a past expires_at as expired, regardless of what
+  // the DB state column says. This is what prevents a Ctrl+R from re-showing
+  // the paid plan after the admin has set current_period_end to a past date.
+  const isLicenseExpired = Boolean(
+    license?.expiresAt != null && new Date(license.expiresAt).getTime() < Date.now()
+  );
+
+  const licenseActive = !isLicenseExpired && (
+    (['active', 'trialing'].includes(license?.state) && license?.plan !== 'free')
+    || ['monthly', 'yearly', 'trial', 'pro_monthly', 'pro_yearly', 'pro'].includes(profile?.subscription_plan)
   );
 
   const gating = useMemo(() => {
@@ -306,6 +332,8 @@ export function LicenseProvider({ children }) {
       maxEvents: ent.maxEvents ?? 0,
       templates: ent.templates ?? 0,
       prioritySupport: Boolean(ent.prioritySupport),
+      // Tiered gallery entitlement — consumers read the value (free|plus|business).
+      galleryTier: ent.galleryTier || (ent.galleryAddon ? 'plus' : 'free'),
       galleryAddon: Boolean(ent.galleryAddon),
       galleryEnabled: Boolean(ent.galleryEnabled || ent.galleryAddon),
       expiresAt: license?.expiresAt || null,

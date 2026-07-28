@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import QRCode from "react-qr-code";
 import { normalizeToFileUrl } from "../utils/mediaUrl";
 import { loadGoogleFont } from "../utils/fontLoader";
+import { useLayout } from "../utils/useLayout";
 
 /* ----------------------- Minimal i18n labels ----------------------- */
 const LOCALES = {
@@ -75,12 +76,15 @@ export default function PrintPreviewScreen({
   motionBackgroundColor = "#ffffff",
   watermark = false,
   galleryEnabled = false,
+  offlineMode = false,
+  autoSaveTarget = "local",
 }) {
   // IMPORTANT: prefer window.api (preload exposes printPhoto here). Fall back to window.electron only if needed.
   const api =
     typeof window !== "undefined"
       ? window.api || window.electron || null
       : null;
+  const { isPortrait, isUnsupported } = useLayout();
 
   /* ---------------------------- Load AdminDashboard state ---------------------------- */
   const [currentEvent, setCurrentEvent] = useState(event ?? null);
@@ -90,6 +94,7 @@ export default function PrintPreviewScreen({
   const [isPreparing, setIsPreparing] = useState(true);
   const [resolvedQrUrl, setResolvedQrUrl] = useState(qrUrl || null);
   const [galleryError, setGalleryError] = useState("");
+  const [localSavedPath, setLocalSavedPath] = useState(null);
 
   useEffect(() => {
     setResolvedQrUrl(qrUrl || null);
@@ -109,9 +114,14 @@ export default function PrintPreviewScreen({
     let mounted = true;
 
     async function prepareGallery() {
-      if (!galleryEnabled) {
+      if (!galleryEnabled || offlineMode) {
         setResolvedQrUrl(null);
         setGalleryError("");
+        // composedImagePath is already saved to storage by FrameFilterScreen
+        // before this screen mounts — no extra IPC write needed.
+        if (offlineMode && composedImagePath) {
+          setLocalSavedPath(composedImagePath);
+        }
         setIsPreparing(false);
         return;
       }
@@ -218,7 +228,6 @@ export default function PrintPreviewScreen({
 
   const {
     boothName,
-    boothSlogan,
     headerFont,
     generalFont,
     headerFontColor,
@@ -227,7 +236,7 @@ export default function PrintPreviewScreen({
     buttonBgColor,
     buttonFont,
     buttonFontColor,
-    buttonHoverColor,
+    logoPath,
   } = appearance;
 
   // Load fonts
@@ -439,6 +448,15 @@ export default function PrintPreviewScreen({
   // Left-side remaining time
   const remaining = Math.max(0, printingSeconds - Math.floor(pageProgress * printingSeconds));
 
+  if (isUnsupported) {
+    return (
+      <div className="w-full h-screen flex flex-col items-center justify-center text-center gap-6" style={{ backgroundColor: bgColor }}>
+        <p style={{ fontFamily: headerFont, color: headerFontColor, fontSize: 'clamp(22px, 3vw, 56px)', fontWeight: 'bold' }}>Display Not Supported</p>
+        <p style={{ fontFamily: generalFont, color: generalFontColor, fontSize: 'clamp(14px, 1.8vw, 34px)' }}>Minimum resolution: 1080 × 1920 (Full HD portrait)</p>
+      </div>
+    );
+  }
+
   if (galleryEnabled && isPreparing) {
     return (
       <div
@@ -451,16 +469,17 @@ export default function PrintPreviewScreen({
       >
         <div className="flex flex-col items-center justify-center text-center">
           <p
-            className="text-6xl md:text-7xl font-semibold leading-none"
+            className="font-semibold leading-none"
             style={{
               color: headerFontColor,
               fontFamily: headerFont,
+              fontSize: 'clamp(28px, 5vw, 80px)',
             }}
           >
             Preparing your gallery
           </p>
 
-          <p className="mt-5 text-xl md:text-2xl leading-relaxed max-w-2xl">
+          <p className="mt-5 leading-relaxed max-w-2xl" style={{ fontSize: 'clamp(14px, 2vw, 28px)' }}>
             Generating your QR code and getting your photos ready.
           </p>
 
@@ -484,7 +503,7 @@ export default function PrintPreviewScreen({
   }
 
   return (
-    <div className="w-full h-full flex flex-row overflow-hidden"
+    <div className={`w-full h-full flex ${isPortrait ? "flex-col" : "flex-row"} overflow-hidden`}
       style={{
         backgroundColor: bgColor,
         color: generalFontColor,
@@ -492,74 +511,89 @@ export default function PrintPreviewScreen({
       }}
     >
 
-      {/* LEFT SIDE */}
-      <div className="flex flex-col justify-center items-center w-1/2 px-16">
-        <div
-          className="px-8 py-3 rounded-full text-2xl font-bold shadow-sm mb-10"
-          style={{
-            fontFamily: generalFont,
-            backgroundColor: buttonBgColor,
-            color: buttonFontColor,
-          }}
-          aria-live="polite"
-        >
-          {Math.max(0, remaining)}s
+      {/* Portrait Row 1: logo + timer */}
+      {isPortrait && (
+        <div className="shrink-0 flex items-center justify-between" style={{ padding: '2vh 4vw' }}>
+          {logoPath
+            ? <img src={logoPath} alt="logo" style={{ maxHeight: '6vh' }} className="w-auto object-contain" />
+            : <span className="font-bold" style={{ fontFamily: headerFont, color: headerFontColor, fontSize: 'clamp(18px, 2.5vw, 46px)' }}>{boothName}</span>
+          }
+          <div className="px-5 py-2 rounded-full font-bold shadow-sm" style={{ backgroundColor: buttonBgColor, color: buttonFontColor, fontFamily: generalFont, fontSize: 'clamp(16px, 2vw, 38px)' }} aria-live="polite">
+            {Math.max(0, remaining)}s
+          </div>
         </div>
+      )}
+
+      {/* INFO PANEL — portrait: Row 3 (shrink-0, h-[45vh], order 2); landscape: left column */}
+      <div
+        className={isPortrait
+          ? "shrink-0 overflow-y-auto flex flex-col items-center justify-start"
+          : "flex flex-col justify-center items-center w-[35%] px-8 md:px-12"
+        }
+        style={isPortrait ? { height: '45vh', padding: '1vh 4vw 2vh', order: 2 } : undefined}
+      >
+        {/* Landscape: timer pill */}
+        {!isPortrait && (
+          <div
+            className="rounded-full font-bold shadow-sm mb-10"
+            style={{ fontFamily: generalFont, backgroundColor: buttonBgColor, color: buttonFontColor, fontSize: 'clamp(14px, 1.8vw, 26px)', padding: 'clamp(6px, 0.8vh, 12px) clamp(14px, 1.8vw, 28px)' }}
+            aria-live="polite"
+          >
+            {Math.max(0, remaining)}s
+          </div>
+        )}
 
         <div className="text-center" style={{ fontFamily: headerFont }}>
-          <p className="text-8xl" style={{ color: headerFontColor }}>
+          <p style={{ color: headerFontColor, fontSize: isPortrait ? 'clamp(22px, 3vw, 56px)' : 'clamp(32px, 5vw, 80px)' }}>
             {i18n.printingTitle1}
           </p>
-          <p
-            className="text-8xl italic font-semibold -mt-2"
-            style={{ color: headerFontColor }}
-          >
+          <p className="italic font-semibold -mt-2" style={{ color: headerFontColor, fontSize: isPortrait ? 'clamp(22px, 3vw, 56px)' : 'clamp(32px, 5vw, 80px)' }}>
             {i18n.printingTitle2}
           </p>
         </div>
 
-
-        {galleryEnabled ? (
-          <div className="mt-12 border rounded-xl p-4 bg-white text-black border-black">
+        {/* QR code — online + gallery mode only */}
+        {galleryEnabled && !offlineMode && (
+          <div className="mt-6 border rounded-xl p-4 bg-white text-black border-black">
             {resolvedQrUrl ? (
               <div className="bg-white p-2 rounded-lg">
-                <QRCode value={resolvedQrUrl} size={256} bgColor="#ffffff" fgColor="#000000" />
+                <QRCode value={resolvedQrUrl} size={isPortrait ? 180 : 256} bgColor="#ffffff" fgColor="#000000" />
               </div>
             ) : qrSrc ? (
-              <img
-                src={qrSrc}
-                alt="QR"
-                className="w-64 h-64 object-contain bg-gray-100 rounded-lg"
-              />
+              <img src={qrSrc} alt="QR" className="object-contain bg-gray-100 rounded-lg" style={{ width: isPortrait ? 180 : 256, height: isPortrait ? 180 : 256 }} />
             ) : (
-              <div className="w-64 h-64 flex items-center justify-center text-gray-400 bg-gray-100 rounded-lg">
+              <div className="flex items-center justify-center text-gray-400 bg-gray-100 rounded-lg" style={{ width: isPortrait ? 180 : 256, height: isPortrait ? 180 : 256 }}>
                 {isPreparing ? "Preparing" : i18n.qrFallback}
               </div>
             )}
-            {galleryError ? (
-              <div className="mt-2 max-w-64 text-center text-xs text-red-600">
-                Gallery upload failed
-              </div>
-            ) : null}
+            {galleryError && (
+              <div className="mt-2 text-center text-xs text-red-600">Gallery upload failed</div>
+            )}
           </div>
-        ) : null}
+        )}
 
         {/* Thank you copy */}
         <p
-          className="text-center text-lg mt-6 px-16 max-w-xl leading-relaxed"
-          style={{ fontFamily: generalFont, color: generalFontColor }}
+          className="text-center mt-6 leading-relaxed"
+          style={{ fontFamily: generalFont, color: generalFontColor, fontSize: 'clamp(12px, 1.5vw, 26px)', maxWidth: '36rem' }}
         >
           {i18n.thanks}
           <span className="font-semibold" style={{ color: headerFontColor }}>
             {boothName ?? i18n.thanksBold}
           </span>
-          {galleryEnabled ? i18n.thanksTail : ` ${i18n.localSaved}`}
+          {galleryEnabled && !offlineMode ? i18n.thanksTail : ` ${i18n.localSaved}`}
         </p>
       </div>
 
-      {/* RIGHT SIDE - Poster Output */}
-      <div className="flex-1 flex items-center justify-center p-6">
-        <div className="w-[100%] h-[100%] flex items-center justify-center">
+      {/* POSTER PREVIEW — portrait: Row 2 (flex-1 min-h-0, order 1); landscape: right side */}
+      <div
+        className={isPortrait
+          ? "flex-1 min-h-0 flex items-center justify-center overflow-hidden"
+          : "flex-1 flex items-center justify-center p-4"
+        }
+        style={isPortrait ? { padding: '1vh 4vw', order: 1 } : undefined}
+      >
+        <div className={`w-full h-full flex items-center justify-center ${isPortrait ? "" : "max-w-[70%] max-h-[70%]"}`}>
           {isStripTall ? (
             /* 2×6: show single strip only */
             <div

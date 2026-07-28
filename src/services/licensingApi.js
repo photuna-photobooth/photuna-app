@@ -11,16 +11,15 @@ supabase.auth.onAuthStateChange((_event, session) => {
   _cachedToken = session?.access_token ?? null;
 });
 
-async function getAccessToken() {
-  if (_cachedToken) return _cachedToken;
-  // First call before any auth event — one-time fallback to getSession()
+async function getAccessToken({ forceRefresh = false } = {}) {
+  if (_cachedToken && !forceRefresh) return _cachedToken;
   const { data, error } = await supabase.auth.getSession();
   if (error) throw new Error(error.message || 'Unable to get Supabase session');
   _cachedToken = data?.session?.access_token ?? null;
   return _cachedToken;
 }
 
-async function request(path, { method = 'GET', body, auth = true, headers = {} } = {}) {
+async function request(path, { method = 'GET', body, auth = true, headers = {} } = {}, _retried = false) {
   const token = auth ? await getAccessToken() : null;
 
   const res = await fetch(`${API}${path}`, {
@@ -32,6 +31,11 @@ async function request(path, { method = 'GET', body, auth = true, headers = {} }
     },
     body: body ? JSON.stringify(body) : undefined,
   });
+
+  if (res.status === 401 && auth && !_retried) {
+    await getAccessToken({ forceRefresh: true });
+    return request(path, { method, body, auth, headers }, true);
+  }
 
   if (!res.ok) {
     let message = `HTTP ${res.status}`;

@@ -5,6 +5,7 @@ import { motion } from "framer-motion";
 import { normalizeToFileUrl } from "../utils/mediaUrl";
 import { loadGoogleFont } from "../utils/fontLoader";
 import { getBridge } from "../utils/bridge";
+import { useLayout } from "../utils/useLayout";
 
 /* --------------------------- Responsive SVG icons --------------------------- */
 const PhotoStripVertical = () => (
@@ -127,6 +128,7 @@ const DEFAULT_APPEARANCE = {
   bgColor: "#ffffff",
   logoPath: null,
   backgroundMediaPath: null,
+  backgroundType: "media",
   buttonBgColor: "#2563eb",
   buttonHoverColor: "#1e40af",
   buttonFont: "Interphases",
@@ -196,6 +198,7 @@ export default function TemplateScreen({
   cameraStreamRef = null,
 }) {
   const api = getBridge();
+  const { isPortrait, isUnsupported } = useLayout();
 
   /* ---------- Load global fallbacks when no event prop is passed ---------- */
   const [globalAppearance, setGlobalAppearance] = useState(null);
@@ -545,88 +548,53 @@ export default function TemplateScreen({
   const isGif =
     !!backgroundMediaPath && backgroundMediaPath.toLowerCase().endsWith(".gif");
 
+  if (isUnsupported) {
+    return (
+      <div className="w-full h-screen flex flex-col items-center justify-center text-center gap-6" style={{ backgroundColor: bgColor }}>
+        <p style={{ fontFamily: headerFont, color: headerFontColor, fontSize: 'clamp(22px, 3vw, 56px)', fontWeight: 'bold' }}>Display Not Supported</p>
+        <p style={{ fontFamily: generalFont, color: generalFontColor, fontSize: 'clamp(14px, 1.8vw, 34px)' }}>Minimum resolution: 1080 × 1920 (Full HD portrait)</p>
+      </div>
+    );
+  }
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={mounted ? { opacity: 1, y: 0 } : {}}
       transition={{ duration: 0.7, ease: "easeOut" }}
-      className="relative w-full h-screen text-white overflow-hidden py-[50px]"
+      className="relative w-full h-screen overflow-hidden flex flex-col"
       style={{ backgroundColor: bgColor }}
     >
-      {/* Brand (bottom-right): logo, else booth name */}
-      <div className="absolute bottom-6 right-6 sm:bottom-12 sm:right-20 z-30 flex flex-col items-end">
-        {logoPath ? (
-          <img
-            src={logoPath}
-            alt="logo"
-            className="max-w-[300px] sm:max-w-[300px] md:max-w-[400px]"
-          />
-        ) : (
-          <>
-            {boothName && (
-              <div
-                className="text-5xl font-bold"
-                style={{ fontFamily: headerFont, color: headerFontColor }}
-              >
-                {boothName}
-              </div>
-            )}
-
-            {boothSlogan && (
-              <div
-                className="text-lg"
-                style={{ fontFamily: generalFont, color: generalFontColor }}
-              >
-                {boothSlogan}
-              </div>
-            )}
-          </>
-        )}
-      </div>
-
-      {/* Title + description */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 px-6 sm:px-12 lg:px-20 pt-6 gap-6 items-start relative z-10">
+      {/* Row 1: Title left + description & timer right */}
+      <div className="shrink-0 grid grid-cols-2 gap-6 items-start relative z-10" style={{ padding: '2vh 4vw' }}>
         <div>
           <h1
-            className="text-3xl sm:text-5xl md:text-6xl lg:text-8xl leading-tight"
-            style={{ fontFamily: headerFont, color: headerFontColor }}
+            className="leading-tight"
+            style={{ fontFamily: headerFont, color: headerFontColor, fontSize: 'clamp(44px, 5.5vw, 108px)', marginTop: '2vh' }}
           >
-            {t.choose}
-            <br />
-            {t.your}{" "}
-            <span className="italic font-bold">
-              {t.template}
-            </span>
+            {t.choose} {t.your}<br /><span className="italic font-bold">{t.template}</span>
           </h1>
         </div>
-        <div className="flex flex-col items-end text-right space-y-4 lg:pr-10">
+        <div className="flex flex-col items-end text-right gap-2" style={{ paddingRight: '3vw', marginTop: '2vh' }}>
           <p
-            className="max-w-md text-sm sm:text-md md:text-xl"
-            style={{ fontFamily: generalFont, color: generalFontColor }}
+            style={{ fontFamily: generalFont, color: generalFontColor, fontSize: 'clamp(14px, 1.6vw, 30px)', opacity: 0.75 }}
           >
             {description}
           </p>
-          <div className="z-30">
-            <div
-              className="px-8 py-3 rounded-full text-2xl font-bold shadow-sm"
-              style={{
-                fontFamily: generalFont,
-                backgroundColor: buttonBgColor,
-                color: buttonFontColor,
-              }}
-              aria-live="polite"
-            >
-              {Math.max(0, timeLeft)}
-              {t.secondsSuffix}
-            </div>
+          <div
+            className="px-5 py-2 rounded-full font-bold shadow-sm"
+            style={{ backgroundColor: buttonBgColor, color: buttonFontColor, fontFamily: generalFont, fontSize: 'clamp(16px, 2vw, 38px)' }}
+            aria-live="polite"
+          >
+            {Math.max(0, timeLeft)}{t.secondsSuffix}
           </div>
         </div>
       </div>
 
-      {/* Template grid */}
-      <div className="w-full mt-6 sm:mt-8 px-4 sm:px-8 relative z-10">
+      {/* Row 2: Description + carousel + nav dots */}
+      <div className="flex-1 min-h-0 flex flex-col w-full relative z-10 overflow-hidden" style={{ marginTop: '1vh' }}>
         <motion.div
-          className="relative w-full"
+          className="relative flex-1 min-h-0 flex flex-col w-full"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.2, duration: 0.5 }}
@@ -635,21 +603,13 @@ export default function TemplateScreen({
           {/* Carousel */}
           <div
             ref={carouselRef}
-            className="
-              template-carousel
-              overflow-x-auto overflow-y-hidden
-              snap-x snap-mandatory
-              px-8 sm:px-12 lg:px-16
-              py-6 sm:py-10
-              [scrollbar-width:none]
-              [-ms-overflow-style:none]
-            "
-            style={{
-              WebkitOverflowScrolling: "touch",
-              scrollBehavior: "smooth",
-            }}
+            className={`template-carousel flex-1 min-h-0 ${isPortrait ? "flex flex-col overflow-y-auto overflow-x-hidden" : "flex items-center overflow-x-auto overflow-y-hidden snap-x snap-mandatory px-8 sm:px-12 lg:px-16"} [scrollbar-width:none] [-ms-overflow-style:none]`}
+            style={{ WebkitOverflowScrolling: "touch", scrollBehavior: "smooth", ...(isPortrait ? { padding: '1vh 4vw' } : { paddingTop: '1rem', paddingBottom: '1rem' }) }}
           >
-            <div className="flex items-start gap-6 sm:gap-8 lg:gap-10 w-max">
+            <div
+              className={`flex gap-6 sm:gap-8 lg:gap-10 ${isPortrait ? "flex-wrap justify-center items-start" : "items-center"}`}
+              style={isPortrait ? { margin: 'auto 0' } : { margin: '0 auto' }}
+            >
               {finalTemplates.map((tpl) => (
                 <button
                   key={tpl.id}
@@ -658,16 +618,11 @@ export default function TemplateScreen({
                     onSelect(tpl);
                     if (typeof onApplyTemplate === "function") onApplyTemplate(tpl);
                   }}
-                  className="
-                    flex-shrink-0 snap-start
-                    w-[280px] sm:w-[300px] lg:w-[320px]
-                    flex flex-col items-center group touch-manipulation
-                    transition-all rounded-md focus:outline-none
-                  "
+                  className={`flex-shrink-0 snap-start ${isPortrait ? "w-[260px]" : "w-[300px] sm:w-[340px] md:w-[380px] lg:w-[420px]"} flex flex-col items-center group touch-manipulation transition-all rounded-md focus:outline-none`}
                   style={{ backgroundColor: "transparent" }}
                 >
                   <div
-                    className="flex items-center h-[350px] justify-center transform transition-all group-hover:scale-105 group-active:scale-95 w-full"
+                    className={`flex items-center ${isPortrait ? "h-[300px]" : "h-[340px] md:h-[400px] lg:h-[460px]"} justify-center transform transition-all group-hover:scale-105 group-active:scale-95 w-full`}
                     style={{
                       borderColor: "rgba(229, 231, 235, 1)",
                     }}
@@ -685,8 +640,10 @@ export default function TemplateScreen({
 
                       return (
                         <div
-                          className={`pointer-events-none ${aspectClass} ${isTall ? "h-[350px]" : "w-[350px]"
-                            } flex items-center justify-center`}
+                          className={`pointer-events-none ${aspectClass} ${isTall
+                            ? (isPortrait ? "h-[290px]" : "h-[330px] md:h-[390px] lg:h-[450px]")
+                            : (isPortrait ? "w-[290px]" : "w-[330px] md:w-[390px] lg:w-[450px]")
+                          } flex items-center justify-center`}
                         >
                           {tpl.thumbSrc ? (
                             layoutKey === "2x6" || layoutKey === "6x2" ? (
@@ -729,7 +686,7 @@ export default function TemplateScreen({
             </div>
           </div>
 
-          <div className="flex justify-center mt-6 sm:mt-8">
+          <div className="shrink-0 flex justify-center" style={{ paddingTop: '0.5vh', paddingBottom: '0.5vh' }}>
             <div
               className="flex items-center gap-2 px-3 py-2 rounded-full"
               style={{
@@ -776,6 +733,15 @@ export default function TemplateScreen({
             }
           `}</style>
         </motion.div>
+      </div>
+
+      {/* Row 3: Logo */}
+      {/* Row 3: Logo bottom-right */}
+      <div className="shrink-0 flex items-center justify-end relative z-10" style={{ padding: '1vh 4vw 2vh' }}>
+        {logoPath
+          ? <img src={logoPath} alt="logo" style={{ maxHeight: '5vh' }} className="w-auto object-contain" />
+          : <span className="font-bold" style={{ fontFamily: headerFont, color: headerFontColor, fontSize: 'clamp(14px, 1.6vw, 30px)' }}>{boothName}</span>
+        }
       </div>
     </motion.div>
   );

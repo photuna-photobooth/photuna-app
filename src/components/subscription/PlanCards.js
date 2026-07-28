@@ -28,12 +28,13 @@ function formatSavings(amount, currency) {
 export default function PlanCards({
   plan,
   trialEligible,
-  monthlyPriceText = "$30 / mo",
-  yearlyPriceText = "$204 / yr",
-  trialPriceText = "$0",
-  monthlyPriceAmount = 30,
-  yearlyPriceAmount = 204,
-  currency = "USD",
+  monthlyPriceText = "₱1,800 / mo",
+  yearlyPriceText = "₱950 / mo",
+  trialPriceText = "₱0",
+  monthlyPriceAmount = 1800,
+  yearlyPriceAmount = 950,
+  yearlyAnnualAmount = 11400,
+  currency = "PHP",
   onStartTrial,
   onUpgradeMonthly,
   onUpgradeYearly,
@@ -50,8 +51,9 @@ export default function PlanCards({
     normalizedPlan === "monthly";
 
   const annualMonthly = Number.isFinite(monthlyPriceAmount) ? monthlyPriceAmount * 12 : null;
-  const canComputeSavings = Number.isFinite(annualMonthly) && Number.isFinite(yearlyPriceAmount);
-  const savingsValue = canComputeSavings ? Math.max(0, annualMonthly - yearlyPriceAmount) : 0;
+  const annualTotal = yearlyAnnualAmount ?? (Number.isFinite(yearlyPriceAmount) ? yearlyPriceAmount * 12 : null);
+  const canComputeSavings = Number.isFinite(annualMonthly) && Number.isFinite(annualTotal);
+  const savingsValue = canComputeSavings ? Math.max(0, annualMonthly - annualTotal) : 0;
   const savingsPct = canComputeSavings && annualMonthly > 0
     ? Math.round((savingsValue / annualMonthly) * 100)
     : 43;
@@ -59,7 +61,7 @@ export default function PlanCards({
     ? {
       label: "Yearly",
       display: yearlyPriceText,
-      note: "$17/mo when billed yearly. Best value for operators ready to book events.",
+      note: "One-time payment for 12 months. Best value for operators ready to book events.",
       action: onUpgradeYearly,
       button: "Upgrade Yearly",
     }

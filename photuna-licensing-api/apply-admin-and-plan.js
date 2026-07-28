@@ -24,8 +24,8 @@ const {
 
 // Entitlements map
 const ENTITLEMENTS = {
-  yearly: { watermark: false, maxEvents: 1200, templates: 100, prioritySupport: true, galleryAddon: false, galleryEnabled: false },
-  monthly: { watermark: false, maxEvents: 100, templates: 25, prioritySupport: false, galleryAddon: false, galleryEnabled: false },
+  yearly: { watermark: false, maxEvents: 50, templates: 100, prioritySupport: true, galleryAddon: false, galleryEnabled: false },
+  monthly: { watermark: false, maxEvents: 20, templates: 30, prioritySupport: false, galleryAddon: false, galleryEnabled: false },
   trial: { watermark: true, maxEvents: 3, templates: 5, prioritySupport: false, galleryAddon: false, galleryEnabled: false },
 };
 

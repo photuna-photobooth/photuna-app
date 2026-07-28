@@ -5,6 +5,7 @@ import {
   ArrowUturnLeftIcon,
   CheckCircleIcon,
 } from "@heroicons/react/24/outline";
+import { useLayout } from "../utils/useLayout";
 
 const DEFAULT_APPEARANCE = {
   boothName: "Studio Photuna",
@@ -33,6 +34,7 @@ export default function SelectRetakeScreen({
   event = null,
   eventId = "default",
 }) {
+  const { isPortrait, isUnsupported } = useLayout();
   const [selectedIndices, setSelectedIndices] = useState([]);
   const [mounted, setMounted] = useState(false);
   const [timeLeft, setTimeLeft] = useState(8);
@@ -291,27 +293,24 @@ export default function SelectRetakeScreen({
             : null;
 
         if (dataUrl) {
+          // Save to disk for persistence — but keep the data URL for display so
+          // file:// URLs (which may have encoding issues or be blocked in some
+          // Electron configurations) never replace the always-working data URL.
           try {
-            const res = await bridge({
+            await bridge({
               eventId: effectiveEventId,
               dataUrl,
               index: i + 1,
               total: updatedPhotos.length,
               timestamp: Date.now(),
             });
-
-            if (res?.ok && res.fileUrl) {
-              updatedPhotos[i] = res.fileUrl;
-            } else if (res?.filePath) {
-              updatedPhotos[i] = `file://${res.filePath}`;
-            } else {
-              updatedPhotos[i] = dataUrl;
-            }
           } catch (err) {
-            console.warn("capturePhoto failed for index", i, err);
+            console.warn("capturePhoto persist failed for index", i, err);
           }
+          // Always keep the data URL in updatedPhotos for downstream display
+          updatedPhotos[i] = dataUrl;
         } else if (typeof p === "string" && p.startsWith("file://")) {
-          // already persisted
+          // already persisted as a file path — keep as-is
         } else if (p?.fileUrl) {
           updatedPhotos[i] = p.fileUrl;
         } else if (p?.filePath) {
@@ -398,7 +397,16 @@ export default function SelectRetakeScreen({
     typeof src === "string" && /\.gif$/i.test(src.split("?")[0]);
 
   const buttonBase =
-    "inline-flex items-center justify-center gap-3 px-9 py-4 rounded-2xl text-xl font-semibold transition-all duration-300";
+    "inline-flex items-center justify-center gap-2 px-6 py-3 rounded-2xl font-semibold transition-all duration-300";
+
+  if (isUnsupported) {
+    return (
+      <div className="w-full h-screen flex flex-col items-center justify-center text-center gap-6" style={{ backgroundColor: bgColor }}>
+        <p style={{ fontFamily: headerFont, color: headerFontColor, fontSize: 'clamp(22px, 3vw, 56px)', fontWeight: 'bold' }}>Display Not Supported</p>
+        <p style={{ fontFamily: generalFont, color: generalFontColor, fontSize: 'clamp(14px, 1.8vw, 34px)' }}>Minimum resolution: 1080 × 1920 (Full HD portrait)</p>
+      </div>
+    );
+  }
 
   return (
     <motion.div
@@ -419,30 +427,32 @@ export default function SelectRetakeScreen({
         />
     
 
-      <div className="relative z-20 flex h-full flex-col px-8 py-6">
-        <div className="flex items-start justify-between gap-6">
-          <div className="max-w-[46%]">
+      <div className="relative z-20 flex h-full flex-col" style={{ padding: 'clamp(8px, 2vh, 28px) clamp(10px, 3vw, 40px)' }}>
+        <div className="flex items-start justify-between gap-4">
+          <div className="max-w-[50%]">
             {logoPath ? (
               <img
                 src={logoPath}
                 alt="logo"
-                className="max-h-24 w-auto object-contain"
+                style={{ maxHeight: 'clamp(36px, 5vh, 72px)' }}
+                className="w-auto object-contain"
               />
             ) : (
               <>
                 <h1
-                  className="text-5xl font-bold leading-none"
+                  className="font-bold leading-none"
                   style={{
                     fontFamily: headerFont,
                     color: headerFontColor,
+                    fontSize: 'clamp(18px, 3vw, 48px)',
                   }}
                 >
                   {boothName}
                 </h1>
                 {!!boothSlogan && (
                   <p
-                    className="mt-3 text-lg"
-                    style={{ color: generalFontColor }}
+                    className="mt-1"
+                    style={{ color: generalFontColor, fontSize: 'clamp(11px, 1.4vw, 20px)' }}
                   >
                     {boothSlogan}
                   </p>
@@ -451,13 +461,15 @@ export default function SelectRetakeScreen({
             )}
           </div>
 
-          <div className="flex flex-col items-end gap-3">
+          <div className="flex flex-col items-end gap-2">
             <div
-              className="rounded-2xl px-6 py-3 text-xl font-bold shadow-sm"
+              className="rounded-2xl font-bold shadow-sm"
               style={{
                 fontFamily: generalFont,
                 color: buttonFontColor,
                 backgroundColor: buttonBgColor,
+                fontSize: 'clamp(11px, 1.5vw, 20px)',
+                padding: 'clamp(5px, 0.7vh, 12px) clamp(10px, 1.2vw, 22px)',
               }}
             >
               Retakes left:{" "}
@@ -465,12 +477,14 @@ export default function SelectRetakeScreen({
             </div>
 
             <div
-              className="rounded-2xl px-8 py-3 text-xl font-bold shadow-sm"
+              className="rounded-2xl font-bold shadow-sm"
               style={{
                 fontFamily: generalFont,
                 backgroundColor: "#ffffff",
                 color: "#111827",
                 border: "1px solid #e5e7eb",
+                fontSize: 'clamp(11px, 1.5vw, 20px)',
+                padding: 'clamp(5px, 0.7vh, 12px) clamp(10px, 1.2vw, 22px)',
               }}
               aria-live="polite"
             >
@@ -479,41 +493,37 @@ export default function SelectRetakeScreen({
           </div>
         </div>
 
-        <div className="flex-1 min-h-0 flex items-center justify-center pt-6 pb-4">
-          <div
-            className="w-full max-w-[1500px] h-full flex flex-col rounded-[28px] overflow-hidden"
-        
-          >
+        <div className="flex-1 min-h-0 flex items-center justify-center" style={{ paddingTop: 'clamp(6px, 1vh, 20px)', paddingBottom: 'clamp(4px, 0.8vh, 16px)' }}>
+          <div className="w-full max-w-[1500px] h-full flex flex-col rounded-[20px] overflow-hidden" style={{ border: '1px solid #e5e7eb' }}>
             <div
-              className="px-8 py-6 flex items-center justify-between gap-4"
-              style={{ borderBottom: "1px solid #e5e7eb" }}
+              className="flex items-center justify-between gap-4"
+              style={{ borderBottom: "1px solid #e5e7eb", padding: 'clamp(10px, 1.5vh, 28px) clamp(12px, 2vw, 36px)' }}
             >
-              <div>
-                <h2 className="text-3xl font-semibold text-gray-900">
+              <div className="min-w-0">
+                <h2 className="font-semibold text-gray-900 truncate" style={{ fontSize: 'clamp(15px, 2.2vw, 32px)' }}>
                   Select photos to retake
                 </h2>
-                <p className="mt-1 text-base text-gray-500">
-                  Tap any photo to mark it for retake, or continue when you are
-                  happy with the set.
+                <p className="mt-0.5 text-gray-500" style={{ fontSize: 'clamp(11px, 1.3vw, 18px)' }}>
+                  Tap any photo to mark it for retake, or continue when happy with the set.
                 </p>
               </div>
 
-              <div className="text-right">
-                <div className="text-sm text-gray-500">Selected</div>
-                <div className="text-2xl font-bold text-gray-900">
+              <div className="text-right flex-shrink-0">
+                <div className="text-gray-500" style={{ fontSize: 'clamp(10px, 1.1vw, 16px)' }}>Selected</div>
+                <div className="font-bold text-gray-900" style={{ fontSize: 'clamp(16px, 2.2vw, 32px)' }}>
                   {selectedIndices.length}
                 </div>
               </div>
             </div>
 
-            <div className="flex-1 min-h-0 overflow-y-auto px-8 py-8">
+            <div className="flex-1 min-h-0 overflow-y-auto" style={{ padding: 'clamp(12px, 1.5vh, 36px) clamp(12px, 2vw, 36px)' }}>
               {resolvedPhotos.length > 0 ? (
                 <div
                   className={`grid gap-5 ${
                     resolvedPhotos.length <= 2
                       ? "grid-cols-2"
                       : resolvedPhotos.length === 3
-                        ? "grid-cols-3"
+                        ? (isPortrait ? "grid-cols-2" : "grid-cols-3")
                         : "grid-cols-2 xl:grid-cols-4"
                   }`}
                 >
@@ -607,10 +617,10 @@ export default function SelectRetakeScreen({
             </div>
 
             <div
-              className="px-8 py-5"
-              style={{ borderTop: "1px solid #e5e7eb" }}
+              className="flex flex-col gap-2"
+              style={{ borderTop: "1px solid #e5e7eb", padding: 'clamp(8px, 1vh, 20px) clamp(12px, 2vw, 36px)' }}
             >
-              <div className="flex items-center justify-end gap-4">
+              <div className="flex items-center justify-end gap-3">
                 <motion.button
                   type="button"
                   whileHover={{ scale: canRetake ? 1.03 : 1 }}
@@ -622,14 +632,13 @@ export default function SelectRetakeScreen({
                     backgroundColor: canRetake ? "#111827" : "#9ca3af",
                     color: "#ffffff",
                     fontFamily: buttonFont,
+                    fontSize: 'clamp(12px, 1.5vw, 20px)',
                     cursor: canRetake ? "pointer" : "not-allowed",
                     opacity: canRetake ? 1 : 0.75,
-                    boxShadow: canRetake
-                      ? "0 8px 18px rgba(15,23,42,0.16)"
-                      : "none",
+                    boxShadow: canRetake ? "0 8px 18px rgba(15,23,42,0.16)" : "none",
                   }}
                 >
-                  <ArrowUturnLeftIcon className="h-6 w-6" />
+                  <ArrowUturnLeftIcon className="h-5 w-5 flex-shrink-0" />
                   {exceededLimit ? "Retake (limit reached)" : "Retake"}
                 </motion.button>
 
@@ -644,27 +653,20 @@ export default function SelectRetakeScreen({
                     backgroundColor: saving ? "#9ca3af" : buttonBgColor,
                     color: buttonFontColor,
                     fontFamily: buttonFont,
+                    fontSize: 'clamp(12px, 1.5vw, 20px)',
                     cursor: saving ? "wait" : "pointer",
                     boxShadow: "0 8px 18px rgba(236,72,153,0.22)",
                   }}
-                  onMouseEnter={(e) => {
-                    if (!saving) {
-                      e.currentTarget.style.backgroundColor = buttonHoverColor;
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!saving) {
-                      e.currentTarget.style.backgroundColor = buttonBgColor;
-                    }
-                  }}
+                  onMouseEnter={(e) => { if (!saving) e.currentTarget.style.backgroundColor = buttonHoverColor; }}
+                  onMouseLeave={(e) => { if (!saving) e.currentTarget.style.backgroundColor = buttonBgColor; }}
                 >
-                  <CheckCircleIcon className="h-6 w-6" />
+                  <CheckCircleIcon className="h-5 w-5 flex-shrink-0" />
                   {saving ? "Saving..." : "Continue"}
                 </motion.button>
               </div>
 
               {exceededLimit && (
-                <p className="mt-3 text-sm text-amber-600 text-right">
+                <p className="text-amber-600 text-right" style={{ fontSize: 'clamp(10px, 1.2vw, 14px)' }}>
                   You selected more photos than the remaining retake allowance.
                 </p>
               )}

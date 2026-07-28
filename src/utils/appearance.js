@@ -14,6 +14,7 @@ export const DEFAULT_APPEARANCE = {
   bgColor: '#000000',
   logoPath: null,
   backgroundMediaPath: null,
+  backgroundType: 'media',
   buttonBgColor: '#ec4899',
   buttonHoverColor: '#db2777',
   buttonFontColor: '#ffffff',

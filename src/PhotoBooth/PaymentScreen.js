@@ -1,6 +1,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
+import { useLayout } from "../utils/useLayout";
 
 /* ------------------------------- Helpers ------------------------------- */
 function getBridge() {
@@ -58,6 +59,7 @@ export default function PaymentScreen({
   amountDue = 150,
 }) {
   const api = getBridge();
+  const { isPortrait, isUnsupported } = useLayout();
 
   /* --------------------- Global fallbacks if no event prop --------------------- */
   const [globalAppearance, setGlobalAppearance] = useState(null);
@@ -159,7 +161,7 @@ export default function PaymentScreen({
 
   const t = {
     titleChoose: isTagalog ? "Piliin ang" : "Choose",
-    titlePaymentOption: isTagalog ? "Paraan ng Bayad" : "Payment Option",
+    titlePaymentOption: isTagalog ? "Paraan ng Bayad" : "Payment",
     hintProceed: isTagalog
       ? "Kapag kumpleto na ang bayad, tutuloy ka sa photo section."
       : "Once your payment is complete, you'll move on to the photo section, where you'll have a set amount of time to capture your photos.",
@@ -202,11 +204,14 @@ export default function PaymentScreen({
 
   const providers = {
     gcash: !!business?.payment?.providers?.gcash,
-    paypal: !!business?.payment?.providers?.paypal,
-    stripe: !!business?.payment?.providers?.stripe,
+    maya: !!business?.payment?.providers?.maya,
+    grabpay: !!business?.payment?.providers?.grabpay,
+    card: !!(business?.payment?.providers?.card || business?.payment?.providers?.stripe),
     cash: !!business?.payment?.providers?.cash,
   };
-  const noProviders = !providers.cash && !providers.gcash && !providers.paypal && !providers.stripe;
+  const cashMode = business?.payment?.cashMode ?? "manual"; // "manual" | "hardware"
+  const gcashStaticQrDataUrl = business?.payment?.gcashStaticQrDataUrl ?? "";
+  const noProviders = !providers.cash && !providers.gcash && !providers.maya && !providers.grabpay && !providers.card;
 
   // If payment is enabled but there's nothing to pick, auto-skip with a notice
   useEffect(() => {
@@ -297,11 +302,20 @@ export default function PaymentScreen({
   const [processing, setProcessing] = useState(false);
   const [message, setMessage] = useState(null);
 
+  // QR payment state (PayMongo)
+  const [qrDataUrl, setQrDataUrl] = useState(null);
+  const [qrLoading, setQrLoading] = useState(false);
+  const [qrError, setQrError] = useState(null);
+  const [qrSourceId, setQrSourceId] = useState(null);
+  const [paymentConfirmed, setPaymentConfirmed] = useState(false);
+  const activeQrProvider = useRef(null);
+
   const paymentSlides = [
-    providers.gcash && { key: "qr", label: "GCash QR" },
-    providers.cash && { key: "cash", label: "Cash" },
-    providers.paypal && { key: "paypal", label: "PayPal" },
-    providers.stripe && { key: "card", label: "Card terminal" },
+    providers.gcash && { key: "qr-gcash", label: "GCash", provider: "gcash" },
+    providers.maya && { key: "qr-maya", label: "Maya", provider: "maya" },
+    providers.grabpay && { key: "qr-grabpay", label: "GrabPay", provider: "grabpay" },
+    providers.card && { key: "card", label: "Card", provider: "card" },
+    providers.cash && { key: "cash", label: "Cash", provider: "cash" },
   ].filter(Boolean);
 
   const [paymentIndex, setPaymentIndex] = useState(0);
@@ -314,10 +328,97 @@ export default function PaymentScreen({
 
   const activePayment = paymentSlides[paymentIndex]?.key ?? null;
 
+  const isQrSlide = activePayment?.startsWith("qr-");
+  const activeProvider = paymentSlides[paymentIndex]?.provider ?? null;
+
+  // Start QR payment when a QR tab becomes active
+  useEffect(() => {
+    if (!isQrSlide || !activeProvider || paymentConfirmed) return;
+    // Skip re-fetching only if we already have a PayMongo QR (has sourceId); always re-run for static QR
+    if (activeQrProvider.current === activeProvider && qrDataUrl && qrSourceId) return;
+
+    let cancelled = false;
+    activeQrProvider.current = activeProvider;
+    setQrLoading(true);
+    setQrError(null);
+    setQrDataUrl(null);
+    setQrSourceId(null);
+
+    (async () => {
+      try {
+        const bridge = getBridge();
+        const res = await bridge?.startQrPayment?.({
+          amount: total,
+          currency: business?.pricing?.currency || "PHP",
+          provider: activeProvider,
+          eventId: event?.id || "default",
+        });
+        if (cancelled) return;
+        if (res?.ok && res.qrDataUrl) {
+          setQrDataUrl(res.qrDataUrl);
+          setQrSourceId(res.sourceId);
+        } else if (!res?.configured && activeProvider === "gcash" && gcashStaticQrDataUrl) {
+          // PayMongo not set up — fall back to the operator's uploaded static QR
+          setQrDataUrl(gcashStaticQrDataUrl);
+          setQrSourceId(null); // no polling; operator confirms manually
+        } else {
+          setQrError(res?.error || "Failed to create payment");
+        }
+      } catch (err) {
+        if (!cancelled) setQrError(err?.message || "Payment error");
+      } finally {
+        if (!cancelled) setQrLoading(false);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [isQrSlide, activeProvider, paymentConfirmed, total, gcashStaticQrDataUrl, qrSourceId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Listen for payment confirmation from main process
+  useEffect(() => {
+    const bridge = getBridge();
+    const unsub = bridge?.onPaymentConfirmed?.((data) => {
+      setPaymentConfirmed(true);
+      setMessage(isTagalog ? "Bayad natanggap!" : "Payment confirmed!");
+      bridge?.recordPayment?.({
+        method: data.provider || "qr",
+        amount: total,
+        currency: business?.pricing?.currency || "PHP",
+        paymentId: data.paymentId,
+        sourceId: data.sourceId,
+        eventId: event?.id || "default",
+        confirmedAt: new Date().toISOString(),
+      }).catch(() => {});
+      setTimeout(() => onNext(), 1500);
+    });
+    const unsubFail = bridge?.onPaymentFailed?.((data) => {
+      setQrError(data?.reason || "Payment failed or expired");
+      setQrDataUrl(null);
+      setQrSourceId(null);
+      activeQrProvider.current = null;
+    });
+    return () => { unsub?.(); unsubFail?.(); };
+  }, [total, onNext]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Cancel active payment poll on unmount
+  useEffect(() => {
+    return () => {
+      if (qrSourceId) getBridge()?.cancelPayment?.({ sourceId: qrSourceId });
+    };
+  }, [qrSourceId]);
+
   const goToPayment = (index) => {
     if (index < 0 || index >= paymentSlides.length) return;
+    // Cancel previous QR poll when switching tabs
+    if (qrSourceId) {
+      getBridge()?.cancelPayment?.({ sourceId: qrSourceId });
+      setQrSourceId(null);
+      setQrDataUrl(null);
+      activeQrProvider.current = null;
+    }
     setPaymentIndex(index);
     setMessage(null);
+    setQrError(null);
   };
 
   const nextPayment = () => {
@@ -535,22 +636,22 @@ export default function PaymentScreen({
           <div className="flex flex-col items-center text-center">
 
             <div className="w-full bg-white shadow-xl border border-black/5 rounded-[20px] max-w-[650px] min-h-[470px] flex items-start justify-center">
-              {activePayment === "qr" && (
+              {isQrSlide && (
                 <div className="w-full m-4 flex flex-col items-center text-center">
                   <h3
-                    className="text-2xl md:text-3xl font-bold"
+                    className="text-3xl md:text-5xl font-bold"
                     style={{ fontFamily: headerFont, color: headerFontColor }}
                   >
-                    {isTagalog ? "QR Payment" : "QR Payment"}
+                    {activeProvider === "gcash" ? "GCash" : activeProvider === "maya" ? "Maya" : "GrabPay"} Payment
                   </h3>
 
                   <p
-                    className="mt-3 text-sm md:text-base max-w-[520px]"
+                    className="mt-3 text-base md:text-xl max-w-[520px]"
                     style={{ fontFamily: generalFont, color: generalFontColor }}
                   >
                     {isTagalog
-                      ? "I-scan gamit ang GCash o Maya para awtomatikong magsimula ang session kapag nakumpirma ang bayad."
-                      : "Scan with GCash or Maya. The session will automatically start once payment is confirmed."}
+                      ? "I-scan ang QR code gamit ang iyong app para awtomatikong magsimula ang session."
+                      : `Scan the QR code with your ${activeProvider === "gcash" ? "GCash" : activeProvider === "maya" ? "Maya" : "GrabPay"} app. Session starts automatically once payment is confirmed.`}
                   </p>
 
                   <div
@@ -560,41 +661,83 @@ export default function PaymentScreen({
                       border: "1px solid rgba(0,0,0,0.08)",
                     }}
                   >
-                    <div className="text-gray-400 text-lg font-semibold">MERCHANT QR</div>
+                    {paymentConfirmed ? (
+                      <div className="flex flex-col items-center gap-2">
+                        <svg className="w-16 h-16 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                        <span className="text-green-600 font-bold text-lg">{isTagalog ? "Natanggap!" : "Confirmed!"}</span>
+                      </div>
+                    ) : qrLoading ? (
+                      <div className="flex flex-col items-center gap-3">
+                        <div className="w-10 h-10 border-4 border-gray-200 border-t-indigo-600 rounded-full animate-spin" />
+                        <span className="text-gray-400 text-sm">{isTagalog ? "Ginagawa ang QR..." : "Generating QR..."}</span>
+                      </div>
+                    ) : qrError ? (
+                      <div className="flex flex-col items-center gap-2 px-4">
+                        <span className="text-red-500 text-sm font-medium">{qrError}</span>
+                        <button
+                          type="button"
+                          onClick={() => { activeQrProvider.current = null; setQrError(null); }}
+                          className="text-xs text-indigo-600 underline"
+                        >
+                          {isTagalog ? "Subukang muli" : "Try again"}
+                        </button>
+                      </div>
+                    ) : qrDataUrl ? (
+                      <img src={qrDataUrl} alt="Payment QR" className="w-[220px] h-[220px] md:w-[280px] md:h-[280px]" />
+                    ) : (
+                      <span className="text-gray-400 text-sm">Initializing...</span>
+                    )}
                   </div>
 
+                  {!paymentConfirmed && qrDataUrl && qrSourceId && (
+                    <div className="mt-4 flex items-center gap-2 text-sm" style={{ fontFamily: generalFont, color: "#6b7280" }}>
+                      <div className="w-3 h-3 border-2 border-gray-400 border-t-indigo-600 rounded-full animate-spin" />
+                      {isTagalog ? "Naghihintay ng bayad..." : "Waiting for payment..."}
+                    </div>
+                  )}
+
+                  {/* Static QR mode — operator confirms after customer pays */}
+                  {!paymentConfirmed && qrDataUrl && qrSourceId === null && (
+                    <div className="mt-4 flex flex-col items-center gap-3">
+                      <p className="text-sm" style={{ fontFamily: generalFont, color: "#6b7280" }}>
+                        {isTagalog
+                          ? "Hayaan ang customer na mag-scan at bayaran. Kumpirmahin kapag natanggap na ang bayad."
+                          : "Have the customer scan and pay. Confirm below once payment is received."}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={handleCashProceed}
+                        disabled={processing}
+                        className="px-8 py-3 text-lg font-bold rounded-xl disabled:opacity-60"
+                        style={baseButtonStyle}
+                        onMouseEnter={(e) => applyHover(e, true)}
+                        onMouseLeave={(e) => applyHover(e, false)}
+                      >
+                        {processing ? t.processing : (isTagalog ? "Kumpirmahin ang Bayad" : "Confirm Payment Received")}
+                      </button>
+                    </div>
+                  )}
+
                   <div
-                    className="mt-4 text-xs md:text-sm"
+                    className="mt-2 text-sm md:text-base"
                     style={{ fontFamily: generalFont, color: "#6b7280" }}
                   >
                     {t.tipQR}
                   </div>
-
-                  <button
-                    type="button"
-                    onClick={handleQrProceed}
-                    disabled={processing}
-                    className="mt-6 px-8 py-3 text-sm font-bold disabled:opacity-60"
-                    style={baseButtonStyle}
-                    onMouseEnter={(e) => applyHover(e, true)}
-                    onMouseLeave={(e) => applyHover(e, false)}
-                  >
-                    {processing ? t.processing : t.externalConfirm}
-                  </button>
                 </div>
               )}
 
-              {activePayment === "cash" && (
+              {activePayment === "cash" && cashMode === "manual" && (
                 <div className="w-full m-4 flex flex-col items-center text-center">
                   <h3
-                    className="text-2xl md:text-3xl font-bold"
+                    className="text-3xl md:text-5xl font-bold"
                     style={{ fontFamily: headerFont, color: headerFontColor }}
                   >
                     {isTagalog ? "Cash Payment" : "Cash Payment"}
                   </h3>
 
                   <p
-                    className="mt-3 text-sm md:text-base max-w-[520px]"
+                    className="mt-3 text-base md:text-xl max-w-[520px]"
                     style={{ fontFamily: generalFont, color: generalFontColor }}
                   >
                     {isTagalog
@@ -604,11 +747,11 @@ export default function PaymentScreen({
 
                   <div className="mt-6 grid grid-cols-1 gap-4 w-full max-w-[420px]">
                     <div className="text-center">
-                      <div className="text-xs mb-1" style={{ color: "#6b7280" }}>
+                      <div className="text-base mb-1" style={{ color: "#6b7280" }}>
                         {isTagalog ? "To Pay" : "To Pay"}
                       </div>
                       <div
-                        className="text-2xl md:text-3xl font-bold"
+                        className="text-3xl md:text-5xl font-bold"
                         style={{ fontFamily: generalFont, color: generalFontColor }}
                       >
                         {fmt(price)}
@@ -616,7 +759,7 @@ export default function PaymentScreen({
                     </div>
                   </div>
 
-                  <div className="mt-6 text-xs md:text-sm" style={{ color: "#6b7280", fontFamily: generalFont }}>
+                  <div className="mt-6 text-sm md:text-base" style={{ color: "#6b7280", fontFamily: generalFont }}>
                     {t.attendantConfirm}
                   </div>
 
@@ -624,7 +767,7 @@ export default function PaymentScreen({
                     type="button"
                     onClick={handleCashProceed}
                     disabled={processing}
-                    className="mt-6 px-8 py-3 text-sm font-bold disabled:opacity-60"
+                    className="mt-6 px-8 py-3 text-xl md:text-2xl font-bold disabled:opacity-60"
                     style={baseButtonStyle}
                     onMouseEnter={(e) => applyHover(e, true)}
                     onMouseLeave={(e) => applyHover(e, false)}
@@ -634,17 +777,67 @@ export default function PaymentScreen({
                 </div>
               )}
 
+              {activePayment === "cash" && cashMode === "hardware" && (
+                <div className="w-full m-4 flex flex-col items-center text-center">
+                  <h3
+                    className="text-3xl md:text-5xl font-bold"
+                    style={{ fontFamily: headerFont, color: headerFontColor }}
+                  >
+                    {isTagalog ? "Cash Payment" : "Cash Payment"}
+                  </h3>
+
+                  <p
+                    className="mt-3 text-base md:text-xl max-w-[520px]"
+                    style={{ fontFamily: generalFont, color: generalFontColor }}
+                  >
+                    {isTagalog
+                      ? "Ilagay ang bayad sa machine. Awtomatikong magpapatuloy kapag kumpleto na."
+                      : "Insert cash into the acceptor. The session starts automatically once the full amount is received."}
+                  </p>
+
+                  {/* Pulsing waiting indicator */}
+                  <div className="mt-8 flex flex-col items-center gap-3">
+                    <div className="relative flex h-20 w-20 items-center justify-center">
+                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-indigo-400 opacity-30" />
+                      <span className="relative inline-flex h-14 w-14 items-center justify-center rounded-full bg-indigo-100">
+                        <svg className="h-7 w-7 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                            d="M17 9V7a5 5 0 00-10 0v2M5 9h14l1 12H4L5 9z" />
+                        </svg>
+                      </span>
+                    </div>
+                    <p className="text-sm font-medium" style={{ color: "#6b7280" }}>
+                      {isTagalog ? "Naghihintay ng bayad…" : "Waiting for payment…"}
+                    </p>
+                    <div className="mt-1 text-2xl font-bold" style={{ fontFamily: generalFont, color: generalFontColor }}>
+                      {fmt(price)}
+                    </div>
+                  </div>
+
+                  {/* Operator override — use if hardware glitches */}
+                  <button
+                    type="button"
+                    onClick={handleCashProceed}
+                    disabled={processing}
+                    className="mt-10 text-xs underline opacity-50 disabled:opacity-30"
+                    style={{ color: "#6b7280", fontFamily: generalFont }}
+                  >
+                    {isTagalog ? "Override (operator)" : "Override (operator only)"}
+                  </button>
+                </div>
+              )}
+
               {activePayment === "paypal" && (
                 <div className="w-full m-4 flex flex-col items-center text-center">
                   <h3
-                    className="text-2xl md:text-3xl font-bold"
+                    className="text-3xl md:text-5xl font-bold"
                     style={{ fontFamily: headerFont, color: headerFontColor }}
                   >
                     PayPal
                   </h3>
 
                   <p
-                    className="mt-3 text-sm md:text-base max-w-[520px]"
+                    className="mt-3 text-base md:text-xl max-w-[520px]"
                     style={{ fontFamily: generalFont, color: generalFontColor }}
                   >
                     {isTagalog
@@ -657,7 +850,7 @@ export default function PaymentScreen({
                     style={{ backgroundColor: "rgba(0,0,0,0.03)" }}
                   >
                     <div
-                      className="text-base md:text-lg font-semibold"
+                      className="text-2xl md:text-3xl font-semibold"
                       style={{ fontFamily: generalFont, color: generalFontColor }}
                     >
                       {fmt(price)}
@@ -674,7 +867,7 @@ export default function PaymentScreen({
                     type="button"
                     onClick={handlePayPalProceed}
                     disabled={processing}
-                    className="mt-6 px-8 py-3 text-sm font-bold disabled:opacity-60"
+                    className="mt-6 px-8 py-3 text-xl md:text-2xl font-bold disabled:opacity-60"
                     style={baseButtonStyle}
                     onMouseEnter={(e) => applyHover(e, true)}
                     onMouseLeave={(e) => applyHover(e, false)}
@@ -687,14 +880,14 @@ export default function PaymentScreen({
               {activePayment === "card" && (
                 <div className="w-full m-4 flex flex-col items-center text-center">
                   <h3
-                    className="text-2xl md:text-3xl font-bold"
+                    className="text-3xl md:text-5xl font-bold"
                     style={{ fontFamily: headerFont, color: headerFontColor }}
                   >
                     {isTagalog ? "Card Payment" : "Card Payment"}
                   </h3>
 
                   <p
-                    className="mt-3 text-sm md:text-base max-w-[520px]"
+                    className="mt-3 text-base md:text-xl max-w-[520px]"
                     style={{ fontFamily: generalFont, color: generalFontColor }}
                   >
                     {isTagalog
@@ -707,7 +900,7 @@ export default function PaymentScreen({
                     style={{ backgroundColor: "rgba(0,0,0,0.03)" }}
                   >
                     <div
-                      className="text-base md:text-lg font-semibold"
+                      className="text-2xl md:text-3xl font-semibold"
                       style={{ fontFamily: generalFont, color: generalFontColor }}
                     >
                       {isTagalog ? "Terminal Ready" : "Terminal Ready"}
@@ -724,7 +917,7 @@ export default function PaymentScreen({
                     type="button"
                     onClick={handleCardProceed}
                     disabled={processing}
-                    className="mt-6 px-8 py-3 text-sm font-bold disabled:opacity-60"
+                    className="mt-6 px-8 py-3 text-xl md:text-2xl font-bold disabled:opacity-60"
                     style={baseButtonStyle}
                     onMouseEnter={(e) => applyHover(e, true)}
                     onMouseLeave={(e) => applyHover(e, false)}
@@ -796,114 +989,78 @@ export default function PaymentScreen({
   };
 
   /* --------------------------------- Render --------------------------------- */
-  const isGif = !!backgroundMediaUrl && backgroundMediaUrl.toLowerCase().endsWith(".gif");
+  if (isUnsupported) {
+    return (
+      <div className="w-full h-screen flex flex-col items-center justify-center text-center gap-6" style={{ backgroundColor: bgColor }}>
+        <p style={{ fontFamily: headerFont, color: headerFontColor, fontSize: 'clamp(22px, 3vw, 56px)', fontWeight: 'bold' }}>Display Not Supported</p>
+        <p style={{ fontFamily: generalFont, color: generalFontColor, fontSize: 'clamp(14px, 1.8vw, 34px)' }}>Minimum resolution: 1080 × 1920 (Full HD portrait)</p>
+      </div>
+    );
+  }
 
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={mounted ? { opacity: 1, y: 0 } : {}}
       transition={{ duration: 0.7, ease: "easeOut" }}
-      className="relative w-full h-screen text-black overflow-hidden py-[50px]"
+      className="relative w-full h-screen text-black overflow-hidden flex flex-col"
       style={{ backgroundColor: bgColor }}
     >
 
-      {/* Brand (bottom-right): logo, else booth name */}
-      <div className="absolute bottom-6 right-6 sm:bottom-12 sm:right-20 z-30 flex flex-col items-end">
-        {logoUrl ? (
-          <img
-            src={logoUrl}
-            alt="logo"
-            className="max-w-[300px] sm:max-w-[300px] md:max-w-[400px]"
-          />
-        ) : (
-          <>
-            {boothName && (
-              <div
-                className="text-5xl font-bold"
-                style={{ fontFamily: headerFont, color: headerFontColor }}
-              >
-                {boothName}
-              </div>
-            )}
-
-            {boothSlogan && (
-              <div
-                className="text-lg"
-                style={{ fontFamily: generalFont, color: generalFontColor }}
-              >
-                {boothSlogan}
-              </div>
-            )}
-          </>
-        )}
-      </div>
-
-      {/* Header */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 px-6 sm:px-12 lg:px-20 pt-6 gap-6 items-start relative z-10">
-        <div>
+      {/* Row 1: Title & amount left + hint & timer right */}
+      <div className="shrink-0 grid grid-cols-2 gap-6 items-start relative z-10" style={{ padding: '2vh 4vw' }}>
+        <div className="flex flex-col gap-2">
           <h1
-            className="text-3xl sm:text-5xl md:text-6xl lg:text-8xl leading-tight"
-            style={{ fontFamily: headerFont, color: headerFontColor }}
+            className="leading-tight"
+            style={{ fontFamily: headerFont, color: headerFontColor, fontSize: 'clamp(44px, 5.5vw, 108px)', marginTop: '2vh' }}
           >
-            {t.titleChoose}
-            <br />
-            {isTagalog ? "iyong " : "your "}
-            <span className="italic font-bold">{t.titlePaymentOption}</span>
+            {t.titleChoose} {isTagalog ? "iyong" : "your"}<br /><span className="italic font-bold">{t.titlePaymentOption}</span>
           </h1>
           <div
-            className="inline-flex items-center gap-3 px-5 py-3 rounded-full"
-            style={{
-              background: "rgba(0,0,0,0.04)",
-              fontFamily: generalFont,
-              color: generalFontColor,
-            }}
+            className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full"
+            style={{ background: "rgba(0,0,0,0.05)", fontFamily: generalFont, color: generalFontColor, width: 'fit-content' }}
           >
-            <span className="text-sm md:text-base">{t.amountDueLabel}</span>
-            <span className="text-xl md:text-2xl font-bold">{fmt(price)}</span>
+            <span style={{ fontSize: 'clamp(14px, 1.6vw, 30px)' }}>{t.amountDueLabel}</span>
+            <span className="font-bold" style={{ fontSize: 'clamp(16px, 1.8vw, 34px)' }}>{fmt(price)}</span>
           </div>
         </div>
-        <div className="flex flex-col items-end text-right space-y-4 lg:pr-10">
+        <div className="flex flex-col items-end text-right gap-2" style={{ paddingRight: '3vw', marginTop: '2vh' }}>
           <p
-            className="max-w-md text-sm sm:text-md md:text-xl"
-            style={{ fontFamily: generalFont, color: generalFontColor }}
+            style={{ fontFamily: generalFont, color: generalFontColor, fontSize: 'clamp(14px, 1.6vw, 30px)', opacity: 0.75 }}
           >
             {t.hintProceed}
           </p>
-
           {paymentEnabled && (
-            <div className="z-30">
-              <div
-                className="px-8 py-3 rounded-full text-2xl font-bold shadow-sm"
-                style={{
-                  fontFamily: generalFont,
-                  backgroundColor: `${buttonBgColor}`,
-                  color: buttonFontColor,
-                }}
-                aria-live="polite"
-              >
-                {Math.max(0, timeLeft)}s
-              </div>
+            <div
+              className="px-5 py-2 rounded-full font-bold shadow-sm"
+              style={{ backgroundColor: buttonBgColor, color: buttonFontColor, fontFamily: generalFont, fontSize: 'clamp(16px, 2vw, 38px)' }}
+              aria-live="polite"
+            >
+              {Math.max(0, timeLeft)}s
             </div>
           )}
         </div>
       </div>
 
-      <div className="relative z-10">
+      {/* Row 2: Payment panel centered */}
+      <div className="flex-1 min-h-0 flex items-center justify-center overflow-y-auto relative z-10" style={{ marginTop: '1vh' }}>
         {noProviders ? (
-          <div
-            className="text-center text-sm mt-10"
-            style={{ color: "#6b7280", fontFamily: generalFont }}
-          >
-            {isTagalog
-              ? "Walang naka-enable na payment provider."
-              : "No payment providers are enabled."}
+          <div className="text-center text-sm" style={{ color: "#6b7280", fontFamily: generalFont }}>
+            {isTagalog ? "Walang naka-enable na payment provider." : "No payment providers are enabled."}
           </div>
         ) : (
           renderUnifiedPaymentPanel()
         )}
       </div>
 
-      <div className="pb-20" />
+      {/* Row 3: Logo */}
+      {/* Row 3: Logo bottom-right */}
+      <div className="shrink-0 flex items-center justify-end relative z-10" style={{ padding: '1vh 4vw 2vh' }}>
+        {logoUrl
+          ? <img src={logoUrl} alt="logo" style={{ maxHeight: '5vh' }} className="w-auto object-contain" />
+          : <span className="font-bold" style={{ fontFamily: headerFont, color: headerFontColor, fontSize: 'clamp(14px, 1.6vw, 30px)' }}>{boothName}</span>
+        }
+      </div>
     </motion.div>
   );
 }

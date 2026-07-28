@@ -1,89 +1,117 @@
-// src/components/subscription/SubscriptionSummary.jsx
 import React from "react";
 
-const surface = "bg-white border border-gray-200 rounded-xl shadow-sm";
-const helper = "text-xs text-gray-600";
-
-function formatTs(ts) {
-  if (!ts || typeof ts !== "number") return "-";
+function formatDate(ts) {
+  if (!ts) return "-";
+  const d = typeof ts === "number" ? new Date(ts * 1000) : new Date(ts);
+  if (isNaN(d.getTime())) return "-";
   return new Intl.DateTimeFormat(undefined, {
     year: "numeric",
     month: "short",
     day: "2-digit",
-  }).format(new Date(ts * 1000));
+  }).format(d);
 }
 
-function formatSavings(amount, currency) {
-  if (currency === "USD") return `$${amount.toLocaleString()}`;
-  if (currency === "PHP") return `PHP ${amount.toLocaleString()}`;
-  return amount.toLocaleString();
+function normalizePlan(raw) {
+  if (raw === "pro_yearly") return "yearly";
+  if (raw === "pro_monthly" || raw === "pro") return "monthly";
+  return raw;
 }
 
 export default function SubscriptionSummary({ license, gating, prices }) {
-  const plan = license?.plan ?? gating?.plan ?? null; // null | 'trial'|'monthly'|'yearly'
+  const rawPlan = license?.plan ?? gating?.plan ?? null;
+  const plan = normalizePlan(rawPlan);
   const ent = license?.entitlements ?? {};
-  const renewOrEnd = license?.expiresAt ?? gating?.expiresAt ?? 0;
+  const renewOrEnd = license?.expiresAt ?? gating?.expiresAt ?? null;
 
-  const statusBadge = gating?.allow
-    ? <span className="rounded border border-green-300 px-2 py-1 text-xs text-green-700">Active</span>
-    : <span className="rounded border border-amber-300 px-2 py-1 text-xs text-amber-700">Restricted</span>;
+  const isActive = gating?.allow;
 
-  const title =
-    plan === "yearly" ? "Pro - Yearly"
-      : plan === "monthly" ? "Pro - Monthly"
-        : plan === "trial" ? "Free Trial"
-          : "No Plan";
+  const planLabel =
+    plan === "yearly"   ? "Studio Photuna Pro — Yearly"
+    : plan === "monthly" ? "Studio Photuna Pro — Monthly"
+    : plan === "trial"   ? "14-Day Free Trial"
+    : "No Active Plan";
 
-  const priceText =
-    plan === "yearly" ? (prices?.yearly?.display ?? "$204 / yr")
-      : plan === "monthly" ? (prices?.monthly?.display ?? "$30 / mo")
-        : plan === "trial" ? "$0"
-          : "-";
+  const priceDisplay =
+    plan === "yearly"   ? (prices?.yearly?.display ?? "₱950 / mo")
+    : plan === "monthly" ? (prices?.monthly?.display ?? "₱1,800 / mo")
+    : plan === "trial"   ? "₱0"
+    : "-";
+
+  const priceSubtext =
+    plan === "yearly"   ? `${prices?.yearly?.annual ?? "₱11,400"} one-time payment for 12 months`
+    : plan === "monthly" ? "Billed monthly via GCash"
+    : plan === "trial"   ? "No charge during trial"
+    : null;
+
+  const features = [
+    { label: "Events", value: `${ent.maxEvents ?? 0} max`, included: (ent.maxEvents ?? 0) > 0 },
+    { label: "Templates", value: `${ent.templates ?? 0} max`, included: (ent.templates ?? 0) > 0 },
+    { label: "Watermark", value: ent.watermark ? "Enabled" : "Removed", included: !ent.watermark },
+    { label: "Priority support", value: ent.prioritySupport ? "Included" : "Not included", included: Boolean(ent.prioritySupport) },
+    { label: "Gallery add-on", value: (ent.galleryEnabled || ent.galleryAddon) ? "Enabled" : "Not included", included: Boolean(ent.galleryEnabled || ent.galleryAddon) },
+  ];
+
+  const showSavingsHint = plan !== "yearly" && prices?.monthly?.amount && prices?.yearly?.annualAmount;
+  const savings = showSavingsHint
+    ? Math.max(0, prices.monthly.amount * 12 - prices.yearly.annualAmount)
+    : 0;
+  const savingsPct = showSavingsHint && prices.monthly.amount > 0
+    ? Math.round((savings / (prices.monthly.amount * 12)) * 100)
+    : 0;
 
   return (
-    <div className={`${surface} p-4`}>
-      <div className="flex items-start justify-between">
-        <div>
-          <div className="text-sm font-medium text-gray-900">Current Subscription</div>
-          <div className="mt-1 text-lg">{title} {statusBadge}</div>
-          <div className={`${helper} mt-1`}>
-            {plan
-              ? (plan === "trial" ? "Ends" : "Renews") + ` ${formatTs(renewOrEnd)}`
-              : "You are currently not subscribed."}
+    <div className="space-y-4">
+      {/* Plan header */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <h4 className="text-base font-bold text-slate-900">{planLabel}</h4>
+            {plan && (
+              isActive
+                ? <span className="rounded-full border border-green-200 bg-green-50 px-2.5 py-0.5 text-[11px] font-semibold text-green-700">Active</span>
+                : <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-[11px] font-semibold text-amber-700">Restricted</span>
+            )}
           </div>
+          <p className="text-xs text-slate-500">
+            {plan
+              ? (plan === "trial" ? "Ends" : "Renews") + ` ${formatDate(renewOrEnd)}`
+              : "You are currently not subscribed to any plan."}
+          </p>
+        </div>
+        {plan && (
+          <div className="text-right">
+            <div className="text-2xl font-black text-slate-900">{priceDisplay}</div>
+            {priceSubtext && <p className="mt-0.5 text-xs text-slate-500">{priceSubtext}</p>}
+          </div>
+        )}
+      </div>
 
-          {plan !== "yearly" && prices?.monthly?.amount && prices?.yearly?.amount ? (
-            <div className={`${helper} mt-1`}>
-              {(() => {
-                const monthly = prices.monthly.amount;
-                const yearly = prices.yearly.amount;
-                const annualMonthly = monthly * 12;
-                const save = Math.max(0, annualMonthly - yearly);
-                const pct = annualMonthly > 0 ? Math.round((save / annualMonthly) * 100) : 0;
-                return save > 0
-                  ? <>Save <b>{formatSavings(save, prices.currency)}</b> (~{pct}%) by switching to Yearly.</>
-                  : null;
-              })()}
+      {/* Entitlements */}
+      {plan && (
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+          {features.map(({ label, value, included }) => (
+            <div key={label} className="rounded-lg border border-slate-100 bg-slate-50/60 px-3 py-2.5">
+              <div className="flex items-center gap-1.5">
+                {included ? (
+                  <svg className="h-3.5 w-3.5 flex-shrink-0 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                ) : (
+                  <svg className="h-3.5 w-3.5 flex-shrink-0 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                )}
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">{label}</span>
+              </div>
+              <div className={`mt-0.5 text-sm font-bold ${included ? "text-slate-900" : "text-slate-400"}`}>{value}</div>
             </div>
-          ) : null}
+          ))}
         </div>
+      )}
 
-        <div className="text-right">
-          <div className="text-xs text-gray-600">Plan price</div>
-          <div className="text-base font-medium">{priceText}</div>
+      {/* Savings hint */}
+      {savings > 0 && (
+        <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-700">
+          <svg className="h-4 w-4 flex-shrink-0 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>
+          Save <b>₱{savings.toLocaleString()}</b> (~{savingsPct}%) by switching to Yearly.
         </div>
-      </div>
-
-      <div className="mt-4">
-        <div className="text-xs font-medium text-gray-700">Entitlements</div>
-        <ul className="mt-2 grid grid-cols-1 gap-y-1 text-xs text-gray-700 md:grid-cols-2">
-          <li>Watermark: <b>{ent.watermark ? "Enabled" : "Disabled"}</b></li>
-          <li>Max events: <b>{ent.maxEvents ?? 0}</b></li>
-          <li>Templates: <b>{ent.templates ?? 0}</b></li>
-          <li>Priority support: <b>{ent.prioritySupport ? "Yes" : "No"}</b></li>
-          <li>Gallery add-on: <b>{ent.galleryEnabled || ent.galleryAddon ? "Enabled" : "Disabled"}</b></li>
-        </ul>
-      </div>
+      )}
     </div>
   );
 }

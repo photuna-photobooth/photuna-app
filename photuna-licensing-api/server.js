@@ -43,7 +43,7 @@ const {
   LICENSE_PUBLIC_KEY,
   LICENSE_MAX_OFFLINE_DAYS = '7',
 
-  TRIAL_DAYS = '7',
+  TRIAL_DAYS = '14',
   TRIAL_DEVICE_LIMIT = '1',
   MONTHLY_DEVICE_LIMIT = '2',
   YEARLY_DEVICE_LIMIT = '3',
@@ -56,7 +56,10 @@ const {
   BILLING_SUCCESS_URL,
   BILLING_CANCEL_URL,
   BILLING_PORTAL_RETURN_URL,
-  DISPLAY_PRICE_GALLERY_ADDON_PHP = '₱499 / mo'
+  DISPLAY_PRICE_GALLERY_ADDON_PHP = '₱499 / mo',
+  GOOGLE_PLACES_API_KEY,
+  GOOGLE_PLACE_ID,
+  GOOGLE_REVIEWS_CACHE_TTL_MS = '3600000'
 } = process.env;
 
 if (!ACCESS_TOKEN_SECRET || !REFRESH_TOKEN_SECRET) {
@@ -67,6 +70,10 @@ if (!LICENSE_PRIVATE_KEY || !LICENSE_PUBLIC_KEY) {
 }
 
 const stripe = STRIPE_SECRET_KEY ? new Stripe(STRIPE_SECRET_KEY) : null;
+const googleReviewsCache = {
+  expiresAt: 0,
+  payload: null,
+};
 
 /** ====== Middleware ====== */
 // Stripe webhook needs raw body. So mount JSON normally, but the webhook route will override.
@@ -112,11 +119,11 @@ function planEntitlements(plan) {
     case 'trial':
       return { watermark: true, maxEvents: 3, templates: 5, prioritySupport: false, galleryAddon: false, galleryEnabled: false, plan: 'trial' };
     case 'monthly':
-      return { watermark: false, maxEvents: 100, templates: 25, prioritySupport: false, galleryAddon: false, galleryEnabled: false, plan: 'monthly' };
+      return { watermark: false, maxEvents: 20, templates: 30, prioritySupport: false, galleryAddon: false, galleryEnabled: false, plan: 'monthly' };
     case 'yearly':
-      return { watermark: false, maxEvents: 1200, templates: 100, prioritySupport: true, galleryAddon: false, galleryEnabled: false, plan: 'yearly' };
+      return { watermark: false, maxEvents: 50, templates: 100, prioritySupport: true, galleryAddon: false, galleryEnabled: false, plan: 'yearly' };
     default:
-      return { watermark: true, maxEvents: 1, templates: 3, prioritySupport: false, galleryAddon: false, galleryEnabled: false, plan: 'free' };
+      return { watermark: true, maxEvents: 0, templates: 0, prioritySupport: false, galleryAddon: false, galleryEnabled: false, plan: 'free' };
   }
 }
 
@@ -124,6 +131,79 @@ function deviceLimitForPlan(plan) {
   if (plan === 'yearly') return parseInt(YEARLY_DEVICE_LIMIT, 10);
   if (plan === 'monthly') return parseInt(MONTHLY_DEVICE_LIMIT, 10);
   return parseInt(TRIAL_DEVICE_LIMIT, 10);
+}
+
+function normalizeGoogleReview(review = {}) {
+  const author = review.authorAttribution || {};
+  return {
+    authorName: author.displayName || 'Google reviewer',
+    authorPhotoUrl: author.photoUri || null,
+    authorUrl: author.uri || null,
+    rating: review.rating || null,
+    text: review.text?.text || review.originalText?.text || '',
+    languageCode: review.text?.languageCode || review.originalText?.languageCode || null,
+    relativeTime: review.relativePublishTimeDescription || '',
+    publishTime: review.publishTime || null,
+    reviewUrl: review.googleMapsUri || author.uri || null,
+  };
+}
+
+async function fetchGoogleReviews() {
+  if (!GOOGLE_PLACES_API_KEY || !GOOGLE_PLACE_ID) {
+    return {
+      configured: false,
+      rating: null,
+      userRatingCount: null,
+      reviews: [],
+      error: 'Google reviews API is not configured',
+    };
+  }
+
+  const now = Date.now();
+  if (googleReviewsCache.payload && googleReviewsCache.expiresAt > now) {
+    return googleReviewsCache.payload;
+  }
+
+  const placeName = GOOGLE_PLACE_ID.startsWith('places/')
+    ? GOOGLE_PLACE_ID
+    : `places/${GOOGLE_PLACE_ID}`;
+  const fields = [
+    'id',
+    'displayName',
+    'rating',
+    'userRatingCount',
+    'googleMapsUri',
+    'reviews',
+  ].join(',');
+  const url = `https://places.googleapis.com/v1/${encodeURIComponent(placeName).replace('%2F', '/')}?fields=${encodeURIComponent(fields)}&key=${encodeURIComponent(GOOGLE_PLACES_API_KEY)}`;
+
+  const response = await fetch(url, {
+    headers: {
+      'Accept': 'application/json',
+    },
+  });
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    const message = data?.error?.message || `Google Places request failed with ${response.status}`;
+    throw new Error(message);
+  }
+
+  const payload = {
+    configured: true,
+    source: 'google-places',
+    placeId: data.id || GOOGLE_PLACE_ID,
+    placeName: data.displayName?.text || 'Studio Photuna',
+    googleMapsUri: data.googleMapsUri || null,
+    rating: data.rating || null,
+    userRatingCount: data.userRatingCount || null,
+    reviews: Array.isArray(data.reviews) ? data.reviews.map(normalizeGoogleReview) : [],
+    fetchedAt: new Date().toISOString(),
+  };
+
+  googleReviewsCache.payload = payload;
+  googleReviewsCache.expiresAt = now + Math.max(60_000, parseInt(GOOGLE_REVIEWS_CACHE_TTL_MS, 10) || 3_600_000);
+  return payload;
 }
 
 /** ====== Supabase License Helpers (primary store) ====== */
@@ -170,13 +250,21 @@ function sbRowToInternal(row) {
 async function upsertSupabaseLicense(userId, { plan, state, expires, entitlements, trialRedeemed }) {
   try {
     const existing = await getSupabaseLicense(userId);
+
+    // Prefer the admin-set current_period_end over any computed expiry value.
+    // This ensures manual activations never stomp the date the admin recorded.
+    const adminPeriodEnd = existing?.current_period_end || null;
+    const resolvedExpiresAt = adminPeriodEnd
+      ? new Date(adminPeriodEnd * 1000).toISOString()
+      : (expires ? new Date(expires * 1000).toISOString() : null);
+
     const { error } = await sbQuery(
       supabaseAdmin.from('licenses').upsert(
         {
           user_id: userId,
           plan,
           state,
-          expires_at: expires ? new Date(expires * 1000).toISOString() : null,
+          expires_at: resolvedExpiresAt,
           watermark: entitlements.watermark,
           max_events: entitlements.maxEvents,
           templates: entitlements.templates,
@@ -645,8 +733,8 @@ app.post('/billing/create-checkout-session', authMiddleware, async (req, res) =>
       mode: 'subscription',
       customer: customerId,
       line_items: [{ price, quantity: 1 }],
-      success_url: BILLING_SUCCESS_URL || 'http://localhost:3000?billing=success',
-      cancel_url: BILLING_CANCEL_URL || 'http://localhost:3000?billing=cancelled',
+      success_url: BILLING_SUCCESS_URL || 'https://app.studiophotuna.com?billing=success',
+      cancel_url: BILLING_CANCEL_URL || 'https://app.studiophotuna.com?billing=cancelled',
       allow_promotion_codes: true,
       metadata: {
         userId: req.user.id,
@@ -694,8 +782,8 @@ app.post('/billing/create-gallery-addon-session', authMiddleware, async (req, re
       mode: 'subscription',
       customer: customerId,
       line_items: [{ price: STRIPE_PRICE_GALLERY_ADDON_MONTHLY, quantity: 1 }],
-      success_url: BILLING_SUCCESS_URL || 'http://localhost:3000?billing=success',
-      cancel_url: BILLING_CANCEL_URL || 'http://localhost:3000?billing=cancelled',
+      success_url: BILLING_SUCCESS_URL || 'https://app.studiophotuna.com?billing=success',
+      cancel_url: BILLING_CANCEL_URL || 'https://app.studiophotuna.com?billing=cancelled',
       allow_promotion_codes: true,
       metadata: {
         userId: req.user.id,
@@ -869,12 +957,12 @@ app.post('/billing/sync', authMiddleware, async (req, res) => {
 app.get('/billing/prices', (_req, res) => {
   // You can hardcode, read from server env, or pull from Stripe
   // For now, read server env or default:
-  const monthlyPhp = process.env.DISPLAY_PRICE_MONTHLY_PHP || '₱1,400 / mo';
-  const yearlyPhp = process.env.DISPLAY_PRICE_YEARLY_PHP || '₱10,000 / yr';
+  const monthlyDisplay = process.env.DISPLAY_PRICE_MONTHLY_USD || process.env.DISPLAY_PRICE_MONTHLY_PHP || '$30 / mo';
+  const yearlyDisplay = process.env.DISPLAY_PRICE_YEARLY_USD || process.env.DISPLAY_PRICE_YEARLY_PHP || '$204 / yr';
   res.json({
-    currency: 'PHP',
-    monthly: { display: monthlyPhp },
-    yearly: { display: yearlyPhp },
+    currency: process.env.DISPLAY_PRICE_CURRENCY || 'USD',
+    monthly: { display: monthlyDisplay, amount: parseInt(process.env.DISPLAY_PRICE_MONTHLY_AMOUNT || '30', 10) },
+    yearly: { display: yearlyDisplay, amount: parseInt(process.env.DISPLAY_PRICE_YEARLY_AMOUNT || '204', 10) },
     galleryAddon: {
       display: DISPLAY_PRICE_GALLERY_ADDON_PHP,
       amount: parseInt(process.env.DISPLAY_PRICE_GALLERY_ADDON_AMOUNT || '499', 10),
@@ -1023,6 +1111,25 @@ app.post('/webhooks/stripe', express.raw({ type: 'application/json' }), (req, re
 /** ====== Health ====== */
 app.get('/health', (_req, res) => {
   res.json({ ok: true, service: 'Photuna Licensing API', ts: Date.now() });
+});
+
+app.get('/public/google-reviews', async (_req, res) => {
+  try {
+    const payload = await fetchGoogleReviews();
+    const ttl = Math.max(60, Math.floor((parseInt(GOOGLE_REVIEWS_CACHE_TTL_MS, 10) || 3_600_000) / 1000));
+    res.setHeader('Cache-Control', `public, max-age=${Math.min(ttl, 3600)}`);
+    res.json(payload);
+  } catch (err) {
+    console.error('[google-reviews] failed:', err.message);
+    res.status(502).json({
+      configured: Boolean(GOOGLE_PLACES_API_KEY && GOOGLE_PLACE_ID),
+      source: 'google-places',
+      rating: null,
+      userRatingCount: null,
+      reviews: [],
+      error: err.message || 'Unable to load Google reviews',
+    });
+  }
 });
 
 /** ====== Billing redirect landing pages ====== */

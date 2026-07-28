@@ -75,6 +75,9 @@ const LICENSE_KEY_ACCOUNT = 'default';
 const AUTH_SERVICE_NAME = "StudioPhotunaAuth";
 const AUTH_LAST_USERNAME_KEY = "auth.lastUsername";
 
+const PAYMONGO_SERVICE = "StudioPhotunaPayMongo";
+const { PayMongoService, PaymentPollManager, generateQrDataUrl, isTestMode } = require("./services/paymentService");
+
 const cors = require("cors");
 const Stripe = require("stripe");
 const jwt = require("jsonwebtoken");
@@ -109,7 +112,12 @@ function createSupabaseAdmin() {
 
   const cacheKey = `${supabaseUrl}|${supabaseServiceRoleKey}`;
   if (!supabaseAdmin || supabaseAdminCacheKey !== cacheKey) {
-    supabaseAdmin = createClient(supabaseUrl, supabaseServiceRoleKey);
+    supabaseAdmin = createClient(supabaseUrl, supabaseServiceRoleKey, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
+    });
     supabaseAdminCacheKey = cacheKey;
   }
   return supabaseAdmin;
@@ -224,6 +232,13 @@ async function transcodeSlotClip(videoDir, slotIndex) {
   const mp4Fs = path.join(videoDir, `slot${slotIndex}.mp4`);
   const palFs = path.join(videoDir, `slot${slotIndex}_palette.png`);
   const gifFs = path.join(videoDir, `slot${slotIndex}.gif`);
+
+  // Validate before handing to ffmpeg — an empty/absent file produces a cryptic
+  // "Invalid data found" error from ffmpeg rather than a useful message.
+  const rawStat = fs.existsSync(rawFs) ? fs.statSync(rawFs) : null;
+  if (!rawStat || rawStat.size < 50) {
+    throw new Error(`slot${slotIndex}_raw.webm is missing or empty (${rawStat?.size ?? 0} bytes)`);
+  }
 
   // FFmpeg needs forward slashes on Windows
   const toFF = p => p.replace(/\\/g, "/");
@@ -786,14 +801,29 @@ async function createOnlineGalleryInMain(payload = {}) {
 
   console.log("[gallery:create] uploadResult:", uploadResult);
 
+  // Fetch plan-aware expiry from DB; falls back to 7 days if the RPC fails (e.g. free plan / no row)
+  let expiresAt;
+  try {
+    const { data: expiryTs, error: expiryErr } = await supabaseAdminClient
+      .rpc("gallery_default_expires_at", { p_user_id: userId });
+    if (!expiryErr && expiryTs) {
+      expiresAt = expiryTs;
+    }
+  } catch (_) { /* ignore, use fallback */ }
+  if (!expiresAt) {
+    expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+  }
+
   const galleryPayload = {
     slug,
     event_id: eventId,
     session_id: sessionId,
+    owner_user_id: userId || null,
     final_url: uploadResult.finalUrl,
     final_video_url: uploadResult.finalVideoUrl ?? null,
     photo_urls: Array.isArray(uploadResult.photoUrls) ? uploadResult.photoUrls : [],
-    expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+    burst_video_urls: Array.isArray(uploadResult.burstVideoUrls) ? uploadResult.burstVideoUrls : [],
+    expires_at: expiresAt,
   };
   const galleryBaseUrl = "https://studiophotuna-gallery.vercel.app/gallery";
   const qrUrl = `${galleryBaseUrl}/${slug}`;
@@ -1522,6 +1552,22 @@ ipcMain.handle("sync-event", async (_event, action) => {
   return { success: true };
 });
 
+// Deletes all Supabase storage objects and gallery rows for a deleted event.
+// Fire-and-forget from the renderer — does not block the UI.
+ipcMain.handle("event:cleanupStorage", async (_e, { eventId } = {}) => {
+  if (!eventId) return { ok: false, reason: "no_event_id" };
+  try {
+    const supabase = getSupabaseAdmin();
+    const { data, error } = await supabase.rpc("delete_event_storage", { p_event_id: eventId });
+    if (error) throw error;
+    console.log(`[event:cleanupStorage] deleted ${data} storage objects for event ${eventId}`);
+    return { ok: true, deleted: data };
+  } catch (err) {
+    console.error("[event:cleanupStorage] failed:", err);
+    return { ok: false, reason: err?.message || "cleanup_failed" };
+  }
+});
+
 ipcMain.handle("load-events", async (_e, { userId } = {}) => {
   try {
     const { eventsFile } = getPaths(userId);
@@ -1943,17 +1989,88 @@ ipcMain.handle("storage:cleanup", async (_event, payload = {}) => {
   }
 });
 
+const CLEANUP_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
+let cleanupTimer = null;
+
+async function runAutoStorageCleanup() {
+  try {
+    const userId = getUserIdFromStore();
+    if (!userId) return;
+
+    const settingsKey = `users.${userId}.settings`;
+    const settings = typeof store.get === "function" ? store.get(settingsKey, {}) : {};
+    const storagePath = String(settings?.storagePath || "").trim();
+    const autoDeleteDays = Number(settings?.autoDeleteDays ?? 0);
+
+    if (!storagePath || !autoDeleteDays || autoDeleteDays <= 0) return;
+
+    const exists = await pathExists(storagePath);
+    if (!exists) return;
+
+    const cutoffMs = Date.now() - autoDeleteDays * 24 * 60 * 60 * 1000;
+    let deletedCount = 0;
+
+    async function walk(dir) {
+      let entries;
+      try { entries = await fsp.readdir(dir, { withFileTypes: true }); } catch { return; }
+      for (const entry of entries) {
+        const fullPath = path.join(dir, entry.name);
+        if (entry.isDirectory()) { await walk(fullPath); continue; }
+        if (!entry.isFile()) continue;
+        try {
+          const stat = await fsp.stat(fullPath);
+          if ((stat.mtimeMs || 0) <= cutoffMs) {
+            await fsp.unlink(fullPath);
+            deletedCount++;
+          }
+        } catch { /* skip files we can't stat/delete */ }
+      }
+    }
+
+    await walk(storagePath);
+    if (deletedCount > 0) {
+      console.log(`[auto-cleanup] Deleted ${deletedCount} file(s) older than ${autoDeleteDays} day(s) from ${storagePath}`);
+    }
+  } catch (err) {
+    console.warn("[auto-cleanup] failed:", err?.message);
+  }
+}
+
+function scheduleAutoCleanup() {
+  if (cleanupTimer) clearInterval(cleanupTimer);
+  // Run once shortly after startup, then repeat periodically
+  setTimeout(() => runAutoStorageCleanup(), 10_000);
+  cleanupTimer = setInterval(() => runAutoStorageCleanup(), CLEANUP_INTERVAL_MS);
+}
+
 ipcMain.handle("app:check-updates", async () => {
   try {
+    if (isDev) {
+      return {
+        ok: true,
+        hasUpdate: false,
+        version: app.getVersion(),
+        currentVersion: app.getVersion(),
+        message: "Updates are only available in the installed (production) build. Run 'npm run dist:win' and install the .exe to test updates.",
+      };
+    }
+
+    const ghToken = getPrivateConfigValue("GH_TOKEN") || getPrivateConfigValue("GITHUB_TOKEN");
+    if (ghToken) {
+      process.env.GH_TOKEN = ghToken;
+    }
+
     const result = await autoUpdater.checkForUpdates();
 
     return {
       ok: true,
       hasUpdate: !!result?.updateInfo && result.updateInfo.version !== app.getVersion(),
       version: result?.updateInfo?.version || app.getVersion(),
+      currentVersion: app.getVersion(),
       message: "Update check completed",
     };
   } catch (error) {
+    console.error("[app:check-updates] error:", error?.message);
     return {
       ok: false,
       error: error?.message || "Failed to check for updates",
@@ -2055,8 +2172,37 @@ function createWindow() {
     if (mainWindow === win) mainWindow = null;
   });
 
+  // Auto-restart on renderer crash
+  win.webContents.on("render-process-gone", (_e, details) => {
+    console.error("[crash] Renderer process gone:", details.reason, details.exitCode);
+    const autoRestart = store.get("settings")?.autoRestart
+      ?? store.get(`users.${getUserIdFromStore()}.settings`)?.autoRestart
+      ?? true;
+    if (autoRestart && details.reason !== "clean-exit") {
+      console.log("[crash] Auto-restarting in 2 seconds...");
+      setTimeout(() => {
+        app.relaunch();
+        app.exit(0);
+      }, 2000);
+    }
+  });
+
+  win.webContents.on("unresponsive", () => {
+    console.warn("[crash] Renderer became unresponsive");
+    const autoRestart = store.get("settings")?.autoRestart
+      ?? store.get(`users.${getUserIdFromStore()}.settings`)?.autoRestart
+      ?? true;
+    if (autoRestart) {
+      console.log("[crash] Auto-restarting due to unresponsive renderer...");
+      setTimeout(() => {
+        app.relaunch();
+        app.exit(0);
+      }, 5000);
+    }
+  });
+
   if (isDev) {
-    win.loadURL(process.env.ELECTRON_START_URL || "http://localhost:3000");
+    win.loadURL(process.env.ELECTRON_START_URL || "https://app.studiophotuna.com");
     process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = true;
   } else {
     win.loadFile(path.join(__dirname, "..", "build", "index.html"));
@@ -2064,8 +2210,12 @@ function createWindow() {
 }
 
 function setupAutoUpdater() {
-  autoUpdater.autoDownload = false;
-  autoUpdater.autoInstallOnAppQuit = true;
+  const userId = getUserIdFromStore();
+  const userSettings = userId ? (store.get(`users.${userId}.settings`) || {}) : {};
+  const autoUpdateEnabled = userSettings.autoUpdateEnabled ?? true;
+
+  autoUpdater.autoDownload = false; // renderer drives download via banner click
+  autoUpdater.autoInstallOnAppQuit = autoUpdateEnabled;
 
   autoUpdater.on("checking-for-update", () => {
     mainWindow?.webContents.send("updater:status", {
@@ -2116,6 +2266,26 @@ function setupAutoUpdater() {
       info,
     });
   });
+
+  // Silent startup check — fires 15 s after the renderer finishes loading so the
+  // app is fully settled before hitting the update server.
+  if (mainWindow) {
+    mainWindow.webContents.once("did-finish-load", () => {
+      let startupTimer = setTimeout(() => {
+        autoUpdater.checkForUpdates().catch(() => {});
+      }, 15_000);
+
+      // Re-check every 4 hours while the app is open.
+      let periodicTimer = setInterval(() => {
+        autoUpdater.checkForUpdates().catch(() => {});
+      }, 4 * 60 * 60 * 1000);
+
+      mainWindow.once("closed", () => {
+        clearTimeout(startupTimer);
+        clearInterval(periodicTimer);
+      });
+    });
+  }
 }
 
 let apiServer = null;
@@ -2138,7 +2308,10 @@ async function requireSupabaseUser(req, res, next) {
     const { data, error } = await getSupabaseAdmin().auth.getUser(token);
 
     if (error || !data?.user) {
-      return res.status(401).json({ error: "Invalid authorization token" });
+      console.error("[requireSupabaseUser] getUser failed:", error?.message || "no user returned");
+      return res.status(401).json({
+        error: error?.message || "Invalid authorization token",
+      });
     }
 
     req.supabaseUser = data.user;
@@ -2151,8 +2324,8 @@ async function requireSupabaseUser(req, res, next) {
 
 const PLAN_ENTITLEMENTS = {
   free: {
-    max_events: 1,
-    templates: 3,
+    max_events: 0,
+    templates: 0,
     watermark: true,
     priority_support: false,
   },
@@ -2163,30 +2336,39 @@ const PLAN_ENTITLEMENTS = {
     priority_support: false,
   },
   monthly: {
-    max_events: 100,
-    templates: 25,
+    max_events: 20,
+    templates: 30,
     watermark: false,
     priority_support: false,
   },
   yearly: {
-    max_events: 1200,
+    max_events: 50,
     templates: 100,
     watermark: false,
     priority_support: true,
   },
 };
 
-function mapPlanToLicense(plan, state = "active") {
-  const normalizedPlan = ["trial", "monthly", "yearly"].includes(plan) ? plan : "free";
+function normalizePlanKey(plan) {
+  if (plan === "pro_yearly") return "yearly";
+  if (plan === "pro_monthly" || plan === "pro") return "monthly";
+  return ["trial", "monthly", "yearly"].includes(plan) ? plan : "free";
+}
+
+function mapPlanToLicense(plan, state = "active", existingExpiresAt = undefined) {
+  const normalizedPlan = normalizePlanKey(plan);
   const entitlement = PLAN_ENTITLEMENTS[normalizedPlan] || PLAN_ENTITLEMENTS.free;
-  const expiresAt =
-    normalizedPlan === "yearly"
-      ? new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString()
-      : normalizedPlan === "monthly"
-        ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
-        : normalizedPlan === "trial"
-          ? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
-          : null;
+
+  // Use the existing DB value when present (admin-set current_period_end wins).
+  // Only fall back to a computed value when there is nothing in the DB yet.
+  let expiresAt = existingExpiresAt !== undefined ? existingExpiresAt : undefined;
+  if (expiresAt === undefined) {
+    expiresAt =
+      normalizedPlan === "yearly"  ? new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString()
+      : normalizedPlan === "monthly" ? new Date(Date.now() +  30 * 24 * 60 * 60 * 1000).toISOString()
+      : normalizedPlan === "trial"   ? new Date(Date.now() +  14 * 24 * 60 * 60 * 1000).toISOString()
+      : null;
+  }
 
   return {
     plan: normalizedPlan,
@@ -2196,25 +2378,57 @@ function mapPlanToLicense(plan, state = "active") {
   };
 }
 
+// Gallery is a tier (free | plus | business), independent of the Pro plan.
+// Accepts a tier string OR a legacy boolean (true -> 'plus', false -> 'free').
+function normalizeGalleryTier(value) {
+  if (value === true) return "plus";
+  if (value === false || value == null) return "free";
+  const s = String(value).toLowerCase();
+  return ["free", "plus", "business"].includes(s) ? s : "free";
+}
+
+function resolveGalleryTier(row = {}) {
+  // Prefer the new column; fall back to the legacy boolean.
+  if (row.gallery_tier) return normalizeGalleryTier(row.gallery_tier);
+  return row.gallery_addon ? "plus" : "free";
+}
+
 function mapLicenseEntitlements(row = {}) {
+  const galleryTier = resolveGalleryTier(row);
+  const galleryEnabled = galleryTier !== "free";
   return {
     watermark: row.watermark ?? true,
     maxEvents: row.max_events ?? 1,
     templates: row.templates ?? 1,
     prioritySupport: row.priority_support ?? false,
-    galleryAddon: Boolean(row.gallery_addon),
-    galleryEnabled: Boolean(row.gallery_addon),
+    galleryTier,
+    galleryAddon: galleryEnabled,
+    galleryEnabled,
   };
 }
 
 async function upsertLicense(userId, plan, state = "active", extra = {}) {
-  const license = mapPlanToLicense(plan, state);
+  // Read the current row so we can preserve current_period_end → expires_at.
+  // The admin sets current_period_end once; it must not be overwritten by a
+  // computed "now + N days" value from mapPlanToLicense.
+  const { data: existing } = await getSupabaseAdmin()
+    .from("licenses")
+    .select("current_period_end, expires_at")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  // Priority: explicit extra.expires_at > current_period_end > computed fallback
+  const adminExpiry = existing?.current_period_end ?? existing?.expires_at;
+  const resolvedExpiry = extra.expires_at !== undefined ? extra.expires_at : adminExpiry;
+
+  const license = mapPlanToLicense(plan, state, resolvedExpiry);
 
   const { error } = await getSupabaseAdmin().from("licenses").upsert(
     {
       user_id: userId,
       ...license,
       ...extra,
+      expires_at: license.expires_at,
       updated_at: new Date().toISOString(),
     },
     { onConflict: "user_id" }
@@ -2222,16 +2436,27 @@ async function upsertLicense(userId, plan, state = "active", extra = {}) {
 
   if (error) throw error;
 
-  // Keep profiles.subscription_plan in sync so AuthContext reflects the real plan
+  // The licenses_sync_profile_plan AFTER trigger handles profile sync automatically.
+  // We only need a manual write here for the case where the trigger did not fire
+  // (e.g. only expires_at changed, not state/plan). Guard against writing 'monthly'
+  // when the license is already expired — the trigger writes 'free' and we must not
+  // overwrite it.
+  const isCurrentlyExpired = resolvedExpiry && new Date(resolvedExpiry).getTime() < Date.now();
   getSupabaseAdmin().from("profiles")
-    .update({ subscription_plan: plan })
+    .update({ subscription_plan: isCurrentlyExpired ? "free" : plan })
     .eq("id", userId)
-    .then(() => {}).catch((e) => console.warn("[upsertLicense] profile sync failed:", e.message));
+    .then(() => { }).catch((e) => console.warn("[upsertLicense] profile sync failed:", e.message));
 
   return license;
 }
 
-async function setGalleryAddonEntitlement(userId, enabled, extra = {}) {
+// Set the gallery entitlement WITHOUT touching the Pro plan/subscription.
+// `tierOrEnabled` may be a tier string ('free'|'plus'|'business') or a legacy
+// boolean (true -> 'plus', false -> 'free').
+async function setGalleryAddonEntitlement(userId, tierOrEnabled, extra = {}) {
+  const tier = normalizeGalleryTier(tierOrEnabled);
+  const enabled = tier !== "free";
+
   const { data: existing, error: readError } = await getSupabaseAdmin().from("licenses")
     .select("*")
     .eq("user_id", userId)
@@ -2259,7 +2484,9 @@ async function setGalleryAddonEntitlement(userId, enabled, extra = {}) {
       watermark: base.watermark ?? PLAN_ENTITLEMENTS.free.watermark,
       priority_support: base.priority_support ?? PLAN_ENTITLEMENTS.free.priority_support,
       trial_redeemed: Boolean(base.trial_redeemed),
-      gallery_addon: Boolean(enabled),
+      // Tier is the source of truth; keep the legacy boolean in sync.
+      gallery_tier: tier,
+      gallery_addon: enabled,
       ...extra,
       updated_at: new Date().toISOString(),
     },
@@ -2267,7 +2494,7 @@ async function setGalleryAddonEntitlement(userId, enabled, extra = {}) {
   );
 
   if (error) throw error;
-  return { ok: true, galleryAddon: Boolean(enabled), galleryEnabled: Boolean(enabled) };
+  return { ok: true, galleryTier: tier, galleryAddon: enabled, galleryEnabled: enabled };
 }
 
 function startBillingApiServer() {
@@ -2275,9 +2502,20 @@ function startBillingApiServer() {
 
   const apiApp = express();
 
-  // Allow requests from the React dev server AND from the packaged app (file://)
+  // Allow requests from the React dev server AND from the packaged app (file://).
+  // Electron renderer sends Origin: null (string) when loading from file://, so we
+  // must check for the string "null" explicitly — !origin only catches undefined.
   apiApp.use(cors({
-    origin: (origin, cb) => cb(null, true),
+    origin: (origin, cb) => {
+      const allowed = [
+        'https://www.studiophotuna.com',
+        'https://app.studiophotuna.com',
+        'https://www.app.studiophotuna.com',
+        'http://localhost:3000',
+      ];
+      if (!origin || origin === 'null' || allowed.includes(origin)) return cb(null, true);
+      cb(new Error('Not allowed by CORS'));
+    },
     credentials: true,
   }));
 
@@ -2399,6 +2637,52 @@ function startBillingApiServer() {
     }
   );
 
+  // Upload avatar to Supabase Storage and return the public URL.
+  apiApp.post("/me/avatar", express.raw({ type: /^image\//, limit: "5mb" }), requireSupabaseUser, async (req, res) => {
+    try {
+      const userId = req.supabaseUser.id;
+      const contentType = req.headers["content-type"] || "image/jpeg";
+      const ext = contentType.includes("png") ? "png" : contentType.includes("gif") ? "gif" : contentType.includes("webp") ? "webp" : "jpg";
+      const filePath = `${userId}/avatar.${ext}`;
+
+      // req.body is raw bytes (requires express.raw middleware — set below)
+      const fileBuffer = req.body;
+      if (!fileBuffer || !fileBuffer.length) {
+        return res.status(400).json({ error: "No image data received" });
+      }
+
+      const { error: uploadError } = await getSupabaseAdmin().storage
+        .from("avatars")
+        .upload(filePath, fileBuffer, {
+          contentType,
+          upsert: true,
+        });
+
+      if (uploadError) {
+        console.error("[me/avatar] upload error:", uploadError.message);
+        return res.status(500).json({ error: uploadError.message });
+      }
+
+      const { data: urlData } = getSupabaseAdmin().storage.from("avatars").getPublicUrl(filePath);
+      const publicUrl = urlData?.publicUrl;
+
+      // Update profile with the new avatar_url (service role bypasses RLS)
+      const { error: profileError } = await getSupabaseAdmin().from("profiles")
+        .update({ avatar_url: publicUrl })
+        .eq("id", userId);
+
+      if (profileError) {
+        console.error("[me/avatar] profile update error:", profileError.message);
+        return res.status(500).json({ error: profileError.message });
+      }
+
+      return res.json({ ok: true, avatar_url: publicUrl });
+    } catch (err) {
+      console.error("[me/avatar] error:", err);
+      return res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   apiApp.use(express.json());
 
   apiApp.get("/health", (_req, res) => {
@@ -2453,17 +2737,19 @@ function startBillingApiServer() {
       currency: "PHP",
       monthly: {
         id: getPrivateConfigValue("STRIPE_PRICE_MONTHLY"),
-        display: "₱1,400 / mo",
-        amount: 1400,
+        display: getPrivateConfigValue("DISPLAY_PRICE_MONTHLY_PHP") || "₱1,800 / mo",
+        amount: Number(getPrivateConfigValue("DISPLAY_PRICE_MONTHLY_AMOUNT") || 1800),
       },
       yearly: {
         id: getPrivateConfigValue("STRIPE_PRICE_YEARLY"),
-        display: "₱10,000 / yr",
-        amount: 10000,
+        display: getPrivateConfigValue("DISPLAY_PRICE_YEARLY_PHP") || "₱11,400 / yr",
+        amount: Number(getPrivateConfigValue("DISPLAY_PRICE_YEARLY_AMOUNT") || 11400),
+        annual: getPrivateConfigValue("DISPLAY_PRICE_YEARLY_ANNUAL_PHP") || "₱11,400",
+        monthlyEquivalent: getPrivateConfigValue("DISPLAY_PRICE_YEARLY_MONTHLY_PHP") || "₱950/mo",
       },
       galleryAddon: {
         id: getPrivateConfigValue("STRIPE_PRICE_GALLERY_ADDON_MONTHLY"),
-        display: getPrivateConfigValue("DISPLAY_PRICE_GALLERY_ADDON_PHP") || "PHP 499 / mo",
+        display: getPrivateConfigValue("DISPLAY_PRICE_GALLERY_ADDON_PHP") || "₱499 / mo",
         amount: Number(getPrivateConfigValue("DISPLAY_PRICE_GALLERY_ADDON_AMOUNT") || 499),
         configured: Boolean(getPrivateConfigValue("STRIPE_PRICE_GALLERY_ADDON_MONTHLY")),
       },
@@ -2496,8 +2782,8 @@ function startBillingApiServer() {
         mode: "subscription",
         customer_email: email,
         line_items: [{ price, quantity: 1 }],
-        success_url: getPrivateConfigValue("STRIPE_SUCCESS_URL") || "http://localhost:3000?billing=success",
-        cancel_url:  getPrivateConfigValue("STRIPE_CANCEL_URL")  || "http://localhost:3000?billing=cancelled",
+        success_url: getPrivateConfigValue("STRIPE_SUCCESS_URL") || "https://app.studiophotuna.com?billing=success",
+        cancel_url: getPrivateConfigValue("STRIPE_CANCEL_URL") || "https://app.studiophotuna.com?billing=cancelled",
         metadata: {
           userId,
           plan,
@@ -2536,8 +2822,8 @@ function startBillingApiServer() {
         mode: "subscription",
         customer_email: email,
         line_items: [{ price, quantity: 1 }],
-        success_url: getPrivateConfigValue("STRIPE_SUCCESS_URL") || "http://localhost:3000?billing=success",
-        cancel_url: getPrivateConfigValue("STRIPE_CANCEL_URL") || "http://localhost:3000?billing=cancelled",
+        success_url: getPrivateConfigValue("STRIPE_SUCCESS_URL") || "https://app.studiophotuna.com?billing=success",
+        cancel_url: getPrivateConfigValue("STRIPE_CANCEL_URL") || "https://app.studiophotuna.com?billing=cancelled",
         metadata: {
           userId,
           addon: "gallery",
@@ -2608,7 +2894,7 @@ function startBillingApiServer() {
 
       const portal = await stripe.billingPortal.sessions.create({
         customer: data.stripe_customer_id,
-        return_url: "http://localhost:3000?billing=portal-return",
+        return_url: "https://app.studiophotuna.com?billing=portal-return",
       });
 
       return res.json({ url: portal.url });
@@ -2626,7 +2912,7 @@ function startBillingApiServer() {
       if (!stripe) return res.status(501).json({ error: "stripe_not_configured" });
 
       const userId = req.supabaseUser.id;
-      const email  = req.supabaseUser.email;
+      const email = req.supabaseUser.email;
 
       // Look up Stripe customer by stored ID or fall back to email lookup
       let customerId = null;
@@ -2653,7 +2939,7 @@ function startBillingApiServer() {
       for (let attempt = 0; attempt <= 3 && !sub; attempt++) {
         if (attempt > 0) await new Promise(r => setTimeout(r, 2000));
         const [activeSubs, trialingSubs] = await Promise.all([
-          stripe.subscriptions.list({ customer: customerId, status: "active",   limit: 10 }),
+          stripe.subscriptions.list({ customer: customerId, status: "active", limit: 10 }),
           stripe.subscriptions.list({ customer: customerId, status: "trialing", limit: 10 }),
         ]);
         const allSubs = [...activeSubs.data, ...trialingSubs.data];
@@ -2677,7 +2963,7 @@ function startBillingApiServer() {
       }
 
       const interval = sub.items?.data?.[0]?.price?.recurring?.interval;
-      const plan  = interval === "year" ? "yearly" : "monthly";
+      const plan = interval === "year" ? "yearly" : "monthly";
       const state = sub.status === "trialing" ? "trialing" : "active";
       const expiresAt = sub.current_period_end
         ? new Date(sub.current_period_end * 1000).toISOString()
@@ -2715,7 +3001,7 @@ function startBillingApiServer() {
           getSupabaseAdmin().from("profiles")
             .update({ subscription_plan: plan, stripe_customer_id: customerId })
             .eq("id", userId)
-            .then(() => {})
+            .then(() => { })
             .catch((e) => console.warn("[billing/sync] profile sync failed:", e.message));
         }
       } catch (e) {
@@ -2733,6 +3019,7 @@ function startBillingApiServer() {
         ? Math.min(sub.current_period_end, Math.floor(Date.now() / 1000) + 7 * 24 * 3600)
         : Math.floor(Date.now() / 1000) + 7 * 24 * 3600;
       const entitlements = mapLicenseEntitlements(mapped);
+      entitlements.galleryTier = gallerySub ? "plus" : "free";
       entitlements.galleryAddon = Boolean(gallerySub);
       entitlements.galleryEnabled = Boolean(gallerySub);
 
@@ -2785,12 +3072,31 @@ function startBillingApiServer() {
         trial_redeemed: false,
       };
 
-      // Sync profile so AuthContext always reflects the current plan
+      // Apply expiry policy for all paid plans, not just trial.
+      // When current_period_end (stored as expires_at) is in the past, clamp
+      // state to 'expired' and downgrade entitlement columns to free limits so
+      // the response never grants paid features on a lapsed license.
+      const now = Date.now();
+      const expiresMs = effectiveLicense.expires_at
+        ? new Date(effectiveLicense.expires_at).getTime()
+        : null;
+      const isExpired = expiresMs !== null && expiresMs < now && effectiveLicense.plan !== "free";
+      if (isExpired) {
+        effectiveLicense.plan             = "free";
+        effectiveLicense.state            = "expired";
+        effectiveLicense.watermark        = PLAN_ENTITLEMENTS.free.watermark;
+        effectiveLicense.max_events       = PLAN_ENTITLEMENTS.free.max_events;
+        effectiveLicense.templates        = PLAN_ENTITLEMENTS.free.templates;
+        effectiveLicense.priority_support = PLAN_ENTITLEMENTS.free.priority_support;
+      }
+
+      // Sync profile — use 'free' when expired so subscription_plan fallback
+      // in the client doesn't keep showing the paid plan after expiry.
       if (license) {
         getSupabaseAdmin().from("profiles")
-          .update({ subscription_plan: license.plan })
+          .update({ subscription_plan: isExpired ? "free" : license.plan })
           .eq("id", userId)
-          .then(() => {}).catch(() => {});
+          .then(() => { }).catch(() => { });
       }
 
       const payload = {
@@ -2805,11 +3111,6 @@ function startBillingApiServer() {
         entitlements: mapLicenseEntitlements(effectiveLicense),
       };
 
-      // Detect trial expiry so the UI can show "Trial Expired" vs "Trial Unavailable"
-      const now = Date.now();
-      const expiresMs = effectiveLicense.expires_at
-        ? new Date(effectiveLicense.expires_at).getTime()
-        : null;
       const trialExpired =
         effectiveLicense.plan === "trial" &&
         expiresMs !== null &&
@@ -2867,7 +3168,7 @@ function startBillingApiServer() {
         return res.status(409).json({ error: "Trial already redeemed" });
       }
 
-      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+      const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString();
 
       const { error } = await getSupabaseAdmin().from("licenses").upsert(
         {
@@ -2942,10 +3243,21 @@ function startBillingApiServer() {
     }
   });
 
-  // Dev/admin-only: manually set a plan without going through Stripe.
+  // Admin-only: manually set a plan without going through payment.
   apiApp.post("/license/set-plan", requireSupabaseUser, async (req, res) => {
     try {
       const userId = req.supabaseUser.id;
+
+      // Verify the caller has an admin role before allowing plan changes
+      const { data: profile } = await getSupabaseAdmin().from("profiles")
+        .select("role")
+        .eq("id", userId)
+        .maybeSingle();
+
+      if (!profile || !["admin", "superadmin"].includes(profile.role)) {
+        return res.status(403).json({ error: "Admin access required" });
+      }
+
       const { plan } = req.body || {};
       if (!["free", "trial", "monthly", "yearly"].includes(plan)) {
         return res.status(400).json({ error: "invalid_plan" });
@@ -2979,11 +3291,25 @@ function startBillingApiServer() {
         trial_redeemed: false,
       };
 
-      // Keep profiles.subscription_plan in sync
+      // Apply expiry policy — same logic as /license/status.
+      const expiresMs = effectiveLicense.expires_at
+        ? new Date(effectiveLicense.expires_at).getTime()
+        : null;
+      const isExpired = expiresMs !== null && expiresMs < Date.now() && effectiveLicense.plan !== "free";
+      if (isExpired) {
+        effectiveLicense.plan             = "free";
+        effectiveLicense.state            = "expired";
+        effectiveLicense.watermark        = PLAN_ENTITLEMENTS.free.watermark;
+        effectiveLicense.max_events       = PLAN_ENTITLEMENTS.free.max_events;
+        effectiveLicense.templates        = PLAN_ENTITLEMENTS.free.templates;
+        effectiveLicense.priority_support = PLAN_ENTITLEMENTS.free.priority_support;
+      }
+
+      // Sync profile — clamp to 'free' when expired.
       getSupabaseAdmin().from("profiles")
-        .update({ subscription_plan: effectiveLicense.plan })
+        .update({ subscription_plan: isExpired ? "free" : effectiveLicense.plan })
         .eq("id", userId)
-        .then(() => {}).catch(() => {});
+        .then(() => { }).catch(() => { });
 
       const rawPrivateKey = getPrivateConfigValue("LICENSE_PRIVATE_KEY") || "";
       const privateKey = rawPrivateKey.includes("\\n") ? rawPrivateKey.replace(/\\n/g, "\n") : rawPrivateKey;
@@ -3015,6 +3341,7 @@ function startBillingApiServer() {
           state: effectiveLicense.state,
           expiresAt: effectiveLicense.expires_at,
           trialRedeemed: Boolean(effectiveLicense.trial_redeemed),
+          trialExpired: isExpired && effectiveLicense.plan === "trial",
           entitlements: payload.entitlements,
         },
         signedLicense,
@@ -3110,7 +3437,7 @@ function startBillingApiServer() {
       }
 
       const userId = req.supabaseUser.id;
-      const email   = req.supabaseUser.email;
+      const email = req.supabaseUser.email;
 
       // Step 1 — verify the current password by attempting a fresh sign-in.
       const { error: signInError } = await getSupabaseAdmin().auth.signInWithPassword({
@@ -3137,54 +3464,8 @@ function startBillingApiServer() {
     }
   });
 
-  // Upload avatar to Supabase Storage and return the public URL.
-  apiApp.post("/me/avatar", express.raw({ type: /^image\//, limit: "5mb" }), requireSupabaseUser, async (req, res) => {
-    try {
-      const userId = req.supabaseUser.id;
-      const contentType = req.headers["content-type"] || "image/jpeg";
-      const ext = contentType.includes("png") ? "png" : contentType.includes("gif") ? "gif" : contentType.includes("webp") ? "webp" : "jpg";
-      const filePath = `${userId}/avatar.${ext}`;
-
-      // req.body is raw bytes (requires express.raw middleware — set below)
-      const fileBuffer = req.body;
-      if (!fileBuffer || !fileBuffer.length) {
-        return res.status(400).json({ error: "No image data received" });
-      }
-
-      const { error: uploadError } = await getSupabaseAdmin().storage
-        .from("avatars")
-        .upload(filePath, fileBuffer, {
-          contentType,
-          upsert: true,
-        });
-
-      if (uploadError) {
-        console.error("[me/avatar] upload error:", uploadError.message);
-        return res.status(500).json({ error: uploadError.message });
-      }
-
-      const { data: urlData } = getSupabaseAdmin().storage.from("avatars").getPublicUrl(filePath);
-      const publicUrl = urlData?.publicUrl;
-
-      // Update profile with the new avatar_url (service role bypasses RLS)
-      const { error: profileError } = await getSupabaseAdmin().from("profiles")
-        .update({ avatar_url: publicUrl })
-        .eq("id", userId);
-
-      if (profileError) {
-        console.error("[me/avatar] profile update error:", profileError.message);
-        return res.status(500).json({ error: profileError.message });
-      }
-
-      return res.json({ ok: true, avatar_url: publicUrl });
-    } catch (err) {
-      console.error("[me/avatar] error:", err);
-      return res.status(500).json({ error: "Internal server error" });
-    }
-  });
-
   const tryListen = (retries = 1) => {
-    apiServer = apiApp.listen(API_PORT, () => {
+    apiServer = apiApp.listen(API_PORT, '127.0.0.1', () => {
       console.log(`Billing API running on http://localhost:${API_PORT}`);
     });
 
@@ -3199,7 +3480,7 @@ function startBillingApiServer() {
             : `lsof -ti :${API_PORT} | xargs kill -9`,
           () => setTimeout(() => tryListen(retries - 1), 500)
         );
-        killer.on("error", () => {});
+        killer.on("error", () => { });
       } else {
         console.error("Billing API server failed:", err);
         apiServer = null;
@@ -3222,6 +3503,55 @@ ipcMain.handle("auth:syncUser", async (_e, { userId } = {}) => {
   } catch (err) {
     return { ok: false, error: String(err) };
   }
+});
+
+ipcMain.handle("auth:oauth-popup", async (_e, url) => {
+  return new Promise((resolve) => {
+    const { BrowserWindow } = require("electron");
+    const popup = new BrowserWindow({
+      width: 500,
+      height: 700,
+      show: true,
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true,
+      },
+    });
+
+    popup.webContents.on("will-redirect", (_event, redirectUrl) => {
+      try {
+        const parsed = new URL(redirectUrl);
+        const hash = parsed.hash?.slice(1) || "";
+        const params = new URLSearchParams(hash);
+        const accessToken = params.get("access_token");
+        const refreshToken = params.get("refresh_token");
+        if (accessToken) {
+          resolve({ access_token: accessToken, refresh_token: refreshToken });
+          popup.close();
+        }
+      } catch {}
+    });
+
+    popup.webContents.on("will-navigate", (_event, navUrl) => {
+      try {
+        const parsed = new URL(navUrl);
+        const hash = parsed.hash?.slice(1) || "";
+        const params = new URLSearchParams(hash);
+        const accessToken = params.get("access_token");
+        const refreshToken = params.get("refresh_token");
+        if (accessToken) {
+          resolve({ access_token: accessToken, refresh_token: refreshToken });
+          popup.close();
+        }
+      } catch {}
+    });
+
+    popup.on("closed", () => {
+      resolve({ error: "OAuth popup was closed" });
+    });
+
+    popup.loadURL(url);
+  });
 });
 
 // Read the license row directly via supabaseAdmin (service role, bypasses RLS).
@@ -3269,6 +3599,152 @@ ipcMain.handle("license:cache-write", async (_e, userId, payload) => {
   } catch { return false; }
 });
 
+// Register PayMongo handlers at module level to avoid race with renderer mount.
+const _pollManager = new PaymentPollManager();
+
+async function _getPayMongoService() {
+  const sk = await keytar.getPassword(PAYMONGO_SERVICE, "secretKey");
+  if (!sk) return null;
+  return new PayMongoService(sk);
+}
+
+ipcMain.handle("paymongo:saveKeys", async (_e, { publicKey, secretKey } = {}) => {
+  try {
+    if (!publicKey || !secretKey) return { ok: false, error: "Both keys are required" };
+    const svc = new PayMongoService(secretKey);
+    await svc.validateKeys();
+    await keytar.setPassword(PAYMONGO_SERVICE, "secretKey", secretKey);
+    const userId = getUserIdFromStore();
+    if (userId) {
+      store.set(`users.${userId}.paymongo`, {
+        publicKey,
+        validated: true,
+        testMode: isTestMode(secretKey),
+        validatedAt: new Date().toISOString(),
+      });
+    }
+    return { ok: true, testMode: isTestMode(secretKey) };
+  } catch (err) {
+    return { ok: false, error: err.message || "Invalid PayMongo API keys" };
+  }
+});
+
+ipcMain.handle("paymongo:getStatus", async () => {
+  try {
+    const userId = getUserIdFromStore();
+    const cfg = userId ? (store.get(`users.${userId}.paymongo`) || {}) : {};
+    const sk = await keytar.getPassword(PAYMONGO_SERVICE, "secretKey");
+    return {
+      ok: true,
+      configured: !!sk && !!cfg.validated,
+      publicKey: cfg.publicKey ? cfg.publicKey.slice(0, 12) + "..." : null,
+      testMode: cfg.testMode ?? false,
+      validatedAt: cfg.validatedAt ?? null,
+    };
+  } catch {
+    return { ok: true, configured: false };
+  }
+});
+
+ipcMain.handle("paymongo:clearKeys", async () => {
+  try {
+    await keytar.deletePassword(PAYMONGO_SERVICE, "secretKey");
+    const userId = getUserIdFromStore();
+    if (userId) store.set(`users.${userId}.paymongo`, {});
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
+ipcMain.handle("payment:start-qr", async (_e, { amount, currency = "PHP", provider, eventId } = {}) => {
+  try {
+    const svc = await _getPayMongoService();
+    if (!svc) return { ok: false, configured: false, error: "PayMongo not configured" };
+
+    const source = await svc.createSource(provider, amount, currency);
+    const qrDataUrl = await generateQrDataUrl(source.checkoutUrl);
+
+    _pollManager.start({
+      sourceId: source.id,
+      amountPhp: amount,
+      currency,
+      service: svc,
+      onConfirmed: (data) => {
+        console.log("[PayMongo] Payment confirmed:", data);
+        if (mainWindow) mainWindow.webContents.send("payment:confirmed", { ...data, provider, eventId });
+      },
+      onFailed: (data) => {
+        console.log("[PayMongo] Payment failed:", data);
+        if (mainWindow) mainWindow.webContents.send("payment:failed", { ...data, provider, eventId });
+      },
+    });
+
+    return { ok: true, configured: true, sourceId: source.id, qrDataUrl, checkoutUrl: source.checkoutUrl };
+  } catch (err) {
+    console.error("[payment:start-qr] error:", err);
+    return { ok: false, configured: true, error: err.message };
+  }
+});
+
+ipcMain.handle("payment:start-card", async (_e, { amount, currency = "PHP" } = {}) => {
+  try {
+    const svc = await _getPayMongoService();
+    if (!svc) return { ok: false, configured: false, error: "PayMongo not configured" };
+
+    const intent = await svc.createPaymentIntent(amount, currency);
+    return { ok: true, configured: true, intentId: intent.id, clientKey: intent.clientKey };
+  } catch (err) {
+    console.error("[payment:start-card] error:", err);
+    return { ok: false, configured: true, error: err.message };
+  }
+});
+
+ipcMain.handle("paymongo:cancelPayment", async (_e, { sourceId } = {}) => {
+  if (sourceId) _pollManager.cancel(sourceId);
+  return { ok: true };
+});
+
+// ── Cash hardware detection ────────────────────────────────────────────────
+// Known bill validator & coin acceptor device-name substrings (case-insensitive).
+const CASH_HW_PATTERNS = [
+  "ICT BV", "JCM", "MEI", "CPI BV", "NV200", "NV9USB", "Cashcode", "Pyramid",
+  "Global Bill", "Crane", "Mars", "bill acceptor", "bill validator",
+  "coin acceptor", "coin mech", "NRI", "CoinCo", "Azkoyen",
+];
+
+ipcMain.handle("cash:detectHardware", async () => {
+  try {
+    const { execSync } = require("child_process");
+    // Query WMI for serial port descriptions on Windows
+    const raw = execSync(
+      `powershell -NoProfile -NonInteractive -Command "Get-WmiObject Win32_SerialPort | Select-Object -ExpandProperty Description"`,
+      { timeout: 6000, encoding: "utf8", windowsHide: true }
+    ).trim();
+
+    const lines = raw.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    const lowerPatterns = CASH_HW_PATTERNS.map((p) => p.toLowerCase());
+    const found = lines.filter((l) =>
+      lowerPatterns.some((p) => l.toLowerCase().includes(p))
+    );
+    return { ok: true, detected: found.length > 0, devices: found };
+  } catch (err) {
+    // WMI unavailable or timed out — treat as not detected, not an error
+    return { ok: true, detected: false, devices: [], error: err.message };
+  }
+});
+
+// Stub — wire to actual serial protocol (EBDS/ccnet) when hardware is on hand
+ipcMain.handle("cash:startHardwarePayment", async (_e, { amount } = {}) => {
+  console.log(`[CashHW] Start hardware payment session — amount PHP ${amount}`);
+  return { ok: true, started: false, reason: "hardware_protocol_not_implemented" };
+});
+
+ipcMain.handle("cash:stopHardwarePayment", async () => {
+  console.log("[CashHW] Stop hardware payment session");
+  return { ok: true };
+});
+
 /* -------------------------------------------------------
  * 🚀 App Lifecycle
  * -----------------------------------------------------*/
@@ -3297,6 +3773,7 @@ app.whenReady().then(async () => {
       if (!urlStr.startsWith(prefix)) return callback({ path: "" });
       const rel = sanitizeRelKey(urlStr.slice(prefix.length)); // eventId/filename
       const fullPath = path.normalize(path.join(USERS_DIR, rel));
+      if (!fullPath.startsWith(USERS_DIR)) return callback({ path: "" });
       callback({ path: fullPath });
     } catch (err) {
       console.error("protocol app://assets error", err);
@@ -3307,6 +3784,7 @@ app.whenReady().then(async () => {
   startBillingApiServer();
   createWindow();
   setupAutoUpdater();
+  scheduleAutoCleanup();
 
   const { shell } = require('electron');
 
@@ -3369,38 +3847,19 @@ app.whenReady().then(async () => {
   });
 
   safeHandle("payment:finalize-cash", async (_e, { amount, currency }) => {
-    // For now: record to session meta. 
-    // Later: integrate with physical cash drawer via serial port.
-    console.log(`[Cash] Finalizing ₱${amount} ${currency}`);
+    console.log(`[Cash] Finalizing PHP ${amount} ${currency}`);
     return { ok: true, method: "cash", amount, currency };
   });
 
-  safeHandle("payment:start-qr", async (_e, { amount, currency, provider }) => {
-    // Generate a QR code URL for GCash/PayNow/PromptPay
-    // Integrate with provider SDK here (GCash Business API, etc.)
-    console.log(`[QR] Starting ${provider} payment for ₱${amount}`);
-    // Simulate for now — replace with real webhook polling
-    return { ok: false, success: false, configured: false, method: provider, amount, currency };
-  });
-
   safeHandle("payment:start-paypal", async (_e, { amount, currency }) => {
-    // Simulated until a PayPal Orders/Capture API integration is configured.
-    console.log(`[PayPal] Starting PayPal payment for ${currency} ${amount}`);
-    return { ok: false, success: false, configured: false, method: "paypal", amount, currency };
-  });
-
-  safeHandle("payment:start-card", async (_e, { amount, currency }) => {
-    // Integrate with Stripe Terminal SDK or Maya POS terminal
-    console.log(`[Card] Starting card payment for ₱${amount}`);
-    return { ok: false, success: false, configured: false, method: "card", amount, currency };
+    return { ok: false, configured: false, method: "paypal", amount, currency };
   });
 
   safeHandle("payment:charge-additional", async (_e, { amount, method }) => {
-    return { ok: false, success: false, configured: false, amount, method };
+    return { ok: false, configured: false, amount, method };
   });
 
   safeHandle("payment:record", async (_e, record) => {
-    // Persist payment to current session meta
     const userId = getUserIdFromStore();
     const { metaFile } = resolveBoothOutputDirs({
       userId,
@@ -3612,7 +4071,11 @@ app.whenReady().then(async () => {
 
   safeHandle('system:openExternal', async (_e, url) => {
     try {
-      await shell.openExternal(String(url));
+      const parsed = new URL(String(url));
+      if (!['https:', 'http:', 'mailto:'].includes(parsed.protocol)) {
+        return { ok: false, error: `Blocked protocol: ${parsed.protocol}` };
+      }
+      await shell.openExternal(parsed.href);
       return { ok: true };
     } catch (err) {
       console.error('system:openExternal error', err);
@@ -3774,6 +4237,54 @@ app.whenReady().then(async () => {
     } catch (err) { console.error("store:setTones error", err); return null; }
   });
 
+  // ====== Active main-tab persistence ======
+  safeHandle("store:getActiveMain", () => {
+    try {
+      return (typeof store.get === "function" ? (store.get("activeMain") || "home") : "home");
+    } catch (err) {
+      console.error("store:getActiveMain error", err);
+      return "home";
+    }
+  });
+
+  safeHandle("store:setActiveMain", (_e, tab) => {
+    try {
+      return (typeof store.set === "function" ? store.set("activeMain", tab) : null);
+    } catch (err) {
+      console.error("store:setActiveMain error", err);
+      return null;
+    }
+  });
+
+  // ====== Delete stored photos (used in Settings > Storage) ======
+  safeHandle("storage:delete-stored-photos", async (_e, opts = {}) => {
+    try {
+      const userId = opts.userId || getUserIdFromStore();
+      const eventId = opts.eventId || null;
+      const { capturesDir } = getPaths(userId, eventId);
+
+      if (!capturesDir || !fs.existsSync(capturesDir)) {
+        return { ok: true, deletedCount: 0, message: "No photos directory found" };
+      }
+
+      let deleted = 0;
+      const files = await fsp.readdir(capturesDir);
+      for (const file of files) {
+        if (/\.(jpg|jpeg|png|gif|webp)$/i.test(file)) {
+          try {
+            await fsp.unlink(path.join(capturesDir, file));
+            deleted++;
+          } catch { /* skip locked files */ }
+        }
+      }
+
+      return { ok: true, deletedCount: deleted, message: `Deleted ${deleted} photo(s)` };
+    } catch (err) {
+      console.error("storage:delete-stored-photos error", err);
+      return { ok: false, error: String(err) };
+    }
+  });
+
   // Save template thumbnail
   safeHandle("store:saveTemplateThumbnail", async (_e, { dataUrl, filename, userId }) => {
     try {
@@ -3902,7 +4413,10 @@ app.whenReady().then(async () => {
   safeHandle("deleteAppearanceAsset", async (_e, pathOrUrl) => {
     try {
       if (!pathOrUrl) return { ok: false, error: "no path" };
-      const p = fromFileUrl(pathOrUrl);
+      const p = path.resolve(fromFileUrl(pathOrUrl));
+      if (!p.startsWith(USERDATA)) {
+        return { ok: false, error: "Path outside application data directory" };
+      }
       if (fs.existsSync(p)) {
         await fsp.unlink(p);
         return { ok: true };
@@ -3949,6 +4463,129 @@ app.whenReady().then(async () => {
     return win.webContents.getPrintersAsync();
   });
 
+  // ── Photo-lab printer cut-mode detection (DNP + HiTi) ────────────────────
+  safeHandle("printer:dnpScan", async () => {
+    try {
+      const { execSync } = require("child_process");
+
+      // Find printers whose name or driver mentions DNP or HiTi
+      const listRaw = execSync(
+        `powershell -NoProfile -NonInteractive -Command ` +
+        `"Get-Printer | Where-Object { $_.Name -match 'DNP|HiTi|Hi-Ti|HITI' -or $_.DriverName -match 'DNP|HiTi|Hi-Ti|HITI' } | ` +
+        `Select-Object Name,DriverName,PortName,PrinterStatus | ConvertTo-Json -Depth 2"`,
+        { timeout: 8000, encoding: "utf8", windowsHide: true }
+      ).trim();
+
+      let printers = [];
+      try {
+        const parsed = JSON.parse(listRaw || "null");
+        printers = Array.isArray(parsed) ? parsed : (parsed ? [parsed] : []);
+      } catch { /* no supported printers found */ }
+
+      const results = await Promise.all(
+        printers.map(async (p) => {
+          // Identify brand from name or driver string
+          const brandStr = (p.Name + " " + p.DriverName).toLowerCase();
+          const brand = /hiti|hi-ti|hi_ti/.test(brandStr) ? "HiTi" : "DNP";
+
+          let properties = [];
+          let cutMode = null;
+          let cutSupported = false;
+
+          try {
+            const propsRaw = execSync(
+              `powershell -NoProfile -NonInteractive -Command ` +
+              `"Get-PrinterProperty -PrinterName '${p.Name.replace(/'/g, "''")}' | ` +
+              `Select-Object PropertyName,Value | ConvertTo-Json -Depth 2"`,
+              { timeout: 6000, encoding: "utf8", windowsHide: true }
+            ).trim();
+
+            const parsed = JSON.parse(propsRaw || "null");
+            properties = Array.isArray(parsed) ? parsed : (parsed ? [parsed] : []);
+
+            // DNP: cut properties live under Cutter / CutterControl / PrintSize / MediaSize
+            // HiTi: cut properties surface as CutPage / CutEnabled / PageMediaType / PrintType / MediaSize
+            const cutPropPattern = brand === "HiTi"
+              ? /cut|strip|postcard|mediatype|printtype|pagesize|mediasize/i
+              : /cut|cutter|pagesize|mediasize|printsize/i;
+
+            const cutProp = properties.find(
+              (prop) => cutPropPattern.test(prop.PropertyName ?? "")
+            );
+            if (cutProp) {
+              cutMode = cutProp.Value ?? null;
+              cutSupported = true;
+            }
+          } catch { /* driver properties not accessible */ }
+
+          // Determine whether strip/2-inch cut is currently active
+          // DNP: value contains "2x6", "2inch", "strip", "postcard"
+          // HiTi: value contains "strip", "2x6", "cut" (HiTi uses "Strip" media type for 2×6 cuts)
+          const has2InchCut = properties.some((prop) => {
+            const val = String(prop.Value ?? "").toLowerCase();
+            const key = String(prop.PropertyName ?? "").toLowerCase();
+            return (
+              /2x6|2inch|2-inch|strip|postcard/.test(val) ||
+              (brand === "HiTi" && (/cutpage|cutenabled/.test(key) && /1|true|yes|on/.test(val)))
+            );
+          });
+
+          return {
+            name: p.Name,
+            driver: p.DriverName,
+            port: p.PortName,
+            status: p.PrinterStatus,
+            brand,
+            cutSupported,
+            cutMode,
+            has2InchCut,
+            properties: properties.slice(0, 20),
+          };
+        })
+      );
+
+      return { ok: true, printers: results };
+    } catch (err) {
+      return { ok: false, printers: [], error: err.message };
+    }
+  });
+
+  safeHandle("printer:setCutMode", async (_e, { printerName, propertyName, value } = {}) => {
+    if (!printerName || !propertyName || value == null) {
+      return { ok: false, error: "printerName, propertyName, and value are required" };
+    }
+    try {
+      const { execSync } = require("child_process");
+      const safeName = printerName.replace(/'/g, "''");
+      const safeProp = propertyName.replace(/'/g, "''");
+      const safeVal  = String(value).replace(/'/g, "''");
+      execSync(
+        `powershell -NoProfile -NonInteractive -Command ` +
+        `"Set-PrinterProperty -PrinterName '${safeName}' -PropertyName '${safeProp}' -Value '${safeVal}'"`,
+        { timeout: 8000, encoding: "utf8", windowsHide: true }
+      );
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  });
+
+  // ── Generic meta-flag store (used for one-time injection flags) ───────────
+  safeHandle("store:getMetaFlag", (_e, { userId, flag } = {}) => {
+    try {
+      const key = `users.${String(userId || getUserIdFromStore())}.meta.${flag}`;
+      return store.get(key) ?? null;
+    } catch { return null; }
+  });
+
+  safeHandle("store:setMetaFlag", (_e, { userId, flag, value } = {}) => {
+    try {
+      const key = `users.${String(userId || getUserIdFromStore())}.meta.${flag}`;
+      store.set(key, value);
+      return true;
+    } catch { return false; }
+  });
+
   safeHandle("storage:delete-all", async (_e, pathOrOpts) => {
     try {
       const targetPath = typeof pathOrOpts === "string"
@@ -3956,6 +4593,11 @@ app.whenReady().then(async () => {
         : pathOrOpts?.path;
 
       if (!targetPath) return { ok: false, error: "No path provided" };
+
+      const resolved = path.resolve(targetPath);
+      if (!resolved.startsWith(USERDATA)) {
+        return { ok: false, error: "Path outside application data directory" };
+      }
 
       let deleted = 0;
 
@@ -3997,7 +4639,7 @@ app.whenReady().then(async () => {
       if (!printerName) throw new Error("No printer selected");
 
       // simple test page
-      printWindow = new BrowserWindow({ show: false });
+      printWindow = new BrowserWindow({ show: false, webPreferences: { nodeIntegration: false, contextIsolation: true } });
       await printWindow.loadURL(`data:text/html;charset=utf-8,` +
         encodeURIComponent(`
           <html>
@@ -4095,6 +4737,16 @@ app.whenReady().then(async () => {
       return { ok: true };
     } catch (err) {
       console.error("startup:set error", err);
+      return { ok: false, error: String(err) };
+    }
+  });
+
+  safeHandle("app:setAutoUpdate", async (_e, enabled) => {
+    try {
+      autoUpdater.autoDownload = !!enabled;
+      autoUpdater.autoInstallOnAppQuit = !!enabled;
+      return { ok: true };
+    } catch (err) {
       return { ok: false, error: String(err) };
     }
   });
@@ -4346,7 +4998,10 @@ function startPreviewServer() {
     appx.get('/p/:token', (_req, res) => res.sendFile(path.join(clientDir, 'index.html')));
   } else {
     // dev fallback: simple page
-    appx.get('/p/:token', (req, res) => res.end(`<html><body><div>Preview token: ${req.params.token}</div></body></html>`));
+    appx.get('/p/:token', (req, res) => {
+      const safe = String(req.params.token).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+      res.end(`<html><body><div>Preview token: ${safe}</div></body></html>`);
+    });
   }
   previewServer = appx.listen(PREVIEW_PORT, () => {
     console.log('[Preview] Serving client from:', clientDir, 'exists?', fs.existsSync(clientDir));

@@ -75,6 +75,8 @@ export default function TemplateEditor({
     initialThumb = null,
     initialLayout = "4x6",     // accepted by AdminDashboard already
     onLayoutChange,            // optional: AdminDashboard listens and updates
+    initialPrintMode = "single",  // 'single' | 'dual' (dual = two strips on one sheet)
+    onPrintModeChange,
     onSave,
     backgroundUrl,
     frames = [],
@@ -88,6 +90,7 @@ export default function TemplateEditor({
     const [thumb, setThumbnail] = useState(initialThumb);
     const [error, setError] = useState("");
     const [layout, setLayout] = useState(initialLayout ?? "4x6");
+    const [printMode, setPrintMode] = useState(initialPrintMode ?? "single");
     const [isSaving, setIsSaving] = useState(false);
 
     // NEW: Multi-frame selection + highlight
@@ -133,6 +136,7 @@ export default function TemplateEditor({
         setSlots(ensureSlotNumbers(initialSlots || []));
         setThumbnail(initialThumb);
         setLayout(initialLayout ?? "4x6");
+        setPrintMode(initialPrintMode ?? "single");
         setSelection([]);
         setError("");
         setApplyToCurrentEvent(false);
@@ -142,7 +146,7 @@ export default function TemplateEditor({
         setIsPanning(false);
         setSpacePressed(false);
         historyRef.current = { past: [], future: [] };
-    }, [initialName, initialSlots, initialThumb, initialLayout, open]);
+    }, [initialName, initialSlots, initialThumb, initialLayout, initialPrintMode, open]);
 
     // View/UI
     const [showGrid, setShowGrid] = useState(true);
@@ -842,7 +846,15 @@ export default function TemplateEditor({
                                             <input
                                                 type="radio"
                                                 checked={layout === opt}
-                                                onChange={() => { setLayout(opt); onLayoutChange?.(opt); }}
+                                                onChange={() => {
+                                                    setLayout(opt);
+                                                    onLayoutChange?.(opt);
+                                                    // Reset to single when switching to strip-only layout
+                                                    if (opt === "2x6" || opt === "6x2") {
+                                                        setPrintMode("single");
+                                                        onPrintModeChange?.("single");
+                                                    }
+                                                }}
                                             />
                                             {opt.replace("x", "×")}
                                         </label>
@@ -850,6 +862,42 @@ export default function TemplateEditor({
                                 </>
                             )}
                         </div>
+                        {/* Print Mode — only for 4×6 and 6×4 */}
+                        {(layout === "4x6" || layout === "6x4") && (
+                            <>
+                                <div className="text-xs font-medium text-slate-500">Print Mode</div>
+                                <div className="flex gap-2 items-center rounded-2xl border border-slate-200 bg-slate-50 p-1.5">
+                                    {[
+                                        { value: "single", label: "Single", desc: "One print per sheet" },
+                                        { value: "dual",   label: "2-Strip", desc: "Two strips side-by-side, cut in half" },
+                                    ].map(({ value, label, desc }) => (
+                                        <label
+                                            key={value}
+                                            title={desc}
+                                            className={`inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-medium cursor-pointer transition
+                                                ${printMode === value
+                                                    ? "bg-white border border-slate-200 shadow-sm text-slate-900"
+                                                    : "text-slate-600 hover:bg-white"
+                                                }`}
+                                        >
+                                            <input
+                                                type="radio"
+                                                name="printMode"
+                                                checked={printMode === value}
+                                                onChange={() => { setPrintMode(value); onPrintModeChange?.(value); }}
+                                                className="sr-only"
+                                            />
+                                            {label}
+                                        </label>
+                                    ))}
+                                </div>
+                                {printMode === "dual" && (
+                                    <p className="text-[11px] text-amber-700 bg-amber-50 rounded-lg px-3 py-1.5">
+                                        2-Strip: print two strips on one {layout.replace("x", "×")} sheet and cut down the middle. Each strip needs its own photo slots.
+                                    </p>
+                                )}
+                            </>
+                        )}
                     </div>
                     <div className="flex items-center gap-3 self-start">
                         <button
@@ -877,6 +925,7 @@ export default function TemplateEditor({
                                             slots: ensureSlotNumbers(slots).map(validateSlotForSave),
                                             thumbnailDataUrl: thumb || null,
                                             layout,
+                                            printMode,
                                             attachedFrameIds,
                                             activeFrameId,
                                         },

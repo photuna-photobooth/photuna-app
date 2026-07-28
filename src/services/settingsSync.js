@@ -35,7 +35,15 @@ export async function pullSettings() {
   const ctx = { userId: _userId };
   if (data.settings) await store.setSettings?.(data.settings, ctx);
   if (data.appearance) await store.setAppearance?.(data.appearance, ctx);
-  if (Array.isArray(data.events)) await store.setEvents?.(data.events, ctx);
+  if (Array.isArray(data.events)) {
+    // Preserve sessions recorded locally — Supabase never stores booth-run session records
+    const localEvents = (await store.getEvents?.(ctx)) ?? [];
+    const merged = data.events.map((e) => {
+      const local = localEvents.find((le) => String(le.id) === String(e.id));
+      return local?.sessions?.length ? { ...e, sessions: local.sessions } : e;
+    });
+    await store.setEvents?.(merged, ctx);
+  }
   if (Array.isArray(data.templates)) await store.setTemplates?.(data.templates, ctx);
   if (Array.isArray(data.frames)) await store.setFrames?.(data.frames, ctx);
   if (Array.isArray(data.palettes)) await store.setPalettes?.(data.palettes, ctx);

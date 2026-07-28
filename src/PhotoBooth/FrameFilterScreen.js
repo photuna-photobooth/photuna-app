@@ -5,6 +5,7 @@ import { motion } from "framer-motion";
 import { normalizeToFileUrl } from "../utils/mediaUrl";
 import { loadGoogleFont } from "../utils/fontLoader";
 import { DEFAULT_APPEARANCE } from "../utils/appearance";
+import { useLayout } from "../utils/useLayout";
 
 /* ---------------------------- Helpers ---------------------------- */
 function formatMoney(amount = 0, currency = "PHP") {
@@ -631,6 +632,7 @@ export default function FrameFilterScreen({
   event = null,
 }) {
   const api = typeof window !== "undefined" ? window.electron ?? window.api ?? null : null;
+  const { isPortrait, isUnsupported, isPortrait2K } = useLayout();
 
   const [timeLeft, setTimeLeft] = useState(countdownStart);
   // Event resolution
@@ -1102,8 +1104,25 @@ export default function FrameFilterScreen({
   const unitPrice = useMemo(() => {
     const ev = currentEvent?.settings?.business?.pricing?.additionalPrintPrice;
     const g = globalSettings?.business?.pricing?.additionalPrintPrice;
-    // Allow 0 as valid override
     return Number(ev ?? g ?? 0);
+  }, [currentEvent, globalSettings]);
+
+  const taxEnabled = useMemo(() => {
+    const ev = currentEvent?.settings?.business?.pricing?.taxEnabled;
+    const g = globalSettings?.business?.pricing?.taxEnabled;
+    return !!(ev ?? g ?? false);
+  }, [currentEvent, globalSettings]);
+
+  const taxRate = useMemo(() => {
+    const ev = currentEvent?.settings?.business?.pricing?.taxRate;
+    const g = globalSettings?.business?.pricing?.taxRate;
+    return Number(ev ?? g ?? 0);
+  }, [currentEvent, globalSettings]);
+
+  const baseSessionPrice = useMemo(() => {
+    const ev = currentEvent?.settings?.business?.pricing?.pricePerSession;
+    const g = globalSettings?.business?.pricing?.pricePerSession;
+    return Number(ev ?? g ?? currentEvent?.settings?.price ?? 0);
   }, [currentEvent, globalSettings]);
 
   // When extra copies are not allowed, force quantity = 1
@@ -1238,6 +1257,67 @@ export default function FrameFilterScreen({
         hasAutoProceededRef.current = true;
         isAutoProceedingRef.current = false;
 
+        {
+          const taxAmount = taxEnabled && appMode === "business"
+            ? Math.round(baseSessionPrice * (taxRate / 100) * 100) / 100
+            : 0;
+          onNext?.({
+            composedImage: composed,
+            composedBurstImage: composedBurst,
+            composedImagePath: savedFinal?.savedPath ?? null,
+            composedImageUrl: savedFinal?.fileUrl ?? null,
+            sessionId: sessionId || "default",
+            layout: normalizedLayout,
+            layoutConfig: resolvedLayoutConfig,
+            slotVideoMap: resolvedLayoutConfig.slotVideoMap,
+            motionBackgroundColor:
+              activeFrame?.useBgColor
+                ? (pickedBgHex || activeFrame?.selectedColor || activeFrame?.bgHexes?.[0] || "#ffffff")
+                : (activeFrame?.color || "#ffffff"),
+            frameOverlayDataUrl: activeFrame?.overlay?.[normalizedLayout] || null,
+            qrImage: qr,
+            quantity: 1,
+            pricing: {
+              currency,
+              appMode,
+              pricingModel,
+              baseAmount: baseSessionPrice,
+              unitPrice,
+              additionalPrints: 0,
+              additionalFee: 0,
+              taxEnabled,
+              taxRate,
+              taxAmount,
+              totalAmount: baseSessionPrice + taxAmount,
+              firstPrintAlreadyPaid: true,
+              autoSkippedExtras: true,
+            },
+            tone,
+            frameId,
+            selectedToneEffectId: tone,
+            selectedFrameStyleId: activeFrame.id,
+            auto: true,
+          });
+        }
+        return;
+      }
+
+      if (allowExtraCopies && quantity > 1 && additionalFee > 0) {
+        setPopupOpen(true);
+        setPaymentMethod(null);
+        isAutoProceedingRef.current = false;
+        return;
+      }
+
+      const qr = galleryEnabled ? await api?.getDownloadQr?.(eventId) : null;
+
+      hasAutoProceededRef.current = true;
+      isAutoProceedingRef.current = false;
+
+      {
+        const taxAmount = taxEnabled && appMode === "business"
+          ? Math.round(baseSessionPrice * (taxRate / 100) * 100) / 100
+          : 0;
         onNext?.({
           composedImage: composed,
           composedBurstImage: composedBurst,
@@ -1258,62 +1338,23 @@ export default function FrameFilterScreen({
             currency,
             appMode,
             pricingModel,
+            baseAmount: baseSessionPrice,
             unitPrice,
+            additionalPrints: 0,
             additionalFee: 0,
+            taxEnabled,
+            taxRate,
+            taxAmount,
+            totalAmount: baseSessionPrice + taxAmount,
             firstPrintAlreadyPaid: true,
-            autoSkippedExtras: true,
           },
           tone,
           frameId,
           selectedToneEffectId: tone,
           selectedFrameStyleId: activeFrame.id,
-          auto: true,
+          auto: isAuto,
         });
-        return;
       }
-
-      if (allowExtraCopies && quantity > 1 && additionalFee > 0) {
-        setPopupOpen(true);
-        setPaymentMethod(null);
-        isAutoProceedingRef.current = false;
-        return;
-      }
-
-      const qr = galleryEnabled ? await api?.getDownloadQr?.(eventId) : null;
-
-      hasAutoProceededRef.current = true;
-      isAutoProceedingRef.current = false;
-
-      onNext?.({
-        composedImage: composed,
-        composedBurstImage: composedBurst,
-        composedImagePath: savedFinal?.savedPath ?? null,
-        composedImageUrl: savedFinal?.fileUrl ?? null,
-        sessionId: sessionId || "default",
-        layout: normalizedLayout,
-        layoutConfig: resolvedLayoutConfig,
-        slotVideoMap: resolvedLayoutConfig.slotVideoMap,
-        motionBackgroundColor:
-          activeFrame?.useBgColor
-            ? (pickedBgHex || activeFrame?.selectedColor || activeFrame?.bgHexes?.[0] || "#ffffff")
-            : (activeFrame?.color || "#ffffff"),
-        frameOverlayDataUrl: activeFrame?.overlay?.[normalizedLayout] || null,
-        qrImage: qr,
-        quantity: 1,
-        pricing: {
-          currency,
-          appMode,
-          pricingModel,
-          unitPrice,
-          additionalFee: 0,
-          firstPrintAlreadyPaid: true,
-        },
-        tone,
-        frameId,
-        selectedToneEffectId: tone,
-        selectedFrameStyleId: activeFrame.id,
-        auto: isAuto,
-      });
     } catch (err) {
       console.error(err);
       setError("Unable to prepare print. Please try again.");
@@ -1375,39 +1416,50 @@ export default function FrameFilterScreen({
 
       setPopupOpen(false);
 
-      onNext?.({
-        composedImage: composed,
-        composedBurstImage: composedBurst,
-        composedImagePath: null,
-        composedImageUrl: null,
-        sessionId: sessionId || "default",
-        layout: normalizedLayout,
-        layoutConfig: resolvedLayoutConfig,
-        slotVideoMap: resolvedLayoutConfig.slotVideoMap,
-        motionBackgroundColor:
-          activeFrame?.useBgColor
-            ? (pickedBgHex || activeFrame?.selectedColor || activeFrame?.bgHexes?.[0] || "#ffffff")
-            : (activeFrame?.color || "#ffffff"),
-        frameOverlayDataUrl: activeFrame?.overlay?.[normalizedLayout] || null,
-        qrImage: qr,
-        quantity,
-        pricing: {
-          currency,
-          appMode,
-          pricingModel,
-          unitPrice,
-          additionalFee,
-          firstPrintAlreadyPaid: true,
-        },
-        payment: {
-          method: paymentMethod,
-          amount: additionalFee,
-        },
-        tone,
-        frameId,
-        selectedToneEffectId: tone,
-        selectedFrameStyleId: activeFrame?.id,
-      });
+      {
+        const taxAmount = taxEnabled && appMode === "business"
+          ? Math.round(baseSessionPrice * (taxRate / 100) * 100) / 100
+          : 0;
+        onNext?.({
+          composedImage: composed,
+          composedBurstImage: composedBurst,
+          composedImagePath: null,
+          composedImageUrl: null,
+          sessionId: sessionId || "default",
+          layout: normalizedLayout,
+          layoutConfig: resolvedLayoutConfig,
+          slotVideoMap: resolvedLayoutConfig.slotVideoMap,
+          motionBackgroundColor:
+            activeFrame?.useBgColor
+              ? (pickedBgHex || activeFrame?.selectedColor || activeFrame?.bgHexes?.[0] || "#ffffff")
+              : (activeFrame?.color || "#ffffff"),
+          frameOverlayDataUrl: activeFrame?.overlay?.[normalizedLayout] || null,
+          qrImage: qr,
+          quantity,
+          pricing: {
+            currency,
+            appMode,
+            pricingModel,
+            baseAmount: baseSessionPrice,
+            unitPrice,
+            additionalPrints: quantity - 1,
+            additionalFee,
+            taxEnabled,
+            taxRate,
+            taxAmount,
+            totalAmount: baseSessionPrice + additionalFee + taxAmount,
+            firstPrintAlreadyPaid: true,
+          },
+          payment: {
+            method: paymentMethod,
+            amount: additionalFee,
+          },
+          tone,
+          frameId,
+          selectedToneEffectId: tone,
+          selectedFrameStyleId: activeFrame?.id,
+        });
+      }
 
       hasAutoProceededRef.current = true;
       isAutoProceedingRef.current = false;
@@ -1421,9 +1473,21 @@ export default function FrameFilterScreen({
 
   const isGif = !!backgroundMediaPath && backgroundMediaPath.toLowerCase().endsWith(".gif");
 
+  if (isUnsupported) {
+    return (
+      <div className="w-full h-screen flex flex-col items-center justify-center text-center gap-6" style={{ backgroundColor: bgColor }}>
+        <p style={{ fontFamily: headerFont, color: headerFontColor, fontSize: 'clamp(22px, 3vw, 56px)', fontWeight: 'bold' }}>Display Not Supported</p>
+        <p style={{ fontFamily: generalFont, color: generalFontColor, fontSize: 'clamp(14px, 1.8vw, 34px)' }}>Minimum resolution: 1080 × 1920 (Full HD portrait)</p>
+      </div>
+    );
+  }
+
   return (
     <div
-      className="grid grid-cols-[.8fr_.8fr] gap-8 w-full h-screen overflow-hidden relative items-center justify-center py-[50px]"
+      className={isPortrait
+        ? "flex flex-col w-full h-screen overflow-hidden"
+        : "grid grid-cols-[.8fr_.8fr] gap-8 w-full h-screen overflow-hidden relative items-center justify-center py-[50px]"
+      }
       style={{
         backgroundColor: bgColor,
         fontFamily: generalFont,
@@ -1431,55 +1495,60 @@ export default function FrameFilterScreen({
       }}
     >
 
-      {/* Header */}
-      <div className="absolute top-6 left-6 z-20">
-        {logoPath ? (
-          <img src={logoPath} alt="logo" className="max-w-[300px] sm:max-w-[300px] md:max-w-[400px]" />
-        ) : (
-          <>
-            <h1 className="text-5xl font-bold" style={{ fontFamily: headerFont, color: headerFontColor }}>
-              {boothName}
-            </h1>
-            {!!tagline && (
-              <p className="text-lg" style={{ color: generalFontColor }}>
-                {tagline}
-              </p>
-            )}
-          </>
-        )}
-      </div>
+      {/* Portrait: inline header row replaces absolute overlay */}
+      {isPortrait && (
+        <div className="shrink-0 flex items-center justify-between" style={{ padding: '2vh 4vw' }}>
+          {logoPath
+            ? <img src={logoPath} alt="logo" style={{ maxHeight: '6vh' }} className="w-auto object-contain" />
+            : <span className="font-bold" style={{ fontFamily: headerFont, color: headerFontColor, fontSize: 'clamp(18px, 2.5vw, 46px)' }}>{boothName}</span>
+          }
+          <div className="px-5 py-2 rounded-full font-bold shadow-sm" style={{ backgroundColor: buttonBgColor, color: buttonFontColor, fontFamily: generalFont, fontSize: 'clamp(16px, 2vw, 38px)' }} aria-live="polite">
+            {Math.max(0, timeLeft)}s
+          </div>
+        </div>
+      )}
 
-      <div className="absolute top-6 left-1/2 transform -translate-x-1/2 z-30">
+      {/* Landscape: absolute header / timer */}
+      {!isPortrait && (<>
+        <div className="absolute top-6 left-6 z-20">
+          {logoPath ? (
+            <img src={logoPath} alt="logo" className="max-w-[300px] md:max-w-[400px]" />
+          ) : (
+            <>
+              <h1 className="font-bold" style={{ fontFamily: headerFont, color: headerFontColor, fontSize: 'clamp(22px, 3.5vw, 56px)' }}>{boothName}</h1>
+              {!!tagline && <p style={{ color: generalFontColor, fontSize: 'clamp(12px, 1.4vw, 22px)' }}>{tagline}</p>}
+            </>
+          )}
+        </div>
+        <div className="absolute top-6 left-1/2 -translate-x-1/2 z-30">
+          <div className="rounded-full font-bold shadow-sm" style={{ fontFamily: generalFont, backgroundColor: buttonBgColor, color: buttonFontColor, fontSize: 'clamp(14px, 1.8vw, 26px)', padding: 'clamp(6px, 0.8vh, 12px) clamp(14px, 1.8vw, 28px)' }} aria-live="polite">
+            {Math.max(0, timeLeft)}s
+          </div>
+        </div>
+      </>)}
+
+      {/* Controls column — portrait: Row 3 (h-[45vh] shrink-0), landscape: left column */}
+      <div
+        className={isPortrait ? "shrink-0 flex flex-col" : "col-span-1 h-full min-h-0 flex flex-col"}
+        style={isPortrait ? { height: '45vh', order: 2 } : undefined}
+      >
+        {/* Landscape-only sticky spacer for the absolute logo */}
+        {!isPortrait && <div className="shrink-0 h-28" />}
+
         <div
-          className="px-8 py-3 rounded-full text-2xl font-bold shadow-sm"
-          style={{
-            fontFamily: generalFont,
-            backgroundColor: buttonBgColor,
-            color: buttonFontColor,
-          }}
-          aria-live="polite"
+          className={`flex-1 min-h-0 overflow-y-auto light-scroll ${isPortrait ? "" : "px-16 pb-4"}`}
+          style={isPortrait ? { padding: '2vh 4vw 1vh' } : undefined}
         >
-          {Math.max(0, timeLeft)}s
-        </div>
-      </div>
-
-      {/* LEFT: customization controls */}
-      <div className="col-span-1 h-full min-h-0 flex flex-col">
-        <div className="sticky top-0 z-20 bg-transparent px-16 pt-28 pb-6">
-          {/* logo / title */}
-        </div>
-
-        <div className="flex-1 min-h-0 overflow-y-auto px-16 pb-20 light-scroll">
           {/* Tone */}
           <div className="mb-10">
             <div
-              className="text-5xl font-bold mb-4"
-              style={{ fontFamily: headerFont, color: headerFontColor }}
+              className={`${isPortrait ? "" : "text-5xl"} font-bold mb-4`}
+              style={{ fontFamily: headerFont, color: headerFontColor, ...(isPortrait ? { fontSize: 'clamp(20px, 2.8vw, 52px)' } : {}) }}
             >
               {t.tone}
             </div>
 
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+            <div className={`grid gap-3 ${isPortrait ? (isPortrait2K ? "grid-cols-4" : "grid-cols-3") : "grid-cols-2 md:grid-cols-3"}`}>
               {toneEffectsToShow.map((f) => {
                 const isActive = tone === f.id;
                 const label =
@@ -1550,13 +1619,13 @@ export default function FrameFilterScreen({
           {/* Frame */}
           <div className="mb-10">
             <div
-              className="text-5xl font-bold mb-4"
-              style={{ fontFamily: headerFont, color: headerFontColor }}
+              className={`${isPortrait ? "" : "text-5xl"} font-bold mb-4`}
+              style={{ fontFamily: headerFont, color: headerFontColor, ...(isPortrait ? { fontSize: 'clamp(20px, 2.8vw, 52px)' } : {}) }}
             >
               {t.frame}
             </div>
 
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+            <div className={`grid gap-3 ${isPortrait ? (isPortrait2K ? "grid-cols-4" : "grid-cols-3") : "grid-cols-2 md:grid-cols-3"}`}>
               {framesToShow.length === 0 ? (
                 <div className="col-span-full rounded-[28px] border border-red-400/30 bg-red-500/10 px-5 py-4 text-sm text-red-200">
                   No frames are attached to this template yet.
@@ -1623,8 +1692,8 @@ export default function FrameFilterScreen({
             activeFrame.bgHexes.length > 0 && (
               <div className="mb-10">
                 <div
-                  className="text-5xl font-bold mb-4"
-                  style={{ fontFamily: headerFont, color: headerFontColor }}
+                  className={`${isPortrait ? "" : "text-5xl"} font-bold mb-4`}
+                  style={{ fontFamily: headerFont, color: headerFontColor, ...(isPortrait ? { fontSize: 'clamp(20px, 2.8vw, 52px)' } : {}) }}
                 >
                   Background Color
                 </div>
@@ -1720,19 +1789,24 @@ export default function FrameFilterScreen({
             </div>
           )}
 
-          {/* Action */}
-          <div className="flex items-center gap-3 mt-8">
+        </div>
+
+        {/* Action — pinned at the bottom of the controls column */}
+        <div
+          className={`shrink-0 ${isPortrait ? "" : "py-4 px-16"}`}
+          style={isPortrait ? { padding: '1vh 4vw 2vh' } : undefined}
+        >
+          <div className="flex items-center gap-3">
             <button
               onClick={() => handlePrimaryAction(false)}
               disabled={isPreparing}
-              className={`w-full flex items-center justify-center gap-3 px-10 py-5 rounded-full text-2xl font-bold transition ${isPreparing ? "opacity-60 cursor-not-allowed" : ""
+              className={`w-full flex items-center justify-center gap-3 px-10 py-5 rounded-full font-bold transition ${isPreparing ? "opacity-60 cursor-not-allowed" : ""
                 }`}
               style={{
                 backgroundColor: isPreparing ? "rgba(255,255,255,0.25)" : buttonBgColor,
                 color: isPreparing ? "#ffffff" : buttonFontColor,
-                boxShadow: isPreparing
-                  ? "none"
-                  : "0 18px 38px rgba(0,0,0,0.22)",
+                boxShadow: isPreparing ? "none" : "0 18px 38px rgba(0,0,0,0.22)",
+                fontSize: isPortrait ? 'clamp(18px, 2.5vw, 46px)' : '1.5rem',
               }}
               onMouseEnter={(e) => {
                 if (!isPreparing) e.currentTarget.style.backgroundColor = buttonHoverColor;
@@ -1751,13 +1825,18 @@ export default function FrameFilterScreen({
               <span>→</span>
             </button>
           </div>
-
-          {error && <div className="mt-4 text-sm text-red-300">{error}</div>}
+          {error && <div className="mt-2 text-sm text-red-300">{error}</div>}
         </div>
       </div>
 
-      {/* RIGHT: print preview */}
-      <div className="col-span-1 h-full overflow-y-auto px-10 py-32 light-scroll">
+      {/* RIGHT: print preview — portrait: Row 2 (flex-1 min-h-0), landscape: right column */}
+      <div
+        className={isPortrait
+          ? "flex-1 min-h-0 flex items-center justify-center overflow-hidden"
+          : "col-span-1 h-full overflow-y-auto px-10 py-32 light-scroll"
+        }
+        style={isPortrait ? { padding: '1vh 4vw', order: 1 } : undefined}
+      >
 
         {(() => {
           const layoutKey = normalizedLayout; // "4x6" | "2x6" | "6x4" | "6x2"
@@ -1787,7 +1866,10 @@ export default function FrameFilterScreen({
             <div className="relative w-full h-full">
               {template.slots.map((slot) => {
                 const photoIndex = Number(slot?.photoIndex);
-                const src = Number.isFinite(photoIndex) ? photos[photoIndex] : null;
+                // Prefer slot.photoUrl (set by TemplateSelectionScreen) so the preview
+                // always works even if the photos[] array is out of sync with the index.
+                const src = slot?.photoUrl
+                  ?? (Number.isFinite(photoIndex) ? photos[photoIndex] : null);
                 return (
                   <div
                     key={slot.id}

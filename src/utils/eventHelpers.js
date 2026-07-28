@@ -95,6 +95,11 @@ export async function deleteEventSafe(eventId) {
       localStorage.removeItem("lastEventCache");
     }
 
+    // Delete all Supabase storage objects and gallery rows for this event.
+    // Fire-and-forget — don't let a network failure block the local delete.
+    safeElectron.ipcRenderer.invoke("event:cleanupStorage", { eventId })
+      .catch((err) => console.warn("[deleteEventSafe] storage cleanup failed:", err));
+
     return true;
   } catch (err) {
     console.error("Failed to delete event:", err);

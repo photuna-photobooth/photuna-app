@@ -3,6 +3,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { DEFAULT_APPEARANCE } from "../utils/appearance";
+import { useLayout } from "../utils/useLayout";
 
 
 function normalizeTemplateGuide(templateSelection) {
@@ -101,12 +102,11 @@ export default function PhotoScreen({
   session, // { sessionId, token, previewUrl }
   cameraStreamRef = null,
 }) {
+  const { isPortrait, isUnsupported } = useLayout();
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
   const activeRecorderRef = useRef(null);
-  const activeChunksRef = useRef([]);
-  const activeSlotIndexRef = useRef(null);
 
   const previewWrapRef = useRef(null);
   const [previewRect, setPreviewRect] = useState({ width: 0, height: 0 });
@@ -142,20 +142,35 @@ export default function PhotoScreen({
 
   const capturesRef = useRef([]);
 
+  // Load global settings as fallback for camera config not in the event
+  const [globalCameraSettings, setGlobalCameraSettings] = useState(null);
+  useEffect(() => {
+    (async () => {
+      try {
+        const s = await (window.api ?? window.electron)?.getSettings?.();
+        if (s && Object.keys(s).length > 0) setGlobalCameraSettings(s);
+      } catch {}
+    })();
+  }, []);
+
+  const gs = globalCameraSettings ?? {};
+  const gsRef = useRef(gs);
+  useEffect(() => { gsRef.current = gs; }, [gs]);
   const effectiveMirrorCamera =
     typeof mirrorCamera === "boolean"
       ? mirrorCamera
-      : !!event?.settings?.mirrorCamera;
+      : !!(event?.settings?.mirrorCamera ?? gs.mirrorCamera);
 
   const sessionIdRef = useRef(session?.sessionId || null);
   useEffect(() => { sessionIdRef.current = session?.sessionId || null; }, [session]);
 
   const initCamera = React.useCallback(async () => {
     try {
-      const desiredWidth = event?.config?.cameraWidth ?? event?.settings?.cameraWidth ?? 1920;
-      const desiredHeight = event?.config?.cameraHeight ?? event?.settings?.cameraHeight ?? 1080;
-      const facingMode = event?.config?.facingMode ?? event?.settings?.facingMode ?? "user";
-      const deviceId = event?.settings?.selectedCameraId;
+      const g = gsRef.current;
+      const desiredWidth = event?.config?.cameraWidth ?? event?.settings?.cameraWidth ?? g.cameraWidth ?? 1920;
+      const desiredHeight = event?.config?.cameraHeight ?? event?.settings?.cameraHeight ?? g.cameraHeight ?? 1080;
+      const facingMode = event?.config?.facingMode ?? event?.settings?.facingMode ?? g.facingMode ?? "user";
+      const deviceId = event?.settings?.selectedCameraId ?? g.selectedCameraId;
       let stream = cameraStreamRef?.current ?? window.__cameraStream;
 
       // If a specific device is required, verify the preloaded stream is on that device
@@ -380,7 +395,7 @@ export default function PhotoScreen({
       gain.connect(ctx.destination);
       osc.start();
       osc.stop(ctx.currentTime + 0.13);
-      osc.onended = () => ctx.close().catch(() => {});
+      osc.onended = () => ctx.close().catch(() => { });
     } catch { }
   };
 
@@ -430,8 +445,9 @@ export default function PhotoScreen({
           ? "video/webm;codecs=vp8"
           : "video/webm";
 
-      activeChunksRef.current = [];
-      activeSlotIndexRef.current = slotIndex;
+      // Each recording owns its chunk array — stored inside the ref alongside the
+      // recorder so onstop can't accidentally clear a later recording's chunks.
+      const chunks = [];
 
       const rec = new MediaRecorder(stream, {
         mimeType,
@@ -439,10 +455,10 @@ export default function PhotoScreen({
       });
 
       rec.ondataavailable = (e) => {
-        if (e.data?.size) activeChunksRef.current.push(e.data);
+        if (e.data?.size) chunks.push(e.data);
       };
 
-      activeRecorderRef.current = { rec, sessionId, slotIndex };
+      activeRecorderRef.current = { rec, sessionId, slotIndex, chunks };
 
       rec.start(250); // collect chunks every 250ms
     } catch (err) {
@@ -454,20 +470,19 @@ export default function PhotoScreen({
     const active = activeRecorderRef.current;
     if (!active) return Promise.resolve({ ok: false, reason: "no_active_recorder" });
 
-    return new Promise((resolve) => {
-      const { rec, sessionId, slotIndex } = active;
+    const { rec, sessionId, slotIndex, chunks } = active;
 
+    // Release the ref immediately so the next slot's startPreShotRecording
+    // is not blocked while this slot's onstop fires asynchronously.
+    activeRecorderRef.current = null;
+
+    return new Promise((resolve) => {
       rec.onstop = async () => {
         try {
-          const mimeType =
-            rec.mimeType ||
-            (activeChunksRef.current?.[0]?.type || "video/webm");
-
-          const blob = new Blob(activeChunksRef.current, { type: mimeType });
+          const mimeType = rec.mimeType || chunks[0]?.type || "video/webm";
+          const blob = new Blob(chunks, { type: mimeType });
 
           if (!blob.size) {
-            activeRecorderRef.current = null;
-            activeChunksRef.current = [];
             return resolve({ ok: false, reason: "empty_blob" });
           }
 
@@ -480,14 +495,9 @@ export default function PhotoScreen({
             { eventId }
           );
 
-          activeRecorderRef.current = null;
-          activeChunksRef.current = [];
-
           resolve(res?.ok ? { ok: true } : { ok: false, reason: res?.error || "save_failed" });
         } catch (err) {
           console.error("[stopPreShotRecording] failed:", err);
-          activeRecorderRef.current = null;
-          activeChunksRef.current = [];
           resolve({ ok: false, reason: err?.message || "stop_failed" });
         }
       };
@@ -504,8 +514,6 @@ export default function PhotoScreen({
             }
           }, 60);
         } else {
-          activeRecorderRef.current = null;
-          activeChunksRef.current = [];
           resolve({ ok: false, reason: "not_recording" });
         }
       } catch (err) {
@@ -620,6 +628,15 @@ export default function PhotoScreen({
   /* ------------------------------------------------------------------ */
   /* Render                                                             */
   /* ------------------------------------------------------------------ */
+  if (isUnsupported) {
+    return (
+      <div className="w-full h-screen flex flex-col items-center justify-center text-center gap-6" style={{ backgroundColor: bgColor }}>
+        <p style={{ fontFamily: headerFont, color: headerFontColor, fontSize: 'clamp(22px, 3vw, 56px)', fontWeight: 'bold' }}>Display Not Supported</p>
+        <p style={{ fontFamily: generalFont, color: generalFontColor, fontSize: 'clamp(14px, 1.8vw, 34px)' }}>Minimum resolution: 1080 × 1920 (Full HD portrait)</p>
+      </div>
+    );
+  }
+
   return (
     <div
       className="relative w-full h-screen overflow-hidden"
@@ -630,24 +647,31 @@ export default function PhotoScreen({
       }}
     >
 
-      {/* Header */}
-      <div className="absolute top-6 left-6 z-20">
-        {logoPath ? (<img src={logoPath} alt="logo" className="max-w-[300px] sm:max-w-[300px] md:max-w-[400px]" />) : (<>
-          <h1
-            className="text-5xl font-bold"
-            style={{ fontFamily: headerFont, color: headerFontColor }}
-          >
-            <span>{boothName}</span>
-          </h1>
-          {tagline && <p className="text-lg" style={{ color: generalFontColor }}>
-            {tagline}
-          </p>}</>)}
-      </div>
+      {/* Portrait: inline header overlaid at top */}
+      {isPortrait && (
+        <div className="absolute top-0 left-0 right-0 z-30 flex items-center justify-between" style={{ padding: '2vh 4vw' }}>
+          {logoPath
+            ? <img src={logoPath} alt="logo" style={{ maxHeight: '6vh' }} className="w-auto object-contain" />
+            : <span className="font-bold" style={{ fontFamily: headerFont, color: headerFontColor, fontSize: 'clamp(18px, 2.5vw, 46px)' }}>{boothName}</span>
+          }
+          <div className="px-5 py-2 rounded-full font-bold backdrop-blur" style={{ backgroundColor: buttonBgColor, color: buttonFontColor, fontFamily: generalFont, fontSize: 'clamp(16px, 2vw, 38px)' }}>
+            {photosTaken}/{cfgShots} {t.counter}
+          </div>
+        </div>
+      )}
 
-      {/* Counter */}
-      <div className="absolute top-6 right-6 z-20 px-6 py-3 rounded-full backdrop-blur text-2xl font-bold" style={{ fontFamily: generalFont, color: buttonFontColor, background: buttonBgColor }}>
-        {photosTaken}/{cfgShots} {t.counter}
-      </div>
+      {/* Landscape: separate logo + counter elements */}
+      {!isPortrait && (<>
+        <div className="absolute top-6 left-6 z-20">
+          {logoPath ? (<img src={logoPath} alt="logo" className="max-w-[200px] md:max-w-[320px]" />) : (<>
+            <h1 className="font-bold" style={{ fontFamily: headerFont, color: headerFontColor, fontSize: 'clamp(22px, 3.5vw, 56px)' }}><span>{boothName}</span></h1>
+            {tagline && <p style={{ color: generalFontColor, fontSize: 'clamp(12px, 1.4vw, 22px)' }}>{tagline}</p>}
+          </>)}
+        </div>
+        <div className="absolute top-6 right-6 z-20 rounded-full backdrop-blur font-bold" style={{ fontFamily: generalFont, color: buttonFontColor, background: buttonBgColor, fontSize: 'clamp(14px, 1.8vw, 26px)', padding: 'clamp(6px, 0.8vh, 12px) clamp(12px, 1.5vw, 24px)' }}>
+          {photosTaken}/{cfgShots} {t.counter}
+        </div>
+      </>)}
 
       {/* Camera block */}
       <div className="absolute inset-0 z-0">
@@ -661,47 +685,9 @@ export default function PhotoScreen({
               autoPlay
               playsInline
               muted
-              className={`absolute inset-0 w-full h-full object-cover ${effectiveMirrorCamera ? "scale-x-[-1]" : ""
+              className={`absolute inset-0 w-full h-full landscape:object-cover portrait:object-contain ${effectiveMirrorCamera ? "scale-x-[-1]" : ""
                 }`}
             />
-
-            {showSlotGuide && previewRect.width > 0 && previewRect.height > 0 && activeSlot && (
-              <div
-                className="absolute pointer-events-none rounded-[20px]"
-                style={{
-                  left: fittedGuideBox.left,
-                  top: fittedGuideBox.top,
-                  width: fittedGuideBox.width,
-                  height: fittedGuideBox.height,
-                  border: "none",
-                  boxShadow: "none",
-                  background: "transparent",
-                  transform: `rotate(${activeSlot.rotation || 0}deg)`,
-                  transformOrigin: "center",
-                }}
-              >
-                <div
-                  style={{
-                    position: "absolute",
-                    top: 12,
-                    left: 12,
-                    minWidth: 34,
-                    height: 34,
-                    borderRadius: 999,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    padding: "0 12px",
-                    fontSize: 16,
-                    fontWeight: 700,
-                    color: "#fff",
-                    background: "rgba(0,0,0,0.35)",
-                  }}
-                >
-                  {activeGuideIndex + 1}
-                </div>
-              </div>
-            )}
           </div>
 
           {/* Countdown */}
@@ -729,8 +715,8 @@ export default function PhotoScreen({
             </svg>
 
             <span
-              className="absolute text-8xl font-bold"
-              style={{ fontFamily: generalFont }}
+              className="absolute font-bold"
+              style={{ fontFamily: generalFont, fontSize: 'clamp(48px, 10vw, 128px)' }}
             >
               {timer}
             </span>

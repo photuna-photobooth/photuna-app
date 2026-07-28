@@ -1,8 +1,10 @@
-// src/pages/AdminDashboard.jsx
+﻿// src/pages/AdminDashboard.jsx
 // NOTE: Kept ALL original logic/handlers. Only adjusted layout & tokens to match the screenshot.
 // Look for // UPDATED: comments for changes.
 
 import React, { useEffect, useRef, useState, useMemo, useCallback } from "react";
+import gcashQrImage from "../gcash-qr.png";
+import { DEFAULT_TEMPLATES, DEFAULT_FRAMES } from "../data/defaultTemplates";
 import { supabase } from "../services/supabase.js";
 import { useNavigate } from "react-router-dom";
 import { useLicense } from "../context/LicenseContext";
@@ -132,22 +134,22 @@ function getSettingsSectionMeta(tab) {
 }
 
 /** Theme tokens — aligned with AuthGate design language */
-const ACCENT_COLOR = "#4f46e5"; // indigo-600
+const ACCENT_COLOR = "#2563eb"; // blue-600
 const BODY_BG = "bg-slate-50";
 const SURFACE_BG = "bg-white";
 const SURFACE_BORDER = "border border-slate-200";
 const BODY_TEXT = "text-slate-900";
 const MUTED_TEXT = "text-slate-600";
 const SOFT_TEXT = "text-slate-500";
-const CARD_RADIUS = "rounded-3xl";
-const SMALL_CARD_RADIUS = "rounded-2xl";
-const INPUT_RADIUS = "rounded-xl";
-const TOOLBAR_RADIUS = "rounded-2xl";
+const CARD_RADIUS = "rounded-xl";
+const SMALL_CARD_RADIUS = "rounded-lg";
+const INPUT_RADIUS = "rounded-lg";
+const TOOLBAR_RADIUS = "rounded-lg";
 const CHIP_RADIUS = "rounded-full";
-const FOCUS_RING_INDIGO = "focus:ring-2 focus:ring-indigo-200";
-const BTN_PRIMARY = "inline-flex items-center justify-center rounded-full bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md shadow-indigo-200 transition hover:-translate-y-0.5 hover:bg-indigo-700 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-60";
-const BTN_SECONDARY = "inline-flex items-center justify-center rounded-full border border-indigo-200 bg-indigo-50 px-5 py-2.5 text-sm font-semibold text-indigo-700 transition hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-60";
-const BTN_GHOST = "inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60";
+const FOCUS_RING_INDIGO = "focus:ring-2 focus:ring-blue-200";
+const BTN_PRIMARY = "inline-flex items-center justify-center rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md shadow-blue-200 transition hover:-translate-y-0.5 hover:bg-blue-700 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-60";
+const BTN_SECONDARY = "inline-flex items-center justify-center rounded-lg border border-blue-200 bg-blue-50 px-5 py-2.5 text-sm font-semibold text-blue-700 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60";
+const BTN_GHOST = "inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60";
 const EYEBROW = "text-xs font-semibold uppercase tracking-[0.18em] text-slate-500";
 
 // Shadows
@@ -167,6 +169,7 @@ const DEFAULT_SCREEN_TIMERS = {
 const CUSTOM_PAPER_SIZE_OPTIONS = [
   { value: "2x6", label: "Photo 2 × 6", source: "app", widthIn: 2, heightIn: 6 },
   { value: "4x6", label: "Photo 4 × 6", source: "app", widthIn: 4, heightIn: 6 },
+  { value: "4x4", label: "Photo 4 × 4 Square", source: "app", widthIn: 4, heightIn: 4 },
   { value: "6x4", label: "Photo 6 × 4", source: "app", widthIn: 6, heightIn: 4 },
   { value: "6x2", label: "Photo 6 × 2", source: "app", widthIn: 6, heightIn: 2 },
 ];
@@ -255,7 +258,13 @@ function WavePattern() {
   );
 }
 
-export default function AdminDashboard({ onLogout, onStartPhotobooth }) {
+// Payment gateway default method selections — module-level so useState initializers can reference them
+const DEFAULT_PAYMONGO_PROVIDERS = { gcash: true, maya: false, grabpay: false, card: false };
+const DEFAULT_STRIPE_PROVIDERS   = { card: false, applePay: false, googlePay: false, link: false, sepa: false, ideal: false };
+const DEFAULT_XENDIT_PROVIDERS   = { card: false, ovo: false, dana: false, gopay: false, linkaja: false, shopeepay: false, qris: false, va_bca: false, va_bni: false, va_bri: false, va_mandiri: false, alfamart: false, indomaret: false };
+const DEFAULT_PAYPAL_PROVIDERS   = { wallet: false, payLater: false, venmo: false, card: false };
+
+export default function AdminDashboard({ onLogout, onStartPhotobooth, jumpToUpdate, onJumpToUpdateHandled, jumpToBilling, onJumpToBillingHandled }) {
 
   const { user, profile, loading: authLoading, logout } = useAuth();
 
@@ -303,6 +312,23 @@ export default function AdminDashboard({ onLogout, onStartPhotobooth }) {
   const [activeSettingsTab, setActiveSettingsTab] = useState("camera");
   const [activeSub, setActiveSub] = useState("branding"); // dashboard sub-tabs
   const [helpArticle, setHelpArticle] = useState(null);
+  const [setupGuideOpen, setSetupGuideOpen] = useState(false);
+
+  // Navigate to Settings → System when App.js banner triggers an update jump
+  useEffect(() => {
+    if (!jumpToUpdate) return;
+    setActiveMain("settings");
+    setActiveSettingsTab("system");
+    onJumpToUpdateHandled?.();
+  }, [jumpToUpdate]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Navigate to Account → Billing when App.js trial modal triggers a billing jump
+  useEffect(() => {
+    if (!jumpToBilling) return;
+    setActiveMain("account");
+    setAccountTab("billing");
+    onJumpToBillingHandled?.();
+  }, [jumpToBilling]); // eslint-disable-line react-hooks/exhaustive-deps
   const navigate = useNavigate();
   const { license, gating, loading: licenseLoading, refreshLicense: ctxRefreshLicense } = useLicense();
   const [accountTab, setAccountTab] = useState("profile");
@@ -335,6 +361,36 @@ export default function AdminDashboard({ onLogout, onStartPhotobooth }) {
   const [billingCycle, setBillingCycle] = useState("yearly"); // "monthly" | "yearly"
   // Legacy alias so shared UI references still compile
   const accountSaving = profileSaving || passwordSaving || prefsSaving;
+
+  // PayMongo
+  const [paymongoConfigured, setPaymongoConfigured] = useState(false);
+  const [paymongoTestMode, setPaymongoTestMode] = useState(false);
+  const [paymongoPublicKey, setPaymongoPublicKey] = useState("");
+  const [paymongoSaving, setPaymongoSaving] = useState(false);
+  const [paymongoKeyInputs, setPaymongoKeyInputs] = useState({ publicKey: "", secretKey: "" });
+  // Multi-provider payment gateway state
+  const [activeProvider, setActiveProvider] = useState(null); // null | "paymongo" | "stripe" | "xendit" | "paypal"
+  const [stripeProviders, setStripeProviders] = useState({ ...DEFAULT_STRIPE_PROVIDERS });
+  const [xenditProviders, setXenditProviders] = useState({ ...DEFAULT_XENDIT_PROVIDERS });
+  const [paypalProviders, setPaypalProviders] = useState({ ...DEFAULT_PAYPAL_PROVIDERS });
+  // Stripe connection
+  const [stripeConfigured, setStripeConfigured] = useState(false);
+  const [stripeTestMode, setStripeTestMode] = useState(false);
+  const [stripePublicKey, setStripePublicKey] = useState("");
+  const [stripeSaving, setStripeSaving] = useState(false);
+  const [stripeKeyInputs, setStripeKeyInputs] = useState({ publicKey: "", secretKey: "" });
+  // Xendit connection
+  const [xenditConfigured, setXenditConfigured] = useState(false);
+  const [xenditTestMode, setXenditTestMode] = useState(false);
+  const [xenditKeyDisplay, setXenditKeyDisplay] = useState("");
+  const [xenditSaving, setXenditSaving] = useState(false);
+  const [xenditKeyInput, setXenditKeyInput] = useState("");
+  // PayPal connection
+  const [paypalConfigured, setPaypalConfigured] = useState(false);
+  const [paypalSandboxMode, setPaypalSandboxMode] = useState(false);
+  const [paypalClientIdDisplay, setPaypalClientIdDisplay] = useState("");
+  const [paypalSaving, setPaypalSaving] = useState(false);
+  const [paypalKeyInputs, setPaypalKeyInputs] = useState({ clientId: "", clientSecret: "" });
 
   /** State: events, templates, palettes */
   const [events, setEvents] = useState([]);
@@ -461,6 +517,7 @@ export default function AdminDashboard({ onLogout, onStartPhotobooth }) {
   const [bgColor, setBgColor] = useState("#ffffff");
   const [logoPath, setLogoPath] = useState(null); // {url, name, previewUrl?}
   const [backgroundMediaPath, setBackgroundMediaPath] = useState(null); // {url, name, previewUrl?}
+  const [backgroundType, setBackgroundType] = useState("media"); // "media" | "camera"
   const [boothName, setBoothName] = useState("");
   const [boothSlogan, setBoothSlogan] = useState("");
 
@@ -738,14 +795,20 @@ export default function AdminDashboard({ onLogout, onStartPhotobooth }) {
     timerHours: 2,
     sessionLimitEnabled: false,
     sessionLimit: 100,
-    offlineModeEnabled: true,
+    offlineModeEnabled: false,
     autoSaveTarget: "local", // "local" | "usb" | "cloud"
     endSessionSummaryEnabled: true,
   };
   const DEFAULT_BUSINESS = {
+    activeProvider: null, // "paymongo" | "stripe" | "xendit" | "paypal"
     paymentEnabled: true,
     payment: {
-      providers: { gcash: true, paypal: false, stripe: false, cash: true },
+      providers: { gcash: true, maya: false, grabpay: false, card: false, cash: true },
+      stripeProviders: { ...DEFAULT_STRIPE_PROVIDERS },
+      xenditProviders: { ...DEFAULT_XENDIT_PROVIDERS },
+      paypalProviders: { ...DEFAULT_PAYPAL_PROVIDERS },
+      cashMode: "manual", // "manual" | "hardware"
+      gcashStaticQrDataUrl: "",
     },
     pricing: {
       model: "perSession", // "perSession" | "perPhoto"
@@ -765,6 +828,7 @@ export default function AdminDashboard({ onLogout, onStartPhotobooth }) {
     bgColor: "#ffffff",
     logoPath: null,
     backgroundMediaPath: null,
+    backgroundType: "media",
     boothName: "",
     boothSlogan: "",
     buttonBgColor: ACCENT_COLOR,
@@ -911,11 +975,24 @@ export default function AdminDashboard({ onLogout, onStartPhotobooth }) {
   useEffect(() => {
     if (!window.electron?.onUpdaterStatus) return;
 
-    const unsubscribe = window.electron.onUpdaterStatus((payload) => {
-      setUpdateState(payload.status || "idle");
-      setUpdateStatusText(payload.message || "Updater status changed");
+    const STICKY_STATES = new Set(["downloaded", "ready"]);
 
-      if (payload.status === "downloading") {
+    const unsubscribe = window.electron.onUpdaterStatus((payload) => {
+      const incoming = payload.status || "idle";
+
+      setUpdateState((prev) => {
+        if (STICKY_STATES.has(prev)) return prev;
+        if (STICKY_STATES.has(incoming)) return "downloaded";
+        return incoming;
+      });
+
+      if (STICKY_STATES.has(incoming)) {
+        setUpdateStatusText(payload.message || "Update downloaded. Ready to install.");
+      } else {
+        setUpdateStatusText(payload.message || "Updater status changed");
+      }
+
+      if (incoming === "downloading") {
         setUpdatePercent(Math.round(payload.percent || 0));
       }
     });
@@ -924,27 +1001,56 @@ export default function AdminDashboard({ onLogout, onStartPhotobooth }) {
   }, []);
 
   const checkForUpdates = async () => {
-    const result = await window.electron.invoke("app:check-updates");
-
-    if (!result?.ok) {
-      setUpdateStatusText(result?.error || "Failed to check for updates");
-      return;
+    if (updateStateRef.current === "downloaded") return;
+    setUpdateState("checking");
+    setUpdateStatusText("Checking for updates...");
+    try {
+      const result = await window.electron.invoke("app:check-updates");
+      if (updateStateRef.current === "downloaded") return;
+      if (!result?.ok) {
+        setUpdateState("idle");
+        setUpdateStatusText(result?.error || "Failed to check for updates");
+        showToast?.(result?.error || "Update check failed");
+        return;
+      }
+      if (result.hasUpdate) {
+        if (updateStateRef.current !== "downloaded") setUpdateState("available");
+        setUpdateStatusText(`Update ${result.version} available`);
+        showToast?.(`Update ${result.version} is available`);
+      } else {
+        if (updateStateRef.current !== "downloaded") setUpdateState("idle");
+        setUpdateStatusText(`You're on the latest version (${result.version})`);
+        showToast?.("No updates available");
+      }
+    } catch (err) {
+      if (updateStateRef.current !== "downloaded") setUpdateState("idle");
+      setUpdateStatusText(err?.message || "Update check failed");
+      showToast?.("Update check failed");
     }
-
-    setUpdateStatusText(result.message || "Update check completed");
   };
 
   const downloadUpdate = async () => {
-    const result = await window.electron.invoke("app:download-update");
-    if (!result?.ok) {
-      setUpdateStatusText(result?.error || "Failed to download update");
+    setUpdateState((prev) => prev === "downloaded" ? prev : "downloading");
+    setUpdateStatusText("Downloading update...");
+    setUpdatePercent(0);
+    try {
+      const result = await window.electron.invoke("app:download-update");
+      if (!result?.ok) {
+        setUpdateState((prev) => prev === "downloaded" ? prev : "available");
+        setUpdateStatusText(result?.error || "Download failed");
+        showToast?.(result?.error || "Download failed");
+      }
+    } catch (err) {
+      setUpdateState((prev) => prev === "downloaded" ? prev : "available");
+      setUpdateStatusText("Download failed");
     }
   };
 
   const installUpdate = async () => {
+    setUpdateStatusText("Installing update and restarting...");
     const result = await window.electron.invoke("app:install-update");
     if (!result?.ok) {
-      setUpdateStatusText(result?.error || "Failed to install update");
+      setUpdateStatusText(result?.error || "Install failed");
     }
   };
 
@@ -1160,9 +1266,9 @@ This cannot be undone.`
   };
 
   const prices = {
-    currency: "USD",
-    monthly: { display: "$30 / mo", amount: 30 },
-    yearly: { display: "$204 / yr", amount: 204 },
+    currency: "PHP",
+    monthly: { display: "₱1,800 / mo", amount: 1800 },
+    yearly: { display: "₱950 / mo", amount: 950, annualAmount: 11400, annual: "₱11,400", monthlyEquivalent: "₱950/mo" },
   };
 
   const [appMode, setAppMode] = useState(DEFAULT_APP_MODE);
@@ -1177,6 +1283,11 @@ This cannot be undone.`
   // Business
   const [paymentEnabled, setPaymentEnabled] = useState(DEFAULT_BUSINESS.paymentEnabled);
   const [paymentProviders, setPaymentProviders] = useState({ ...DEFAULT_BUSINESS.payment.providers });
+  const [cashMode, setCashMode] = useState("manual"); // "manual" | "hardware"
+  const [cashHardwareDetected, setCashHardwareDetected] = useState(false);
+  const [cashHardwareDetecting, setCashHardwareDetecting] = useState(false);
+  const [cashHardwareDevices, setCashHardwareDevices] = useState([]);
+  const [gcashStaticQrDataUrl, setGcashStaticQrDataUrl] = useState("");
   const [pricingModel, setPricingModel] = useState(DEFAULT_BUSINESS.pricing.model);
   const [pricePerSession, setPricePerSession] = useState(DEFAULT_BUSINESS.pricing.pricePerSession);
   const [additionalPrintPrice, setAdditionalPrintPrice] = useState(DEFAULT_BUSINESS.pricing.additionalPrintPrice);
@@ -1220,6 +1331,11 @@ This cannot be undone.`
   const [editingFrameId, setEditingFrameId] = useState(null);
   const [editingName, setEditingName] = useState("");
 
+  // Photo-lab printer cut detection state (DNP + HiTi)
+  const [cutScanning, setCutScanning] = useState(false);
+  const [cutPrinters, setCutPrinters] = useState([]);
+  const [cutScanError, setCutScanError] = useState("");
+  const [cutScanned, setCutScanned] = useState(false);
 
   // helper: choose proper frame preview given layout
   const getFramePreviewForLayout = (frame, layout) =>
@@ -1306,6 +1422,110 @@ This cannot be undone.`
       ...(nextFrames && { frames: nextFrames }),
       ...(nextPalettes && { palettes: nextPalettes }),
     });
+  };
+
+
+  // ── Photo-lab printer cut-mode scan handler ───────────────────────────────
+  const handleCutScan = async () => {
+    setCutScanning(true);
+    setCutScanError("");
+    setCutScanned(false);
+    try {
+      const res = await safeInvoke("printer:dnpScan");
+      if (res?.ok) {
+        setCutPrinters(res.printers ?? []);
+      } else {
+        setCutScanError(res?.error ?? "Scan failed — ensure you are running on Windows.");
+        setCutPrinters([]);
+      }
+    } catch (err) {
+      setCutScanError(err?.message ?? "Unknown error during scan.");
+      setCutPrinters([]);
+    } finally {
+      setCutScanning(false);
+      setCutScanned(true);
+    }
+  };
+
+  const handleSetCutMode = async (printerName, propertyName, value) => {
+    try {
+      const res = await safeInvoke("printer:setCutMode", { printerName, propertyName, value });
+      if (res?.ok) {
+        showToast("Cut mode updated — restart the print spooler if the change doesn't take effect immediately.");
+        await handleCutScan(); // refresh
+      } else {
+        showToast(`Failed to set cut mode: ${res?.error ?? "unknown error"}`);
+      }
+    } catch (err) {
+      showToast(`Error: ${err?.message}`);
+    }
+  };
+
+  // ── Sample layout handlers ────────────────────────────────────────────────
+  const handleAddSampleTemplate = async (tpl) => {
+    if (templates.some(t => t.id === tpl.id)) {
+      showToast(`"${tpl.name}" is already in your library`);
+      return;
+    }
+    const nextTemplates = [tpl, ...templates];
+    setTemplates(nextTemplates);
+    await persistAll({ nextTemplates });
+    showToast(`"${tpl.name}" added to your library`);
+  };
+
+  const handleApplySampleTemplate = async (tpl) => {
+    if (!currentEvent) return;
+    let nextTemplates = templates;
+    if (!templates.some(t => t.id === tpl.id)) {
+      nextTemplates = [tpl, ...templates];
+      setTemplates(nextTemplates);
+      await persistAll({ nextTemplates });
+    }
+    if (currentEvent?.appliedTemplates?.some(t => t.id === tpl.id)) {
+      showToast(`"${tpl.name}" is already applied to ${currentEvent.name}`);
+      return;
+    }
+    const evCopy = JSON.parse(JSON.stringify(currentEvent));
+    evCopy.appliedTemplates = evCopy.appliedTemplates ?? [];
+    evCopy.appliedTemplates.push({ id: tpl.id, name: tpl.name, previewMeta: tpl.previewMeta ?? null });
+    const updatedEvents = events.map(e => e.id === evCopy.id ? evCopy : e);
+    setEvents(updatedEvents);
+    setCurrentEvent(evCopy);
+    native?.setEvents?.(updatedEvents, ctx).catch(() => {});
+    showToast(`"${tpl.name}" applied to ${currentEvent.name}`);
+  };
+
+  const handleAddSampleFrame = async (frame) => {
+    if (frames.some(f => f.id === frame.id)) {
+      showToast(`"${frame.name}" is already in your library`);
+      return;
+    }
+    const nextFrames = [frame, ...frames];
+    setFrames(nextFrames);
+    await persistAll({ nextFrames });
+    showToast(`"${frame.name}" added to your library`);
+  };
+
+  const handleApplySampleFrame = async (frame) => {
+    if (!currentEvent) return;
+    let nextFrames = frames;
+    if (!frames.some(f => f.id === frame.id)) {
+      nextFrames = [frame, ...frames];
+      setFrames(nextFrames);
+      await persistAll({ nextFrames });
+    }
+    if (currentEvent?.appliedFrames?.some(f => f.id === frame.id)) {
+      showToast(`"${frame.name}" is already applied to ${currentEvent.name}`);
+      return;
+    }
+    const evCopy = JSON.parse(JSON.stringify(currentEvent));
+    evCopy.appliedFrames = Array.isArray(evCopy.appliedFrames) ? evCopy.appliedFrames : [];
+    evCopy.appliedFrames.push({ id: frame.id, name: frame.name, useBgColor: false, palette: null, selectedColor: null });
+    const updatedEvents = events.map(e => e.id === evCopy.id ? evCopy : e);
+    setEvents(updatedEvents);
+    setCurrentEvent(evCopy);
+    native?.setEvents?.(updatedEvents, ctx).catch(() => {});
+    showToast(`"${frame.name}" applied to ${currentEvent.name}`);
   };
 
   const toggleTemplateOnEvent = async (tpl) => {
@@ -1576,6 +1796,7 @@ This cannot be undone.`
   const [presetAspect, setPresetAspect] = useState(null);
 
   const [templateLayout, setTemplateLayout] = useState("4x6"); // "4x6" | "2x6"
+  const [templatePrintMode, setTemplatePrintMode] = useState("single"); // "single" | "dual"
 
   /** Delete confirmation */
   const [deleteTarget, setDeleteTarget] = useState(null);
@@ -1731,11 +1952,11 @@ This cannot be undone.`
     }
   };
 
-  const checkPrinterHealth = async () => {
+  const checkPrinterHealth = async ({ silent = false } = {}) => {
     if (!selectedPrinter) {
       setPrinterOnline(false);
       setPrinterStatusText("No printer selected");
-      showToast("Select a printer first");
+      if (!silent) showToast("Select a printer first");
       return;
     }
 
@@ -1759,7 +1980,7 @@ This cannot be undone.`
       console.error("checkPrinterHealth failed", err);
       setPrinterOnline(false);
       setPrinterStatusText("Printer status check failed");
-      showToast("Failed to check printer status");
+      if (!silent) showToast("Failed to check printer status");
     } finally {
       setPrinterLoading(false);
     }
@@ -1887,8 +2108,9 @@ This cannot be undone.`
           endSessionSummaryEnabled,
         },
         business: {
+          activeProvider,
           paymentEnabled,
-          payment: { providers: { ...paymentProviders } },
+          payment: { providers: { ...paymentProviders }, stripeProviders: { ...stripeProviders }, xenditProviders: { ...xenditProviders }, paypalProviders: { ...paypalProviders }, cashMode, gcashStaticQrDataUrl },
           pricing: {
             model: pricingModel,
             pricePerSession,
@@ -2001,6 +2223,8 @@ This cannot be undone.`
   const [systemLoading, setSystemLoading] = useState(false);
   const [updateStatusText, setUpdateStatusText] = useState("No update check yet");
   const [updateState, setUpdateState] = useState("idle");
+  const updateStateRef = useRef("idle");
+  useEffect(() => { updateStateRef.current = updateState; }, [updateState]);
   const [updatePercent, setUpdatePercent] = useState(0);
   const [cacheStatusText, setCacheStatusText] = useState("Cache status unknown");
   const [launchOnStartup, setLaunchOnStartup] = useState(true);
@@ -2086,8 +2310,9 @@ This cannot be undone.`
         endSessionSummaryEnabled,
       },
       business: {
+        activeProvider,
         paymentEnabled,
-        payment: { providers: { ...paymentProviders } },
+        payment: { providers: { ...paymentProviders }, stripeProviders: { ...stripeProviders }, xenditProviders: { ...xenditProviders }, paypalProviders: { ...paypalProviders } },
         pricing: {
           model: pricingModel,
           pricePerSession,
@@ -2120,19 +2345,17 @@ This cannot be undone.`
 
     notify(showToast, "Settings saved");
 
-    // Also apply to the current event if one is loaded,
-    // so PhotoBooth (which reads event.settings) picks it up.
-    if (currentEvent) {
-      const updatedEvent = {
-        ...currentEvent,
-        settings,
-      };
-      const updatedEvents = events.map((e) =>
-        e.id === updatedEvent.id ? updatedEvent : e
-      );
-
+    // Apply settings to all events so PhotoBooth (which reads event.settings) picks them up.
+    if (events.length > 0) {
+      const updatedEvents = events.map((e) => ({
+        ...e,
+        settings: { ...(e.settings ?? {}), ...settings },
+      }));
       await persistEvents(updatedEvents);
-      notify(showToast, "Event settings updated");
+
+      if (currentEvent) {
+        setCurrentEvent((prev) => prev ? { ...prev, settings: { ...(prev.settings ?? {}), ...settings } } : prev);
+      }
     }
   };
 
@@ -2145,7 +2368,7 @@ This cannot be undone.`
   useEffect(() => {
     if (selectedPrinter) {
       loadPrinterCapabilities(selectedPrinter);
-      checkPrinterHealth();
+      checkPrinterHealth({ silent: true });
     } else {
       setPrinterCapabilities(null);
       setPrinterOnline(false);
@@ -2158,7 +2381,10 @@ This cannot be undone.`
       let s = null;
 
       if (native?.getSettings && identity?.userId) {
-        s = await native.getSettings({ userId: identity.userId });
+        const result = await native.getSettings({ userId: identity.userId });
+        if (result && Object.keys(result).length > 0) {
+          s = result;
+        }
       }
 
       if (!s) {
@@ -2166,6 +2392,8 @@ This cannot be undone.`
         if (!saved) return;
         s = JSON.parse(saved);
       }
+
+      if (!s || Object.keys(s).length === 0) return;
 
       // CAMERA
       setSelectedCameraId(s.selectedCameraId ?? "");
@@ -2229,7 +2457,13 @@ This cannot be undone.`
 
       // BUSINESS
       setPaymentEnabled(s.business?.paymentEnabled ?? DEFAULT_BUSINESS.paymentEnabled);
+      setActiveProvider(s.business?.activeProvider ?? null);
       setPaymentProviders(s.business?.payment?.providers ?? { ...DEFAULT_BUSINESS.payment.providers });
+      setStripeProviders(s.business?.payment?.stripeProviders ?? { ...DEFAULT_STRIPE_PROVIDERS });
+      setXenditProviders(s.business?.payment?.xenditProviders ?? { ...DEFAULT_XENDIT_PROVIDERS });
+      setPaypalProviders(s.business?.payment?.paypalProviders ?? { ...DEFAULT_PAYPAL_PROVIDERS });
+      setCashMode(s.business?.payment?.cashMode ?? "manual");
+      setGcashStaticQrDataUrl(s.business?.payment?.gcashStaticQrDataUrl ?? "");
       setPricingModel(s.business?.pricing?.model ?? DEFAULT_BUSINESS.pricing.model);
       setPricePerSession(s.business?.pricing?.pricePerSession ?? DEFAULT_BUSINESS.pricing.pricePerSession);
       setAdditionalPrintPrice(s.business?.pricing?.additionalPrintPrice ?? DEFAULT_BUSINESS.pricing.additionalPrintPrice);
@@ -2242,14 +2476,63 @@ This cannot be undone.`
   }, [identity?.userId, native]);
 
   useEffect(() => {
-    loadSettingsFromStorage();
-  }, [loadSettingsFromStorage]);
+    let cancelled = false;
 
-  useEffect(() => {
-    if (activeMain === "settings") {
-      loadSettingsFromStorage();
-    }
-  }, [activeMain]); // eslint-disable-line react-hooks/exhaustive-deps
+    (async () => {
+      // Probe hardware status quietly on startup so dashboard tiles
+      // reflect the real state without requiring a visit to Settings.
+
+      // Camera
+      try {
+        const devices = (await native?.listCameras?.()) ?? [];
+        if (!cancelled) {
+          const normalized = normalizeCameraList(devices);
+          setCameraList(normalized);
+          if (normalized.length) {
+            setCameraOnline(true);
+            setCameraStatusText(`${normalized.length} camera${normalized.length > 1 ? "s" : ""} detected`);
+          } else {
+            setCameraOnline(false);
+            setCameraStatusText("No cameras detected");
+          }
+        }
+      } catch { if (!cancelled) { setCameraOnline(false); setCameraStatusText("Camera check failed"); } }
+
+      // Read saved settings once for printer + storage probes
+      let saved = null;
+      try {
+        if (native?.getSettings && identity?.userId) {
+          saved = await native.getSettings({ userId: identity.userId });
+        }
+        if (!saved) {
+          try { saved = JSON.parse(localStorage.getItem("boothSettings") || "{}"); } catch {}
+        }
+      } catch {}
+
+      // Printer
+      try {
+        const savedPrinter = saved?.selectedPrinter;
+        if (savedPrinter && !cancelled) {
+          const status = await safeInvoke("printer:status", savedPrinter);
+          if (!cancelled) {
+            const online = !!status?.online;
+            setPrinterOnline(online);
+            setPrinterStatusText(status?.message || (online ? "Printer is online" : "Printer is offline"));
+          }
+        }
+      } catch { if (!cancelled) { setPrinterOnline(false); setPrinterStatusText("Printer check failed"); } }
+
+      // Storage
+      try {
+        const savedStoragePath = saved?.storagePath;
+        if (savedStoragePath && !cancelled) {
+          await loadStorageInfo(savedStoragePath);
+        }
+      } catch { /* silent */ }
+    })();
+
+    return () => { cancelled = true; };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (activeMain === "settings" && activeSettingsTab === "camera") {
@@ -2257,7 +2540,15 @@ This cannot be undone.`
     }
   }, [activeMain, activeSettingsTab]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const plan = license?.plan ?? gating?.plan ?? null; // null | 'trial' | 'monthly' | 'yearly'
+  const rawPlan = license?.plan ?? gating?.plan ?? null;
+  const plan = rawPlan === "pro_yearly" ? "yearly"
+    : rawPlan === "pro_monthly" ? "monthly"
+    : rawPlan === "pro" ? "monthly"
+    : rawPlan;
+  const planDisplayName = plan === "yearly" ? "Pro Yearly"
+    : plan === "monthly" ? "Pro Monthly"
+    : plan === "trial" ? "Trial"
+    : "Free";
   const ent = license?.entitlements ?? {};
   const expiresAt = license?.expiresAt ?? 0;
   const eventLimit = Number(gating?.maxEvents ?? ent?.maxEvents ?? 1);
@@ -2306,8 +2597,9 @@ This cannot be undone.`
       endSessionSummaryEnabled,
     },
     business: {
+      activeProvider,
       paymentEnabled,
-      payment: { providers: { ...paymentProviders } },
+      payment: { providers: { ...paymentProviders }, stripeProviders: { ...stripeProviders }, xenditProviders: { ...xenditProviders }, paypalProviders: { ...paypalProviders } },
       pricing: {
         model: pricingModel,
         pricePerSession,
@@ -2325,6 +2617,13 @@ This cannot be undone.`
   const alreadyRedeemedOrExpired =
     Boolean(license?.trialRedeemed) || Boolean(license?.trialExpired);
   const trialEligible = !hasPaidPlan && !alreadyRedeemedOrExpired;
+  // Payment gateway availability
+  const anyProviderConfigured = paymongoConfigured || stripeConfigured || xenditConfigured || paypalConfigured;
+  const activeProviderIsTest =
+    (activeProvider === "paymongo" && paymongoTestMode) ||
+    (activeProvider === "stripe" && stripeTestMode) ||
+    (activeProvider === "xendit" && xenditTestMode) ||
+    (activeProvider === "paypal" && paypalSandboxMode);
 
   // ===== Supabase-aware billing and license adapters =====
 
@@ -2367,7 +2666,7 @@ This cannot be undone.`
       const [
         persistedEvents, appearance, settings,
         persistedTemplates, persistedFrames, persistedTones, persistedPalettes,
-        currentEventId, currentSubTab
+        currentEventId, currentSubTab, persistedActiveMain
       ] = await Promise.all([
         native.getEvents?.(ctx),
         native.getAppearance?.(ctx),
@@ -2378,6 +2677,7 @@ This cannot be undone.`
         native.getPalettes?.(ctx),
         native.getCurrentEventId?.(),
         native.getCurrentSubTab?.(),
+        native.getActiveMain?.(),
       ]);
 
       // Events
@@ -2396,6 +2696,7 @@ This cannot be undone.`
             }
             : null
         );
+        setBackgroundType(appearance.backgroundType ?? "media");
         setBoothName(appearance.boothName ?? "");
         setBoothSlogan(appearance.boothSlogan ?? "");
         setHeaderFont(appearance.headerFont ?? "Inter");
@@ -2478,13 +2779,12 @@ This cannot be undone.`
         // Business
         const business = settings.business ?? {};
         setPaymentEnabled(business.paymentEnabled ?? DEFAULT_BUSINESS.paymentEnabled);
-        const prov = business.payment?.providers ?? DEFAULT_BUSINESS.payment.providers;
-        setPaymentProviders({
-          gcash: !!prov.gcash,
-          paypal: !!prov.paypal,
-          stripe: !!prov.stripe,
-          cash: prov.cash ?? true,
-        });
+        setActiveProvider(business.activeProvider ?? null);
+        setPaymentProviders(business.payment?.providers ?? { ...DEFAULT_BUSINESS.payment.providers });
+        setStripeProviders(business.payment?.stripeProviders ?? { ...DEFAULT_STRIPE_PROVIDERS });
+        setXenditProviders(business.payment?.xenditProviders ?? { ...DEFAULT_XENDIT_PROVIDERS });
+        setPaypalProviders(business.payment?.paypalProviders ?? { ...DEFAULT_PAYPAL_PROVIDERS });
+        setCashMode(business.payment?.cashMode ?? "manual");
         const pricing = business.pricing ?? DEFAULT_BUSINESS.pricing;
         setPricingModel(pricing.model ?? DEFAULT_BUSINESS.pricing.model);
         setPricePerSession(pricing.pricePerSession ?? DEFAULT_BUSINESS.pricing.pricePerSession);
@@ -2505,9 +2805,13 @@ This cannot be undone.`
         const found = persistedEvents.find((e) => e.id === currentEventId);
         if (found) {
           setCurrentEvent(JSON.parse(JSON.stringify(found)));
-          setActiveMain("dashboard");
           setActiveSub(currentSubTab ?? "branding");
         }
+      }
+
+      // Restore active main tab (default to "home" if nothing persisted)
+      if (persistedActiveMain) {
+        setActiveMain(persistedActiveMain);
       }
 
       setHydrated(true);
@@ -2755,7 +3059,20 @@ This cannot be undone.`
         .eq('user_id', user.id)
         .order('last_seen_at', { ascending: false });
 
-      if (!error) setBooths(data || []);
+      if (!error) {
+        // Heartbeat is every 30 s. If last_seen_at is >2 min old the booth
+        // has stopped sending heartbeats (crash / force-quit) — treat as offline.
+        const STALE_MS = 2 * 60 * 1000;
+        const now = Date.now();
+        setBooths(
+          (data || []).map((b) => ({
+            ...b,
+            is_online: b.is_online && b.last_seen_at
+              ? now - new Date(b.last_seen_at).getTime() < STALE_MS
+              : false,
+          }))
+        );
+      }
     } catch (err) {
       console.error('loadBooths failed:', err);
     } finally {
@@ -2839,12 +3156,12 @@ This cannot be undone.`
   const renderAccountBilling = () => (
     <div className="space-y-6">
       {/* ===== HERO — gradient header ===== */}
-      <div className="relative overflow-hidden rounded-3xl border border-white/20 bg-gradient-to-br from-indigo-500 via-indigo-600 to-violet-700 px-6 py-7 text-white shadow-[0_24px_64px_rgba(79,70,229,0.25)]">
+      <div className="relative overflow-hidden rounded-xl border border-white/20 bg-gradient-to-br from-blue-500 via-blue-600 to-blue-800 px-6 py-7 text-white shadow-[0_24px_64px_rgba(37,99,235,0.25)]">
         <WavePattern />
         <div className="relative z-10 flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-center gap-5">
             {/* Avatar */}
-            <div className="h-16 w-16 flex-shrink-0 overflow-hidden rounded-2xl border-2 border-white/30 bg-white/10 shadow-lg">
+            <div className="h-16 w-16 flex-shrink-0 overflow-hidden rounded-lg border-2 border-white/30 bg-white/10 shadow-lg">
               {accountForm.badgePhoto ? (
                 <img src={accountForm.badgePhoto} alt="Avatar" className="h-full w-full object-cover" />
               ) : (
@@ -2871,26 +3188,19 @@ This cannot be undone.`
               {(license?.active || gating?.allow) ? "Licensed" : trialEligible ? "Trial available" : "No active plan"}
             </span>
             {(license?.active || gating?.allow) && (
-              <button
-                onClick={() => {
-                  fallbackCustomerPortal()
-                    .then(({ url }) => {
-                      if (url) { window.system?.openExternal?.(url) ?? window.open(url, "_blank", "noopener,noreferrer"); }
-                      else { showToast?.("Portal URL not returned"); }
-                    })
-                    .catch((e) => { showToast?.(`Open portal failed: ${e?.message ?? "unknown error"}`); });
-                }}
-                className="inline-flex items-center justify-center rounded-full bg-white px-5 py-2.5 text-sm font-semibold text-indigo-700 shadow-md transition hover:-translate-y-0.5 hover:shadow-lg"
+              <a
+                href={`mailto:support@studiophotuna.com?subject=${encodeURIComponent(`Billing Inquiry — ${plan === "yearly" ? "Yearly" : plan === "monthly" ? "Monthly" : "Pro"} Plan`)}&body=${encodeURIComponent(`Hi Studio Photuna,\n\nI need help with my current subscription.\n\nAccount: ${user?.email ?? ""}\nPlan: ${plan ?? "active"}\n\nDetails:\n`)}`}
+                className="inline-flex items-center justify-center rounded-lg bg-white px-5 py-2.5 text-sm font-semibold text-blue-700 shadow-md transition hover:-translate-y-0.5 hover:shadow-lg"
               >
                 Manage billing
-              </button>
+              </a>
             )}
             <button
               onClick={async () => {
                 try { await refreshLicense(); showToast?.("License refreshed"); }
                 catch (e) { showToast?.("Failed to refresh"); }
               }}
-              className="inline-flex items-center justify-center rounded-full border border-white/25 bg-white/15 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-white/25"
+              className="inline-flex items-center justify-center rounded-lg border border-white/25 bg-white/15 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-white/25"
             >
               Refresh status
             </button>
@@ -2900,14 +3210,14 @@ This cannot be undone.`
         {/* Plan stat tiles inside the gradient */}
         <div className="relative z-10 mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
           {[
-            { label: "Plan", value: licenseLoading && !plan ? "…" : plan ? String(plan).charAt(0).toUpperCase() + String(plan).slice(1) : "Free" },
+            { label: "Plan", value: licenseLoading && !plan ? "…" : planDisplayName },
             { label: "Status", value: (license?.active || gating?.allow) ? "Active" : "Inactive" },
             { label: "Events", value: `${events.length} / ${eventLimit === Infinity ? "∞" : eventLimit}` },
             { label: "Templates", value: `${templateLimit === Infinity ? "∞" : templateLimit} max` },
             { label: "Gallery", value: galleryAddonEnabled ? "Enabled" : "Off" },
-            { label: "Best Value", value: prices?.yearly?.display ?? "$204 / yr" },
+            { label: "Best Value", value: prices?.yearly?.display ?? "₱950 / mo" },
           ].map(({ label, value }) => (
-            <div key={label} className="rounded-2xl border border-white/15 bg-white/10 p-3 backdrop-blur-sm">
+            <div key={label} className="rounded-lg border border-white/15 bg-white/10 p-3 backdrop-blur-sm">
               <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/70">{label}</div>
               <div className="mt-1 text-sm font-bold text-white truncate">{value}</div>
             </div>
@@ -2920,16 +3230,16 @@ This cannot be undone.`
         {[
           ["profile", "Profile"],
           ["security", "Security"],
-          ["billing", "Billing"],
+          ["billing", "Billing & Gallery"],
+          ["business", "Business"],
           ["preferences", "Preferences"],
-          ["gallery", "Gallery"],
         ].map(([key, label]) => (
           <button
             key={key}
             type="button"
             onClick={() => setAccountTab(key)}
             className={`px-5 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 ${accountTab === key
-              ? "bg-indigo-600 text-white shadow-md shadow-indigo-200"
+              ? "bg-blue-600 text-white shadow-md shadow-blue-200"
               : "text-slate-500 hover:bg-slate-100 hover:text-slate-900"
               }`}
           >
@@ -2944,7 +3254,7 @@ This cannot be undone.`
           {/* Left — avatar card */}
           <div className={`${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_CARD} p-6`}>
             <div className="flex flex-col items-center text-center">
-              <div className="h-28 w-28 overflow-hidden rounded-3xl border-2 border-slate-200 bg-slate-100 shadow-inner">
+              <div className="h-28 w-28 overflow-hidden rounded-xl border-2 border-slate-200 bg-slate-100 shadow-inner">
                 {accountForm.badgePhoto ? (
                   <img src={accountForm.badgePhoto} alt="Badge" className="h-full w-full object-cover" />
                 ) : (
@@ -2961,7 +3271,7 @@ This cannot be undone.`
               <button
                 type="button"
                 onClick={chooseBadgePhoto}
-                className="mt-5 inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-5 py-2.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 hover:border-slate-300"
+                className="mt-5 inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-5 py-2.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 hover:border-slate-300"
               >
                 Update photo
               </button>
@@ -2972,7 +3282,7 @@ This cannot be undone.`
               {[
                 { label: "Company", value: accountForm.company || "—" },
                 { label: "Phone", value: accountForm.phone || "—" },
-                { label: "Plan", value: plan ? String(plan).charAt(0).toUpperCase() + String(plan).slice(1) : "Free" },
+                { label: "Plan", value: planDisplayName },
               ].map(({ label, value }) => (
                 <div key={label} className="flex items-center justify-between text-xs">
                   <span className="text-slate-400 font-medium">{label}</span>
@@ -2997,7 +3307,7 @@ This cannot be undone.`
                   value={accountForm.displayName}
                   onChange={(e) => updateAccountField("displayName", e.target.value)}
                   placeholder="Your full name"
-                  className={`${SURFACE_BG} ${SURFACE_BORDER} ${INPUT_RADIUS} w-full px-4 py-2.5 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 transition`}
+                  className={`${SURFACE_BG} ${SURFACE_BORDER} ${INPUT_RADIUS} w-full px-4 py-2.5 text-sm outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100 transition`}
                 />
               </div>
 
@@ -3008,7 +3318,7 @@ This cannot be undone.`
                   value={accountForm.email}
                   onChange={(e) => updateAccountField("email", e.target.value)}
                   placeholder="you@example.com"
-                  className={`${SURFACE_BG} ${SURFACE_BORDER} ${INPUT_RADIUS} w-full px-4 py-2.5 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 transition`}
+                  className={`${SURFACE_BG} ${SURFACE_BORDER} ${INPUT_RADIUS} w-full px-4 py-2.5 text-sm outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100 transition`}
                 />
               </div>
 
@@ -3019,19 +3329,15 @@ This cannot be undone.`
                   value={accountForm.phone}
                   onChange={(e) => updateAccountField("phone", e.target.value)}
                   placeholder="+63 9XX XXX XXXX"
-                  className={`${SURFACE_BG} ${SURFACE_BORDER} ${INPUT_RADIUS} w-full px-4 py-2.5 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 transition`}
+                  className={`${SURFACE_BG} ${SURFACE_BORDER} ${INPUT_RADIUS} w-full px-4 py-2.5 text-sm outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100 transition`}
                 />
               </div>
 
               <div className="space-y-1.5">
                 <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Role</label>
-                <input
-                  type="text"
-                  value={accountForm.role}
-                  onChange={(e) => updateAccountField("role", e.target.value)}
-                  placeholder="e.g. Operator, Owner"
-                  className={`${SURFACE_BG} ${SURFACE_BORDER} ${INPUT_RADIUS} w-full px-4 py-2.5 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 transition`}
-                />
+                <div className={`${SURFACE_BG} ${SURFACE_BORDER} ${INPUT_RADIUS} w-full px-4 py-2.5 text-sm text-slate-500`}>
+                  {accountForm.role || "Administrator"}
+                </div>
               </div>
 
               <div className="space-y-1.5 md:col-span-2">
@@ -3041,7 +3347,7 @@ This cannot be undone.`
                   value={accountForm.company}
                   onChange={(e) => updateAccountField("company", e.target.value)}
                   placeholder="Your business name"
-                  className={`${SURFACE_BG} ${SURFACE_BORDER} ${INPUT_RADIUS} w-full px-4 py-2.5 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 transition`}
+                  className={`${SURFACE_BG} ${SURFACE_BORDER} ${INPUT_RADIUS} w-full px-4 py-2.5 text-sm outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100 transition`}
                 />
               </div>
             </div>
@@ -3051,7 +3357,7 @@ This cannot be undone.`
                 type="button"
                 onClick={saveAccountProfile}
                 disabled={profileSaving}
-                className="inline-flex items-center justify-center rounded-full bg-indigo-600 px-6 py-2.5 text-sm font-semibold text-white shadow-md shadow-indigo-200 transition hover:-translate-y-0.5 hover:bg-indigo-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex items-center justify-center rounded-lg bg-blue-600 px-6 py-2.5 text-sm font-semibold text-white shadow-md shadow-blue-200 transition hover:-translate-y-0.5 hover:bg-blue-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {profileSaving ? "Saving..." : "Save profile"}
               </button>
@@ -3078,7 +3384,7 @@ This cannot be undone.`
                   value={passwordForm.currentPassword}
                   onChange={(e) => updatePasswordField("currentPassword", e.target.value)}
                   placeholder="Enter current password"
-                  className={`${SURFACE_BG} ${SURFACE_BORDER} ${INPUT_RADIUS} w-full px-4 py-2.5 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 transition`}
+                  className={`${SURFACE_BG} ${SURFACE_BORDER} ${INPUT_RADIUS} w-full px-4 py-2.5 text-sm outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100 transition`}
                 />
               </div>
 
@@ -3089,7 +3395,7 @@ This cannot be undone.`
                   value={passwordForm.newPassword}
                   onChange={(e) => updatePasswordField("newPassword", e.target.value)}
                   placeholder="At least 8 characters"
-                  className={`${SURFACE_BG} ${SURFACE_BORDER} ${INPUT_RADIUS} w-full px-4 py-2.5 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 transition`}
+                  className={`${SURFACE_BG} ${SURFACE_BORDER} ${INPUT_RADIUS} w-full px-4 py-2.5 text-sm outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100 transition`}
                 />
               </div>
 
@@ -3100,7 +3406,7 @@ This cannot be undone.`
                   value={passwordForm.confirmPassword}
                   onChange={(e) => updatePasswordField("confirmPassword", e.target.value)}
                   placeholder="Re-enter new password"
-                  className={`${SURFACE_BG} ${SURFACE_BORDER} ${INPUT_RADIUS} w-full px-4 py-2.5 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 transition`}
+                  className={`${SURFACE_BG} ${SURFACE_BORDER} ${INPUT_RADIUS} w-full px-4 py-2.5 text-sm outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100 transition`}
                 />
               </div>
             </div>
@@ -3110,7 +3416,7 @@ This cannot be undone.`
                 type="button"
                 onClick={changePassword}
                 disabled={passwordSaving}
-                className="inline-flex items-center justify-center rounded-full bg-indigo-600 px-6 py-2.5 text-sm font-semibold text-white shadow-md shadow-indigo-200 transition hover:-translate-y-0.5 hover:bg-indigo-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex items-center justify-center rounded-lg bg-blue-600 px-6 py-2.5 text-sm font-semibold text-white shadow-md shadow-blue-200 transition hover:-translate-y-0.5 hover:bg-blue-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {passwordSaving ? "Updating..." : "Change password"}
               </button>
@@ -3156,7 +3462,7 @@ This cannot be undone.`
                   "Change credentials immediately when booth access is shared with new team members.",
                 ].map((tip, i) => (
                   <div key={i} className="flex items-start gap-2.5 text-xs text-slate-600 leading-relaxed">
-                    <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-indigo-50 text-[10px] font-bold text-indigo-600 mt-px">{i + 1}</span>
+                    <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-blue-50 text-[10px] font-bold text-blue-600 mt-px">{i + 1}</span>
                     <span>{tip}</span>
                   </div>
                 ))}
@@ -3169,30 +3475,8 @@ This cannot be undone.`
       {/* ===== BILLING TAB ===== */}
       {accountTab === "billing" && (
         <>
-          {/* Backend / Stripe connectivity error banner */}
-          {subscriptionError && (
-            <div className={`${CARD_RADIUS} border border-amber-200 bg-amber-50 p-4 flex items-start gap-3`}>
-              <svg className="h-5 w-5 flex-shrink-0 text-amber-500 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
-              </svg>
-              <div>
-                <div className="text-sm font-semibold text-amber-800">Billing server unreachable</div>
-                <p className="mt-1 text-xs text-amber-700 leading-relaxed">
-                  {subscriptionError}. Your backend API or Stripe webhook may not be configured. Billing management will be unavailable until the server is reachable.
-                </p>
-                <button type="button" onClick={() => refreshLicense()} className="mt-2 text-xs font-semibold text-amber-800 underline hover:no-underline">
-                  Retry connection
-                </button>
-              </div>
-            </div>
-          )}
-
           {/* Current subscription summary */}
           <div className={`${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_CARD} p-6`}>
-            <div className="mb-4">
-              <h4 className="text-sm font-bold text-slate-900">Current Subscription</h4>
-              <p className="mt-1 text-xs text-slate-500">Review the entitlement and subscription status applied to your account.</p>
-            </div>
             <SubscriptionSummary license={license} gating={gating} prices={prices} />
           </div>
 
@@ -3203,21 +3487,21 @@ This cannot be undone.`
                 <h4 className="text-sm font-bold text-slate-900">Choose a Plan</h4>
                 <p className="mt-1 text-xs text-slate-500">Start free, then choose monthly flexibility or yearly savings.</p>
               </div>
-              <span className="inline-flex rounded-full bg-indigo-50 px-3 py-1 text-[11px] font-semibold text-indigo-700">Recommended: Yearly</span>
+              <span className="inline-flex rounded-full bg-blue-50 px-3 py-1 text-[11px] font-semibold text-blue-700">Recommended: Yearly</span>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5 items-stretch">
               {/* Trial Card */}
-              <div className="rounded-3xl border border-slate-200 bg-white p-6 flex flex-col justify-between hover:shadow-md transition-shadow">
+              <div className="rounded-xl border border-slate-200 bg-white p-6 flex flex-col justify-between hover:shadow-md transition-shadow">
                 <div className="space-y-4">
-                  <span className="inline-flex rounded-full bg-indigo-50 px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest text-indigo-600">Trial</span>
+                  <span className="inline-flex rounded-full bg-blue-50 px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest text-blue-600">Trial</span>
                   <h3 className="text-xl font-bold text-slate-900">14-Day Free Trial</h3>
                   <div className="text-4xl font-black text-slate-900">₱0</div>
-                  <p className="text-sm text-slate-500">Test every operator workspace feature before committing.</p>
+                  <p className="text-sm text-slate-500">Test the operator workspace before committing to a plan.</p>
                   <div className="space-y-2 pt-3">
-                    {["Custom template mapping", "Local printer integration", "Event dashboard configuration", "Full booth flow experience"].map((feat) => (
+                    {["3 events, 5 templates", "Watermark enabled", "Full booth flow experience", "No payment required"].map((feat) => (
                       <div key={feat} className="flex items-center gap-2 text-sm text-slate-700">
-                        <svg className="h-4 w-4 flex-shrink-0 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                        <svg className="h-4 w-4 flex-shrink-0 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
                         <span>{feat}</span>
                       </div>
                     ))}
@@ -3236,7 +3520,7 @@ This cannot be undone.`
                       showToast?.(`Trial failed: ${e?.message ?? "unknown error"}`);
                     }
                   }}
-                  className={`mt-6 w-full rounded-full py-3 text-sm font-bold transition-all duration-200 ${trialEligible
+                  className={`mt-6 w-full rounded-lg py-3 text-sm font-bold transition-all duration-200 ${trialEligible
                     ? "border border-slate-200 text-slate-800 hover:bg-slate-50 hover:-translate-y-0.5 hover:shadow-md"
                     : "border border-slate-100 text-slate-400 cursor-not-allowed bg-slate-50"
                     }`}
@@ -3246,8 +3530,8 @@ This cannot be undone.`
               </div>
 
               {/* Pro Card — with billing cycle toggle */}
-              <div className="relative rounded-3xl border-2 border-indigo-500 bg-slate-900 p-6 flex flex-col justify-between text-white shadow-[0_24px_64px_rgba(79,70,229,0.2)] md:scale-[1.02]">
-                <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-indigo-600 px-4 py-1 text-[11px] font-bold uppercase tracking-widest text-white shadow-md">
+              <div className="relative rounded-xl border-2 border-blue-500 bg-slate-900 p-6 flex flex-col justify-between text-white shadow-[0_24px_64px_rgba(37,99,235,0.2)] md:scale-[1.02]">
+                <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-blue-600 px-4 py-1 text-[11px] font-bold uppercase tracking-widest text-white shadow-md">
                   Best Value
                 </span>
                 <div className="space-y-4 mt-2">
@@ -3279,39 +3563,51 @@ This cannot be undone.`
                     </div>
                     <p className="mt-1 text-sm text-white/70">
                       {billingCycle === "yearly"
-                        ? `${prices?.yearly?.annual ?? "₱11,400"} billed annually. Save up to 47% vs monthly.`
-                        : "Billed monthly. Switch to yearly for better value."}
+                        ? `${prices?.yearly?.annual ?? "₱11,400"} one-time payment for 12 months. Save ₱10,200 vs monthly.`
+                        : "Billed monthly via GCash. Switch to yearly for better value."}
                     </p>
                   </div>
 
                   <div className="space-y-2 pt-2">
                     {[
-                      { icon: "star", text: billingCycle === "yearly" ? "Best value choice" : "Full month flexibility" },
+                      { icon: "star", text: billingCycle === "yearly" ? "50 events, 100 templates" : "20 events, 30 templates" },
+                      { icon: "check", text: "Watermark removed" },
+                      { icon: "check", text: billingCycle === "yearly" ? "Priority support included" : "Standard support" },
                       { icon: "check", text: "Continuous software feature releases" },
-                      { icon: "check", text: "Priority developer support queue" },
-                      { icon: "check", text: "Unlimited events and sessions" },
                     ].map(({ icon, text }) => (
                       <div key={text} className="flex items-center gap-2 text-sm font-medium text-white/90">
                         {icon === "star" ? (
                           <svg className="h-4 w-4 flex-shrink-0 text-yellow-400" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87L18.18 22 12 18.56 5.82 22 7 14.14l-5-4.87 6.91-1.01L12 2z" /></svg>
                         ) : (
-                          <svg className="h-4 w-4 flex-shrink-0 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                          <svg className="h-4 w-4 flex-shrink-0 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
                         )}
                         <span>{text}</span>
                       </div>
                     ))}
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setGcashBilling(billingCycle);
-                    openGcashPayment("pro");
-                  }}
-                  className="mt-6 w-full rounded-full bg-indigo-600 py-3 text-sm font-bold text-white shadow-md transition-all duration-200 hover:bg-indigo-500 hover:-translate-y-0.5 hover:shadow-lg active:scale-[0.98]"
-                >
-                  {(plan === "monthly" || plan === "yearly") ? "Manage Plan" : `Pay via GCash — ${billingCycle === "yearly" ? "Yearly" : "Monthly"}`}
-                </button>
+                {hasPaidPlan ? (
+                  <div className="mt-6 space-y-2">
+                    <div className="w-full rounded-lg bg-emerald-500 py-3 text-sm font-bold text-white text-center shadow-md cursor-default">
+                      Plan Active
+                    </div>
+                    <p className="text-center text-[11px] text-white/60">
+                      To change or cancel, email{" "}
+                      <a href="mailto:support@studiophotuna.com" className="underline text-white/80">support@studiophotuna.com</a>
+                    </p>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setGcashBilling(billingCycle);
+                      openGcashPayment("pro");
+                    }}
+                    className="mt-6 w-full rounded-lg bg-blue-600 py-3 text-sm font-bold text-white shadow-md transition-all duration-200 hover:bg-blue-500 hover:-translate-y-0.5 hover:shadow-lg active:scale-[0.98]"
+                  >
+                    {`Pay via GCash — ${billingCycle === "yearly" ? "Yearly" : "Monthly"}`}
+                  </button>
+                )}
               </div>
             </div>
 
@@ -3327,120 +3623,32 @@ This cannot be undone.`
             ].map(({ title, desc, icon }) => (
               <div key={title} className={`${CARD_RADIUS} border border-slate-100 bg-slate-50/60 p-5`}>
                 <div className="flex items-center gap-2.5 mb-2">
-                  <svg className="h-4 w-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={icon} /></svg>
+                  <svg className="h-4 w-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={icon} /></svg>
                   <div className="text-sm font-semibold text-slate-800">{title}</div>
                 </div>
                 <p className="text-xs leading-relaxed text-slate-500">{desc}</p>
               </div>
             ))}
           </div>
-        </>
-      )}
 
-      {/* ===== PREFERENCES TAB ===== */}
-      {accountTab === "preferences" && (
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-          <div className={`${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_CARD} p-6`}>
-            <div className="mb-5">
-              <h4 className="text-sm font-bold text-slate-900">Notifications & Behavior</h4>
-              <p className="mt-1 text-xs text-slate-500">Control how the dashboard behaves for this account.</p>
-            </div>
-
-            <div className="space-y-1">
-              {[
-                { key: "emailNotifications", label: "Email notifications", desc: "Receive email updates about events and sessions" },
-                { key: "desktopNotifications", label: "Desktop notifications", desc: "Show system notifications for important alerts" },
-                { key: "soundEnabled", label: "Enable sounds", desc: "Play audio feedback for booth actions and alerts" },
-                { key: "autoLaunch", label: "Launch on startup", desc: "Automatically start the app when your computer boots" },
-              ].map(({ key, label, desc }) => (
-                <label key={key} className="flex items-center justify-between gap-4 rounded-xl p-3 hover:bg-slate-50 transition cursor-pointer">
-                  <div>
-                    <div className="text-sm font-medium text-slate-800">{label}</div>
-                    <div className="text-xs text-slate-400 mt-0.5">{desc}</div>
-                  </div>
-                  <div className="relative flex-shrink-0">
-                    <input
-                      type="checkbox"
-                      checked={accountPreferences[key]}
-                      onChange={(e) => updateAccountPreference(key, e.target.checked)}
-                      className="sr-only peer"
-                    />
-                    <div className="h-6 w-11 rounded-full bg-slate-200 peer-checked:bg-indigo-600 transition-colors" />
-                    <div className="absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform peer-checked:translate-x-5" />
-                  </div>
-                </label>
-              ))}
-            </div>
+          {/* ── Gallery & Video Archive ── */}
+          <div className="flex items-center gap-4 pt-2">
+            <div className="flex-1 h-px bg-slate-200" />
+            <span className="text-xs font-semibold uppercase tracking-widest text-slate-400">Gallery & Video Archive</span>
+            <div className="flex-1 h-px bg-slate-200" />
           </div>
 
-          <div className="space-y-6">
-            <div className={`${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_CARD} p-6`}>
-              <h4 className="text-sm font-bold text-slate-900 mb-4">Appearance & Language</h4>
-              <div className="space-y-5">
-                <div className="space-y-1.5">
-                  <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Theme</label>
-                  <div className="grid grid-cols-3 gap-2">
-                    {[
-                      { value: "system", label: "System" },
-                      { value: "light", label: "Light" },
-                      { value: "dark", label: "Dark" },
-                    ].map(({ value, label }) => (
-                      <button
-                        key={value}
-                        type="button"
-                        onClick={() => updateAccountPreference("theme", value)}
-                        className={`rounded-xl border py-2.5 text-sm font-semibold transition-all ${accountPreferences.theme === value
-                          ? "border-indigo-300 bg-indigo-50 text-indigo-700 shadow-sm"
-                          : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50"
-                          }`}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Language</label>
-                  <div className="grid grid-cols-2 gap-2">
-                    {[
-                      { value: "en", label: "English" },
-                      { value: "fil", label: "Filipino" },
-                    ].map(({ value, label }) => (
-                      <button
-                        key={value}
-                        type="button"
-                        onClick={() => updateAccountPreference("language", value)}
-                        className={`rounded-xl border py-2.5 text-sm font-semibold transition-all ${accountPreferences.language === value
-                          ? "border-indigo-300 bg-indigo-50 text-indigo-700 shadow-sm"
-                          : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50"
-                          }`}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
+          {/* Gate notice for free / trial users */}
+          {!hasPaidPlan && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-5 py-4 flex items-start gap-3">
+              <svg className="h-4 w-4 flex-shrink-0 text-amber-500 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" /></svg>
+              <p className="text-sm text-amber-800">
+                <span className="font-semibold">Gallery add-ons require an active Pro plan.</span>{" "}
+                Upgrade to Monthly or Yearly above, then come back to activate a Gallery tier.
+              </p>
             </div>
+          )}
 
-            <div className="flex justify-end">
-              <button
-                type="button"
-                onClick={saveAccountPreferences}
-                disabled={prefsSaving}
-                className="inline-flex items-center justify-center rounded-full bg-indigo-600 px-6 py-2.5 text-sm font-semibold text-white shadow-md shadow-indigo-200 transition hover:-translate-y-0.5 hover:bg-indigo-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {prefsSaving ? "Saving..." : "Save preferences"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ===== GALLERY TAB ===== */}
-      {accountTab === "gallery" && (
-        <div className="space-y-6">
           {/* Gallery header */}
           <div className="text-center max-w-2xl mx-auto">
             <h3 className="text-lg font-bold text-slate-900">Gallery & Video Archive Plans</h3>
@@ -3448,10 +3656,10 @@ This cannot be undone.`
           </div>
 
           {/* 3-tier pricing grid */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-5 items-stretch">
+          <div className={`grid grid-cols-1 md:grid-cols-3 gap-5 items-stretch ${!hasPaidPlan ? "opacity-60 pointer-events-none select-none" : ""}`}>
 
             {/* FREE tier */}
-            <div className={`rounded-3xl border ${galleryPlan === "free" ? "border-indigo-300 ring-2 ring-indigo-100" : "border-slate-200"} bg-white p-6 flex flex-col justify-between hover:shadow-md transition-all`}>
+            <div className={`rounded-xl border ${galleryPlan === "free" ? "border-blue-300 ring-2 ring-blue-100" : "border-slate-200"} bg-white p-6 flex flex-col justify-between hover:shadow-md transition-all`}>
               <div className="space-y-4">
                 <span className="inline-flex rounded-full bg-slate-100 px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest text-slate-600">Free</span>
                 <div>
@@ -3461,42 +3669,42 @@ This cannot be undone.`
 
                 <div className="pt-3 space-y-3">
                   <div className="flex items-start gap-2.5">
-                    <svg className="h-4 w-4 flex-shrink-0 text-indigo-500 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                    <svg className="h-4 w-4 flex-shrink-0 text-blue-500 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
                     <div>
                       <div className="text-sm font-semibold text-slate-800">Video Archive</div>
                       <div className="text-xs text-slate-500">Up to 1 week</div>
                     </div>
                   </div>
                   <div className="flex items-start gap-2.5">
-                    <svg className="h-4 w-4 flex-shrink-0 text-indigo-500 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                    <svg className="h-4 w-4 flex-shrink-0 text-blue-500 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
                     <div>
                       <div className="text-sm font-semibold text-slate-800">Photo Archive</div>
                       <div className="text-xs text-slate-500">Up to 1 week</div>
                     </div>
                   </div>
                   <div className="flex items-start gap-2.5">
-                    <svg className="h-4 w-4 flex-shrink-0 text-indigo-500 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                    <svg className="h-4 w-4 flex-shrink-0 text-blue-500 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
                     <div>
                       <div className="text-sm font-semibold text-slate-800">Unlimited Events</div>
                       <div className="text-xs text-slate-500">Capture an unlimited number of events</div>
                     </div>
                   </div>
                   <div className="flex items-start gap-2.5">
-                    <svg className="h-4 w-4 flex-shrink-0 text-indigo-500 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                    <svg className="h-4 w-4 flex-shrink-0 text-blue-500 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
                     <div>
                       <div className="text-sm font-semibold text-slate-800">Custom Event Colors</div>
                       <div className="text-xs text-slate-500">Select background and text color</div>
                     </div>
                   </div>
                   <div className="flex items-start gap-2.5">
-                    <svg className="h-4 w-4 flex-shrink-0 text-indigo-500 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                    <svg className="h-4 w-4 flex-shrink-0 text-blue-500 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
                     <div>
                       <div className="text-sm font-semibold text-slate-800">Event Link</div>
                       <div className="text-xs text-slate-500">Public link with all photos and videos</div>
                     </div>
                   </div>
                   <div className="flex items-start gap-2.5">
-                    <svg className="h-4 w-4 flex-shrink-0 text-indigo-500 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                    <svg className="h-4 w-4 flex-shrink-0 text-blue-500 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
                     <div>
                       <div className="text-sm font-semibold text-slate-800">Embed Event Album</div>
                       <div className="text-xs text-slate-500">Embed event page on your site</div>
@@ -3504,21 +3712,25 @@ This cannot be undone.`
                   </div>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => setGalleryPlan("free")}
-                className={`mt-6 w-full rounded-full py-3 text-sm font-bold transition-all ${galleryPlan === "free"
-                  ? "bg-indigo-600 text-white shadow-md"
-                  : "border border-slate-200 text-slate-700 hover:bg-slate-50 hover:-translate-y-0.5"
-                  }`}
-              >
-                {galleryPlan === "free" ? "Current Plan" : "Select Free"}
-              </button>
+              {galleryPlan === "free" ? (
+                <div className="mt-6 w-full rounded-lg bg-blue-600 py-3 text-sm font-bold text-white text-center shadow-md cursor-default">
+                  Current Plan
+                </div>
+              ) : (
+                <div className="mt-6 space-y-2">
+                  <div className="w-full rounded-lg border border-slate-100 bg-slate-50 py-3 text-sm font-bold text-slate-400 text-center cursor-not-allowed">
+                    Included in your plan
+                  </div>
+                  <p className="text-center text-[11px] text-slate-400">
+                    Email <a href="mailto:support@studiophotuna.com" className="underline">support@studiophotuna.com</a> to downgrade
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* PLUS tier — ₱900/mo */}
-            <div className={`relative rounded-3xl border-2 ${galleryPlan === "plus" ? "border-indigo-500 ring-2 ring-indigo-100" : "border-indigo-400"} bg-slate-900 p-6 flex flex-col justify-between text-white shadow-[0_24px_64px_rgba(79,70,229,0.18)] md:scale-[1.03]`}>
-              <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-indigo-600 px-4 py-1 text-[11px] font-bold uppercase tracking-widest text-white shadow-md">
+            <div className={`relative rounded-xl border-2 ${galleryPlan === "plus" ? "border-blue-500 ring-2 ring-blue-100" : "border-blue-400"} bg-slate-900 p-6 flex flex-col justify-between text-white shadow-[0_24px_64px_rgba(37,99,235,0.18)] md:scale-[1.03]`}>
+              <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-blue-600 px-4 py-1 text-[11px] font-bold uppercase tracking-widest text-white shadow-md">
                 Popular
               </span>
               <div className="space-y-4 mt-2">
@@ -3544,42 +3756,52 @@ This cannot be undone.`
                     </div>
                   </div>
                   <div className="flex items-start gap-2.5">
-                    <svg className="h-4 w-4 flex-shrink-0 text-indigo-400 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                    <svg className="h-4 w-4 flex-shrink-0 text-blue-400 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
                     <div>
                       <div className="text-sm font-semibold text-white">Unlimited Events</div>
                       <div className="text-xs text-white/60">No limits on event capture</div>
                     </div>
                   </div>
                   <div className="flex items-start gap-2.5">
-                    <svg className="h-4 w-4 flex-shrink-0 text-indigo-400 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                    <svg className="h-4 w-4 flex-shrink-0 text-blue-400 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
                     <div>
                       <div className="text-sm font-semibold text-white">Custom Event Colors</div>
                       <div className="text-xs text-white/60">Background and text customization</div>
                     </div>
                   </div>
                   <div className="flex items-start gap-2.5">
-                    <svg className="h-4 w-4 flex-shrink-0 text-indigo-400 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                    <svg className="h-4 w-4 flex-shrink-0 text-blue-400 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
                     <div>
                       <div className="text-sm font-semibold text-white">Event Link & Embed</div>
                       <div className="text-xs text-white/60">Public link + embeddable album</div>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2.5">
+                    <svg className="h-4 w-4 flex-shrink-0 text-blue-400 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                    <div>
+                      <div className="text-sm font-semibold text-white">QR Code Sharing</div>
+                      <div className="text-xs text-white/60">Guests scan to download at the booth</div>
                     </div>
                   </div>
                 </div>
               </div>
               <button
                 type="button"
-                onClick={() => openGcashPayment("gallery", "plus")}
-                className={`mt-6 w-full rounded-full py-3 text-sm font-bold shadow-md transition-all ${galleryPlan === "plus"
-                  ? "bg-emerald-500 text-white"
-                  : "bg-indigo-600 text-white hover:bg-indigo-500 hover:-translate-y-0.5 hover:shadow-lg"
-                  } active:scale-[0.98]`}
+                disabled={!hasPaidPlan || galleryPlan === "plus"}
+                onClick={() => hasPaidPlan && openGcashPayment("gallery", "plus")}
+                className={`mt-6 w-full rounded-lg py-3 text-sm font-bold shadow-md transition-all active:scale-[0.98] ${galleryPlan === "plus"
+                  ? "bg-emerald-500 text-white cursor-default"
+                  : hasPaidPlan
+                    ? "bg-blue-600 text-white hover:bg-blue-500 hover:-translate-y-0.5 hover:shadow-lg"
+                    : "bg-white/10 text-white/40 cursor-not-allowed"
+                  }`}
               >
                 {galleryPlan === "plus" ? "Current Plan" : "Pay via GCash — Plus"}
               </button>
             </div>
 
             {/* BUSINESS tier — ₱1,700/mo */}
-            <div className={`rounded-3xl border ${galleryPlan === "business" ? "border-indigo-300 ring-2 ring-indigo-100" : "border-slate-200"} bg-white p-6 flex flex-col justify-between hover:shadow-md transition-all`}>
+            <div className={`rounded-xl border ${galleryPlan === "business" ? "border-blue-300 ring-2 ring-blue-100" : "border-slate-200"} bg-white p-6 flex flex-col justify-between hover:shadow-md transition-all`}>
               <div className="space-y-4">
                 <span className="inline-flex rounded-full bg-violet-50 px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest text-violet-600">Business</span>
                 <div>
@@ -3603,35 +3825,45 @@ This cannot be undone.`
                     </div>
                   </div>
                   <div className="flex items-start gap-2.5">
-                    <svg className="h-4 w-4 flex-shrink-0 text-indigo-500 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                    <svg className="h-4 w-4 flex-shrink-0 text-blue-500 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
                     <div>
                       <div className="text-sm font-semibold text-slate-800">Unlimited Events</div>
                       <div className="text-xs text-slate-500">No limits on event capture</div>
                     </div>
                   </div>
                   <div className="flex items-start gap-2.5">
-                    <svg className="h-4 w-4 flex-shrink-0 text-indigo-500 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                    <svg className="h-4 w-4 flex-shrink-0 text-blue-500 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
                     <div>
                       <div className="text-sm font-semibold text-slate-800">Custom Event Colors</div>
                       <div className="text-xs text-slate-500">Background and text customization</div>
                     </div>
                   </div>
                   <div className="flex items-start gap-2.5">
-                    <svg className="h-4 w-4 flex-shrink-0 text-indigo-500 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                    <svg className="h-4 w-4 flex-shrink-0 text-blue-500 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
                     <div>
                       <div className="text-sm font-semibold text-slate-800">Event Link & Embed</div>
                       <div className="text-xs text-slate-500">Public link + embeddable album</div>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2.5">
+                    <svg className="h-4 w-4 flex-shrink-0 text-blue-500 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                    <div>
+                      <div className="text-sm font-semibold text-slate-800">QR Code Sharing</div>
+                      <div className="text-xs text-slate-500">Guests scan to download at the booth</div>
                     </div>
                   </div>
                 </div>
               </div>
               <button
                 type="button"
-                onClick={() => openGcashPayment("gallery", "business")}
-                className={`mt-6 w-full rounded-full py-3 text-sm font-bold transition-all ${galleryPlan === "business"
-                  ? "bg-emerald-500 text-white shadow-md"
-                  : "border border-slate-200 text-slate-700 hover:bg-slate-50 hover:-translate-y-0.5 hover:shadow-md"
-                  } active:scale-[0.98]`}
+                disabled={!hasPaidPlan || galleryPlan === "business"}
+                onClick={() => hasPaidPlan && openGcashPayment("gallery", "business")}
+                className={`mt-6 w-full rounded-lg py-3 text-sm font-bold transition-all active:scale-[0.98] ${galleryPlan === "business"
+                  ? "bg-emerald-500 text-white shadow-md cursor-default"
+                  : hasPaidPlan
+                    ? "border border-slate-200 text-slate-700 hover:bg-slate-50 hover:-translate-y-0.5 hover:shadow-md"
+                    : "border border-slate-100 text-slate-400 cursor-not-allowed bg-slate-50"
+                  }`}
               >
                 {galleryPlan === "business" ? "Current Plan" : "Pay via GCash — Business"}
               </button>
@@ -3649,7 +3881,7 @@ This cannot be undone.`
                   <tr className="bg-slate-50/80">
                     <th className="text-left px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-400">Feature</th>
                     <th className="text-center px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-400">Free</th>
-                    <th className="text-center px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-indigo-600 bg-indigo-50/50">Plus</th>
+                    <th className="text-center px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-blue-600 bg-blue-50/50">Plus</th>
                     <th className="text-center px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-400">Business</th>
                   </tr>
                 </thead>
@@ -3661,12 +3893,13 @@ This cannot be undone.`
                     { feature: "Custom Colors", free: true, plus: true, business: true },
                     { feature: "Event Link", free: true, plus: true, business: true },
                     { feature: "Embed Album", free: true, plus: true, business: true },
+                    { feature: "QR Code Sharing", free: false, plus: true, business: true },
                     { feature: "Price", free: "₱0", plus: "₱900/mo", business: "₱1,700/mo" },
                   ].map(({ feature, free, plus, business }) => (
                     <tr key={feature} className="hover:bg-slate-50/60">
                       <td className="px-5 py-3 font-medium text-slate-700">{feature}</td>
                       {[free, plus, business].map((val, i) => (
-                        <td key={i} className={`text-center px-4 py-3 ${i === 1 ? "bg-indigo-50/30" : ""}`}>
+                        <td key={i} className={`text-center px-4 py-3 ${i === 1 ? "bg-blue-50/30" : ""}`}>
                           {val === true ? (
                             <svg className="h-4 w-4 text-emerald-500 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
                           ) : val === false ? (
@@ -3682,20 +3915,433 @@ This cannot be undone.`
               </table>
             </div>
           </div>
+        </>
+      )}
+
+      {/* ===== BUSINESS TAB ===== */}
+      {accountTab === "business" && (
+        <div className="space-y-6">
+          {/* Header */}
+          <div className={`${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_CARD} p-6`}>
+            <h4 className="text-sm font-bold text-slate-900">Payment Gateway</h4>
+            <p className="mt-1 text-xs text-slate-500">
+              Connect one payment provider to enable Business mode. Only one gateway can be active at a time.
+              Payment methods are configured per-event in Controls.
+            </p>
+            {anyProviderConfigured && !activeProvider && (
+              <p className="mt-2 text-xs text-amber-600 font-medium">A provider is connected but not selected as active. Select one below.</p>
+            )}
+          </div>
+
+          {/* Provider selector — 2×2 grid */}
+          {(() => {
+            const PROVIDERS = [
+              {
+                key: "paymongo",
+                name: "PayMongo",
+                region: "Philippines",
+                methods: ["GCash", "Maya", "GrabPay", "Cards"],
+                configured: paymongoConfigured,
+                testMode: paymongoTestMode,
+                docsHref: "paymongo.com",
+              },
+              {
+                key: "stripe",
+                name: "Stripe",
+                region: "Global / International",
+                methods: ["Cards", "Apple Pay", "Google Pay", "Link", "SEPA", "iDEAL"],
+                configured: stripeConfigured,
+                testMode: stripeTestMode,
+                docsHref: "stripe.com",
+              },
+              {
+                key: "xendit",
+                name: "Xendit",
+                region: "Indonesia & Philippines",
+                methods: ["Cards", "OVO", "DANA", "GoPay", "QRIS", "Virtual Accounts"],
+                configured: xenditConfigured,
+                testMode: xenditTestMode,
+                docsHref: "xendit.co",
+              },
+              {
+                key: "paypal",
+                name: "PayPal",
+                region: "200+ countries",
+                methods: ["PayPal Wallet", "Pay Later", "Venmo", "Cards"],
+                configured: paypalConfigured,
+                testMode: paypalSandboxMode,
+                docsHref: "developer.paypal.com",
+              },
+            ];
+            return (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {PROVIDERS.map((p) => {
+                  const isActive = activeProvider === p.key;
+                  return (
+                    <button
+                      key={p.key}
+                      type="button"
+                      onClick={() => setActiveProvider(isActive ? null : p.key)}
+                      className={`text-left rounded-xl border-2 p-4 transition-all ${
+                        isActive
+                          ? "border-blue-500 bg-blue-50 shadow-md shadow-blue-100"
+                          : "border-slate-200 bg-white hover:border-slate-300 hover:shadow-sm"
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-sm font-bold text-slate-900">{p.name}</span>
+                            {p.configured && (
+                              <span className="rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-semibold text-green-700">Connected</span>
+                            )}
+                            {p.configured && p.testMode && (
+                              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">Test</span>
+                            )}
+                          </div>
+                          <p className="mt-0.5 text-[11px] text-slate-400">{p.region}</p>
+                        </div>
+                        <div className={`mt-0.5 h-4 w-4 flex-shrink-0 rounded-full border-2 transition-all ${isActive ? "border-blue-500 bg-blue-500" : "border-slate-300"}`}>
+                          {isActive && <div className="h-full w-full rounded-full bg-white scale-[0.45]" />}
+                        </div>
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-1">
+                        {p.methods.map((m) => (
+                          <span key={m} className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-600">{m}</span>
+                        ))}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            );
+          })()}
+
+          {/* No provider selected */}
+          {!activeProvider && (
+            <div className={`${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_CARD} px-6 py-5 text-center`}>
+              <p className="text-sm text-slate-500">Select a payment provider above to connect your account.</p>
+            </div>
+          )}
+
+          {/* ── PayMongo config card ── */}
+          {activeProvider === "paymongo" && (
+            <div className={`${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_CARD} p-6`}>
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h4 className="text-sm font-bold text-slate-900">PayMongo</h4>
+                  <p className="mt-0.5 text-xs text-slate-500">Get your API keys from paymongo.com → Developers. Use test keys first.</p>
+                </div>
+                {paymongoConfigured && (
+                  <div className="flex items-center gap-1.5">
+                    <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold ${paymongoTestMode ? "bg-amber-100 text-amber-700" : "bg-green-100 text-green-700"}`}>{paymongoTestMode ? "Test Mode" : "Live"}</span>
+                    <span className="rounded-full bg-green-100 px-2.5 py-0.5 text-[10px] font-semibold text-green-700">Connected</span>
+                  </div>
+                )}
+              </div>
+              {paymongoConfigured ? (
+                <div className="space-y-3">
+                  <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-xs text-green-700">
+                    <div className="font-semibold">Keys configured — public key: {paymongoPublicKey}</div>
+                    <div className="mt-0.5 text-green-600">Business mode is available in Controls → Mode.</div>
+                  </div>
+                  <button type="button" onClick={async () => {
+                    const res = await window.electron?.clearPayMongoKeys?.();
+                    if (res?.ok) { setPaymongoConfigured(false); setPaymongoTestMode(false); setPaymongoPublicKey(""); setPaymongoKeyInputs({ publicKey: "", secretKey: "" }); showToast?.("PayMongo keys removed"); }
+                  }} className="text-xs font-semibold text-red-600 hover:underline">Disconnect</button>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-1 gap-2.5">
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Public Key</label>
+                      <input type="text" value={paymongoKeyInputs.publicKey} onChange={(e) => setPaymongoKeyInputs((p) => ({ ...p, publicKey: e.target.value }))} placeholder="pk_test_... or pk_live_..." className={`${SURFACE_BG} ${SURFACE_BORDER} ${INPUT_RADIUS} w-full px-3 py-2 text-sm font-mono outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100 transition`} />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Secret Key</label>
+                      <input type="password" value={paymongoKeyInputs.secretKey} onChange={(e) => setPaymongoKeyInputs((p) => ({ ...p, secretKey: e.target.value }))} placeholder="sk_test_... or sk_live_..." className={`${SURFACE_BG} ${SURFACE_BORDER} ${INPUT_RADIUS} w-full px-3 py-2 text-sm font-mono outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100 transition`} />
+                    </div>
+                  </div>
+                  <button type="button" disabled={paymongoSaving || !paymongoKeyInputs.publicKey || !paymongoKeyInputs.secretKey} onClick={async () => {
+                    setPaymongoSaving(true);
+                    try {
+                      const res = await window.electron?.savePayMongoKeys?.(paymongoKeyInputs);
+                      if (res?.ok) { setPaymongoConfigured(true); setPaymongoTestMode(res.testMode); setPaymongoPublicKey(paymongoKeyInputs.publicKey.slice(0, 12) + "..."); setPaymongoKeyInputs({ publicKey: "", secretKey: "" }); showToast?.("PayMongo keys validated and saved"); }
+                      else showToast?.(res?.error || "Failed to validate keys");
+                    } catch (err) { showToast?.(err?.message || "Failed to save keys"); }
+                    finally { setPaymongoSaving(false); }
+                  }} className="inline-flex items-center justify-center rounded-lg bg-blue-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 active:scale-[0.98] transition disabled:opacity-60 disabled:cursor-not-allowed">
+                    {paymongoSaving ? "Validating…" : "Validate & Save"}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── Stripe config card ── */}
+          {activeProvider === "stripe" && (
+            <div className={`${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_CARD} p-6`}>
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h4 className="text-sm font-bold text-slate-900">Stripe</h4>
+                  <p className="mt-0.5 text-xs text-slate-500">Get your API keys from dashboard.stripe.com → Developers → API Keys.</p>
+                </div>
+                {stripeConfigured && (
+                  <div className="flex items-center gap-1.5">
+                    <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold ${stripeTestMode ? "bg-amber-100 text-amber-700" : "bg-green-100 text-green-700"}`}>{stripeTestMode ? "Test Mode" : "Live"}</span>
+                    <span className="rounded-full bg-green-100 px-2.5 py-0.5 text-[10px] font-semibold text-green-700">Connected</span>
+                  </div>
+                )}
+              </div>
+              {stripeConfigured ? (
+                <div className="space-y-3">
+                  <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-xs text-green-700">
+                    <div className="font-semibold">Keys configured — publishable key: {stripePublicKey}</div>
+                    <div className="mt-0.5 text-green-600">Business mode is available in Controls → Mode.</div>
+                  </div>
+                  <button type="button" onClick={() => { setStripeConfigured(false); setStripeTestMode(false); setStripePublicKey(""); setStripeKeyInputs({ publicKey: "", secretKey: "" }); showToast?.("Stripe keys removed"); }} className="text-xs font-semibold text-red-600 hover:underline">Disconnect</button>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-1 gap-2.5">
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Publishable Key</label>
+                      <input type="text" value={stripeKeyInputs.publicKey} onChange={(e) => setStripeKeyInputs((p) => ({ ...p, publicKey: e.target.value }))} placeholder="pk_test_... or pk_live_..." className={`${SURFACE_BG} ${SURFACE_BORDER} ${INPUT_RADIUS} w-full px-3 py-2 text-sm font-mono outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100 transition`} />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Secret Key</label>
+                      <input type="password" value={stripeKeyInputs.secretKey} onChange={(e) => setStripeKeyInputs((p) => ({ ...p, secretKey: e.target.value }))} placeholder="sk_test_... or sk_live_..." className={`${SURFACE_BG} ${SURFACE_BORDER} ${INPUT_RADIUS} w-full px-3 py-2 text-sm font-mono outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100 transition`} />
+                    </div>
+                  </div>
+                  <button type="button" disabled={stripeSaving || !stripeKeyInputs.publicKey || !stripeKeyInputs.secretKey} onClick={async () => {
+                    setStripeSaving(true);
+                    try {
+                      const isTest = stripeKeyInputs.publicKey.startsWith("pk_test_");
+                      setStripeConfigured(true);
+                      setStripeTestMode(isTest);
+                      setStripePublicKey(stripeKeyInputs.publicKey.slice(0, 14) + "...");
+                      setStripeKeyInputs({ publicKey: "", secretKey: "" });
+                      showToast?.("Stripe keys saved");
+                    } catch (err) { showToast?.(err?.message || "Failed to save keys"); }
+                    finally { setStripeSaving(false); }
+                  }} className="inline-flex items-center justify-center rounded-lg bg-blue-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 active:scale-[0.98] transition disabled:opacity-60 disabled:cursor-not-allowed">
+                    {stripeSaving ? "Saving…" : "Save Keys"}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── Xendit config card ── */}
+          {activeProvider === "xendit" && (
+            <div className={`${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_CARD} p-6`}>
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h4 className="text-sm font-bold text-slate-900">Xendit</h4>
+                  <p className="mt-0.5 text-xs text-slate-500">Get your API key from dashboard.xendit.co → Settings → API Keys.</p>
+                </div>
+                {xenditConfigured && (
+                  <div className="flex items-center gap-1.5">
+                    <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold ${xenditTestMode ? "bg-amber-100 text-amber-700" : "bg-green-100 text-green-700"}`}>{xenditTestMode ? "Test Mode" : "Live"}</span>
+                    <span className="rounded-full bg-green-100 px-2.5 py-0.5 text-[10px] font-semibold text-green-700">Connected</span>
+                  </div>
+                )}
+              </div>
+              {xenditConfigured ? (
+                <div className="space-y-3">
+                  <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-xs text-green-700">
+                    <div className="font-semibold">API key configured: {xenditKeyDisplay}</div>
+                    <div className="mt-0.5 text-green-600">Business mode is available in Controls → Mode.</div>
+                  </div>
+                  <button type="button" onClick={() => { setXenditConfigured(false); setXenditTestMode(false); setXenditKeyDisplay(""); setXenditKeyInput(""); showToast?.("Xendit key removed"); }} className="text-xs font-semibold text-red-600 hover:underline">Disconnect</button>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Secret API Key</label>
+                    <input type="password" value={xenditKeyInput} onChange={(e) => setXenditKeyInput(e.target.value)} placeholder="xnd_development_... or xnd_production_..." className={`${SURFACE_BG} ${SURFACE_BORDER} ${INPUT_RADIUS} w-full px-3 py-2 text-sm font-mono outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100 transition`} />
+                    <p className="text-[11px] text-slate-400">Keys starting with <code>xnd_development</code> run in test mode.</p>
+                  </div>
+                  <button type="button" disabled={xenditSaving || !xenditKeyInput} onClick={async () => {
+                    setXenditSaving(true);
+                    try {
+                      const isTest = xenditKeyInput.startsWith("xnd_development");
+                      setXenditConfigured(true);
+                      setXenditTestMode(isTest);
+                      setXenditKeyDisplay(xenditKeyInput.slice(0, 16) + "...");
+                      setXenditKeyInput("");
+                      showToast?.("Xendit key saved");
+                    } catch (err) { showToast?.(err?.message || "Failed to save key"); }
+                    finally { setXenditSaving(false); }
+                  }} className="inline-flex items-center justify-center rounded-lg bg-blue-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 active:scale-[0.98] transition disabled:opacity-60 disabled:cursor-not-allowed">
+                    {xenditSaving ? "Saving…" : "Save Key"}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── PayPal config card ── */}
+          {activeProvider === "paypal" && (
+            <div className={`${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_CARD} p-6`}>
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h4 className="text-sm font-bold text-slate-900">PayPal</h4>
+                  <p className="mt-0.5 text-xs text-slate-500">Get your credentials from developer.paypal.com → Apps &amp; Credentials.</p>
+                </div>
+                {paypalConfigured && (
+                  <div className="flex items-center gap-1.5">
+                    <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold ${paypalSandboxMode ? "bg-amber-100 text-amber-700" : "bg-green-100 text-green-700"}`}>{paypalSandboxMode ? "Sandbox" : "Live"}</span>
+                    <span className="rounded-full bg-green-100 px-2.5 py-0.5 text-[10px] font-semibold text-green-700">Connected</span>
+                  </div>
+                )}
+              </div>
+              {paypalConfigured ? (
+                <div className="space-y-3">
+                  <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-xs text-green-700">
+                    <div className="font-semibold">Credentials configured — Client ID: {paypalClientIdDisplay}</div>
+                    <div className="mt-0.5 text-green-600">Business mode is available in Controls → Mode.</div>
+                  </div>
+                  <button type="button" onClick={() => { setPaypalConfigured(false); setPaypalSandboxMode(false); setPaypalClientIdDisplay(""); setPaypalKeyInputs({ clientId: "", clientSecret: "" }); showToast?.("PayPal credentials removed"); }} className="text-xs font-semibold text-red-600 hover:underline">Disconnect</button>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-1 gap-2.5">
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Client ID</label>
+                      <input type="text" value={paypalKeyInputs.clientId} onChange={(e) => setPaypalKeyInputs((p) => ({ ...p, clientId: e.target.value }))} placeholder="Sandbox or Live Client ID" className={`${SURFACE_BG} ${SURFACE_BORDER} ${INPUT_RADIUS} w-full px-3 py-2 text-sm font-mono outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100 transition`} />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Client Secret</label>
+                      <input type="password" value={paypalKeyInputs.clientSecret} onChange={(e) => setPaypalKeyInputs((p) => ({ ...p, clientSecret: e.target.value }))} placeholder="Sandbox or Live Client Secret" className={`${SURFACE_BG} ${SURFACE_BORDER} ${INPUT_RADIUS} w-full px-3 py-2 text-sm font-mono outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100 transition`} />
+                    </div>
+                  </div>
+                  <label className="inline-flex items-center gap-2 text-xs cursor-pointer select-none">
+                    <input type="checkbox" checked={paypalSandboxMode} onChange={(e) => setPaypalSandboxMode(e.target.checked)} />
+                    <span className="text-slate-600">Use Sandbox (test) mode</span>
+                  </label>
+                  <button type="button" disabled={paypalSaving || !paypalKeyInputs.clientId || !paypalKeyInputs.clientSecret} onClick={async () => {
+                    setPaypalSaving(true);
+                    try {
+                      setPaypalConfigured(true);
+                      setPaypalClientIdDisplay(paypalKeyInputs.clientId.slice(0, 14) + "...");
+                      setPaypalKeyInputs({ clientId: "", clientSecret: "" });
+                      showToast?.("PayPal credentials saved");
+                    } catch (err) { showToast?.(err?.message || "Failed to save credentials"); }
+                    finally { setPaypalSaving(false); }
+                  }} className="inline-flex items-center justify-center rounded-lg bg-blue-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 active:scale-[0.98] transition disabled:opacity-60 disabled:cursor-not-allowed">
+                    {paypalSaving ? "Saving…" : "Save Credentials"}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
+
+      {/* ===== PREFERENCES TAB ===== */}
+      {accountTab === "preferences" && (
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          <div className={`${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_CARD} p-6 opacity-50 pointer-events-none`}>
+            <div className="mb-5">
+              <div className="flex items-center gap-2">
+                <h4 className="text-sm font-bold text-slate-900">Notifications & Behavior</h4>
+                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">Coming Soon</span>
+              </div>
+              <p className="mt-1 text-xs text-slate-500">Control how the dashboard behaves for this account.</p>
+            </div>
+
+            <div className="space-y-1">
+              {[
+                { key: "emailNotifications", label: "Email notifications", desc: "Receive email updates about events and sessions" },
+                { key: "desktopNotifications", label: "Desktop notifications", desc: "Show system notifications for important alerts" },
+                { key: "soundEnabled", label: "Enable sounds", desc: "Play audio feedback for booth actions and alerts" },
+                { key: "autoLaunch", label: "Launch on startup", desc: "Automatically start the app when your computer boots" },
+              ].map(({ key, label, desc }) => (
+                <label key={key} className="flex items-center justify-between gap-4 rounded-xl p-3">
+                  <div>
+                    <div className="text-sm font-medium text-slate-800">{label}</div>
+                    <div className="text-xs text-slate-400 mt-0.5">{desc}</div>
+                  </div>
+                  <div className="relative flex-shrink-0">
+                    <input type="checkbox" disabled className="sr-only peer" />
+                    <div className="h-6 w-11 rounded-full bg-slate-200 transition-colors" />
+                    <div className="absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm" />
+                  </div>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-6">
+            <div className={`${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_CARD} p-6 opacity-50 pointer-events-none`}>
+              <div className="flex items-center gap-2 mb-4">
+                <h4 className="text-sm font-bold text-slate-900">Appearance & Language</h4>
+                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">Coming Soon</span>
+              </div>
+              <div className="space-y-5">
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Theme</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { value: "system", label: "System" },
+                      { value: "light", label: "Light" },
+                      { value: "dark", label: "Dark" },
+                    ].map(({ value, label }) => (
+                      <button
+                        key={value}
+                        type="button"
+                        disabled
+                        className={`rounded-xl border py-2.5 text-sm font-semibold ${value === "light"
+                          ? "border-blue-300 bg-blue-50 text-blue-700"
+                          : "border-slate-200 bg-white text-slate-600"
+                          }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Language</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      { value: "en", label: "English" },
+                      { value: "fil", label: "Filipino" },
+                    ].map(({ value, label }) => (
+                      <button
+                        key={value}
+                        type="button"
+                        disabled
+                        className={`rounded-xl border py-2.5 text-sm font-semibold ${value === "en"
+                          ? "border-blue-300 bg-blue-50 text-blue-700"
+                          : "border-slate-200 bg-white text-slate-600"
+                          }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
 
       {/* ===== GCASH PAYMENT MODAL ===== */}
       {showGcashModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4" onClick={() => setShowGcashModal(false)}>
-          <div className="w-full max-w-2xl rounded-3xl border border-slate-200 bg-white shadow-[0_32px_80px_rgba(0,0,0,0.15)] overflow-hidden" onClick={(e) => e.stopPropagation()}>
+          <div className="w-full max-w-2xl rounded-xl border border-slate-200 bg-white shadow-[0_32px_80px_rgba(0,0,0,0.15)] overflow-hidden" onClick={(e) => e.stopPropagation()}>
             {/* Modal header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
               <div>
                 <h3 className="text-lg font-bold text-slate-900">Pay via GCash</h3>
                 <p className="text-xs text-slate-500 mt-0.5">We'll verify and activate your plan manually — usually within a day.</p>
               </div>
-              <button type="button" onClick={() => setShowGcashModal(false)} className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 text-slate-400 hover:bg-slate-50 hover:text-slate-600 transition">
+              <button type="button" onClick={() => setShowGcashModal(false)} className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-400 hover:bg-slate-50 hover:text-slate-600 transition">
                 <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
               </button>
             </div>
@@ -3704,13 +4350,12 @@ This cannot be undone.`
             <div className="grid grid-cols-1 sm:grid-cols-2">
               {/* Left: QR + plan info */}
               <div className="flex flex-col items-center justify-center gap-4 p-6 bg-slate-50 border-r border-slate-100">
-                <div className="rounded-2xl border border-slate-200 p-3 bg-white shadow-sm">
+                <div className="rounded-lg border border-slate-200 p-3 bg-white shadow-sm">
                   <div className="w-44 h-44 bg-slate-100 rounded-xl flex items-center justify-center text-xs text-slate-400">
                     <img
-                      src="gcash-qr.png"
+                      src={gcashQrImage}
                       alt="GCash QR"
                       className="w-full h-full object-contain"
-                      onError={(e) => { e.target.onerror = null; e.target.src = "https://placehold.co/300x300/f4f5f8/94a3b8?text=GCash+QR"; }}
                     />
                   </div>
                 </div>
@@ -3757,7 +4402,7 @@ This cannot be undone.`
                     value={gcashSenderName}
                     onChange={(e) => setGcashSenderName(e.target.value)}
                     placeholder="GCash account name"
-                    className={`${SURFACE_BG} ${SURFACE_BORDER} ${INPUT_RADIUS} w-full px-4 py-2.5 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 transition`}
+                    className={`${SURFACE_BG} ${SURFACE_BORDER} ${INPUT_RADIUS} w-full px-4 py-2.5 text-sm outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100 transition`}
                   />
                 </div>
 
@@ -3769,7 +4414,7 @@ This cannot be undone.`
                     placeholder="Reference number (13 characters)"
                     required
                     minLength={6}
-                    className={`${SURFACE_BG} ${SURFACE_BORDER} ${INPUT_RADIUS} w-full px-4 py-2.5 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 transition`}
+                    className={`${SURFACE_BG} ${SURFACE_BORDER} ${INPUT_RADIUS} w-full px-4 py-2.5 text-sm outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100 transition`}
                   />
                 </div>
 
@@ -3782,14 +4427,14 @@ This cannot be undone.`
                     accept="image/png,image/jpeg,image/webp"
                     onChange={(e) => setGcashScreenshot(e.target.files?.[0] || null)}
                     required
-                    className={`${SURFACE_BG} ${SURFACE_BORDER} ${INPUT_RADIUS} w-full px-4 py-2.5 text-sm file:mr-3 file:rounded-full file:border-0 file:bg-indigo-50 file:px-3 file:py-1 file:text-xs file:font-semibold file:text-indigo-600 hover:file:bg-indigo-100`}
+                    className={`${SURFACE_BG} ${SURFACE_BORDER} ${INPUT_RADIUS} w-full px-4 py-2.5 text-sm file:mr-3 file:rounded-full file:border-0 file:bg-blue-50 file:px-3 file:py-1 file:text-xs file:font-semibold file:text-blue-600 hover:file:bg-blue-100`}
                   />
                 </div>
 
                 <button
                   type="submit"
                   disabled={gcashSubmitting}
-                  className="w-full rounded-full bg-indigo-600 py-3 text-sm font-bold text-white shadow-md transition-all hover:bg-indigo-500 hover:-translate-y-0.5 active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed"
+                  className="w-full rounded-lg bg-blue-600 py-3 text-sm font-bold text-white shadow-md transition-all hover:bg-blue-500 hover:-translate-y-0.5 active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   {gcashSubmitting ? "Submitting..." : "Submit Payment Proof"}
                 </button>
@@ -3843,7 +4488,7 @@ This cannot be undone.`
   const renderHomeDashboard = () => (
     <div className="space-y-5">
       {/* Hero */}
-      <div className="relative overflow-hidden rounded-3xl border border-white/20 bg-gradient-to-br from-indigo-500 via-indigo-600 to-violet-700 px-6 py-6 text-white shadow-[0_24px_64px_rgba(79,70,229,0.25)]">
+      <div className="relative overflow-hidden rounded-xl border border-white/20 bg-gradient-to-br from-blue-500 via-blue-600 to-blue-800 px-6 py-6 text-white shadow-[0_24px_64px_rgba(37,99,235,0.25)]">
         <WavePattern />
         <div className="relative z-10 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
@@ -3859,14 +4504,14 @@ This cannot be undone.`
             <button
               type="button"
               onClick={createNewEventFromHome}
-              className="inline-flex items-center justify-center rounded-full bg-white px-5 py-2.5 text-sm font-semibold text-indigo-700 shadow-md transition hover:-translate-y-0.5 hover:shadow-lg active:scale-[0.98]"
+              className="inline-flex items-center justify-center rounded-lg bg-white px-5 py-2.5 text-sm font-semibold text-blue-700 shadow-md transition hover:-translate-y-0.5 hover:shadow-lg active:scale-[0.98]"
             >
               + New event
             </button>
             <button
               type="button"
               onClick={openLatestEventFromHome}
-              className="inline-flex items-center justify-center rounded-full border border-white/25 bg-white/15 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-white/25 active:scale-[0.98]"
+              className="inline-flex items-center justify-center rounded-lg border border-white/25 bg-white/15 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-white/25 active:scale-[0.98]"
             >
               Resume latest
             </button>
@@ -3880,7 +4525,7 @@ This cannot be undone.`
           {
             label: "Total Events", value: events.length, sub: "saved",
             icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />,
-            color: "text-indigo-600", bg: "bg-indigo-50",
+            color: "text-blue-600", bg: "bg-blue-50",
           },
           {
             label: "Templates", value: templates.length, sub: "available",
@@ -3948,7 +4593,7 @@ This cannot be undone.`
                 <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#94a3b8" }} />
                 <YAxis tick={{ fontSize: 11, fill: "#94a3b8" }} allowDecimals={false} />
                 <Tooltip contentStyle={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: "12px", boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }} />
-                <Line type="monotone" dataKey="sessions" stroke="#4f46e5" strokeWidth={2.5} dot={{ fill: "#4f46e5", r: 3 }} activeDot={{ r: 5 }} />
+                <Line type="monotone" dataKey="sessions" stroke="#2563eb" strokeWidth={2.5} dot={{ fill: "#2563eb", r: 3 }} activeDot={{ r: 5 }} />
               </LineChart>
             </ResponsiveContainer>
           </div>
@@ -3975,7 +4620,7 @@ This cannot be undone.`
                       dataKey="value"
                     >
                       {templates.slice(0, 5).map((_, i) => (
-                        <Cell key={i} fill={["#4f46e5", "#06b6d4", "#8b5cf6", "#f59e0b", "#10b981"][i % 5]} />
+                        <Cell key={i} fill={["#2563eb", "#06b6d4", "#8b5cf6", "#f59e0b", "#10b981"][i % 5]} />
                       ))}
                     </Pie>
                     <Tooltip />
@@ -3985,7 +4630,7 @@ This cannot be undone.`
               <div className="mt-2 space-y-1.5">
                 {templates.slice(0, 5).map((t, i) => (
                   <div key={t.id || i} className="flex items-center gap-2 text-xs">
-                    <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: ["#4f46e5", "#06b6d4", "#8b5cf6", "#f59e0b", "#10b981"][i % 5] }} />
+                    <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: ["#2563eb", "#06b6d4", "#8b5cf6", "#f59e0b", "#10b981"][i % 5] }} />
                     <span className="text-slate-500 truncate flex-1">{t.name || `Template ${i + 1}`}</span>
                   </div>
                 ))}
@@ -4019,9 +4664,9 @@ This cannot be undone.`
                   key={label}
                   type="button"
                   onClick={onClick}
-                  className="rounded-2xl border border-slate-200 bg-white p-4 text-left hover:border-indigo-200 hover:bg-indigo-50/40 transition-all group active:scale-[0.98]"
+                  className="rounded-lg border border-slate-200 bg-white p-4 text-left hover:border-blue-200 hover:bg-blue-50/40 transition-all group active:scale-[0.98]"
                 >
-                  <div className="text-sm font-semibold text-slate-800 group-hover:text-indigo-700 transition-colors">{label}</div>
+                  <div className="text-sm font-semibold text-slate-800 group-hover:text-blue-700 transition-colors">{label}</div>
                   <div className="mt-0.5 text-[11px] text-slate-400">{sub}</div>
                 </button>
               ))}
@@ -4035,7 +4680,7 @@ This cannot be undone.`
                 <div className={EYEBROW}>Recent events</div>
                 <p className="mt-0.5 text-xs text-slate-400">Jump back into an event editor.</p>
               </div>
-              <button onClick={openEventsLibrary} className="text-xs text-indigo-600 hover:text-indigo-700 font-semibold transition-colors">
+              <button onClick={openEventsLibrary} className="text-xs text-blue-600 hover:text-blue-700 font-semibold transition-colors">
                 View all →
               </button>
             </div>
@@ -4046,28 +4691,28 @@ This cannot be undone.`
                   key={ev.id}
                   type="button"
                   onClick={() => openEventEditor(ev)}
-                  className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left hover:border-indigo-200 hover:bg-indigo-50/30 transition-all group active:scale-[0.98]"
+                  className="flex w-full items-center justify-between rounded-lg border border-slate-200 bg-white px-4 py-3 text-left hover:border-blue-200 hover:bg-blue-50/30 transition-all group active:scale-[0.98]"
                 >
                   <div className="min-w-0">
-                    <div className="text-sm font-semibold text-slate-800 truncate group-hover:text-indigo-700 transition-colors">
+                    <div className="text-sm font-semibold text-slate-800 truncate group-hover:text-blue-700 transition-colors">
                       {ev.name || "Untitled event"}
                     </div>
                     <div className="text-[11px] text-slate-400 mt-0.5">
                       {ev.date || ev.created || "No date"} · {ev.sessions?.length ?? 0} sessions
                     </div>
                   </div>
-                  <svg className="w-4 h-4 text-slate-300 group-hover:text-indigo-400 flex-shrink-0 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-4 h-4 text-slate-300 group-hover:text-blue-400 flex-shrink-0 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                   </svg>
                 </button>
               ))}
 
               {events.length === 0 && (
-                <div className="rounded-2xl border border-dashed border-slate-200 p-6 text-center">
+                <div className="rounded-lg border border-dashed border-slate-200 p-6 text-center">
                   <div className="text-sm text-slate-400">No events yet.</div>
                   <button
                     onClick={createNewEventFromHome}
-                    className="mt-2 text-xs font-semibold text-indigo-600 hover:text-indigo-700 transition-colors"
+                    className="mt-2 text-xs font-semibold text-blue-600 hover:text-blue-700 transition-colors"
                   >
                     Create your first event →
                   </button>
@@ -4126,7 +4771,7 @@ This cannot be undone.`
               {[
                 { label: "User", value: user?.name || identity?.username || "Unknown" },
                 { label: "Mode", value: appMode || "—" },
-                { label: "Plan", value: licenseLoading && !plan ? "…" : plan ? String(plan).charAt(0).toUpperCase() + String(plan).slice(1) : "Free" },
+                { label: "Plan", value: licenseLoading && !plan ? "…" : planDisplayName },
                 { label: "Printer", value: selectedPrinter || "None selected" },
               ].map(({ label, value }) => (
                 <div key={label} className="flex items-center justify-between gap-3 text-sm">
@@ -4245,14 +4890,6 @@ This cannot be undone.`
     }
   }, [storagePath]);
 
-  // General useEffect
-
-  useEffect(() => {
-    if (!dimWhenIdle && idleTimeout !== 60) {
-      // keep value, but no action needed; summary will explain that dimming is disabled
-    }
-  }, [dimWhenIdle, idleTimeout]);
-
   // 3) Subscribe to AuthGate’s broadcast
   useEffect(() => {
     if (authLoading) return;
@@ -4315,8 +4952,9 @@ This cannot be undone.`
 
     const safeBusinessProviders = {
       gcash: !!business?.payment?.providers?.gcash,
-      paypal: !!business?.payment?.providers?.paypal,
-      stripe: !!business?.payment?.providers?.stripe,
+      maya: !!business?.payment?.providers?.maya,
+      grabpay: !!business?.payment?.providers?.grabpay,
+      card: !!(business?.payment?.providers?.card || business?.payment?.providers?.stripe),
       cash: business?.payment?.providers?.cash ?? true,
     };
 
@@ -4502,46 +5140,23 @@ This cannot be undone.`
     );
   };
 
-  const sessionsToday = events.reduce((sum, ev) => {
-    const price =
-      ev.settings?.business?.pricing?.pricePerSession ??
-      ev.settings?.price ??
-      0;
+  const sessionsToday = events.reduce((sum, ev) =>
+    sum + (ev.sessions ?? []).filter(s => isToday(s.createdAt)).length
+  , 0);
 
-    const todayCount =
-      (ev.sessions ?? []).filter(s => isToday(s.createdAt)).length;
+  const grossToday = events.reduce((sum, ev) =>
+    sum + (ev.sessions ?? [])
+      .filter(s => isToday(s.createdAt))
+      .reduce((s, sess) => s + getSessionRevenue(sess, ev), 0)
+  , 0);
 
-    return sum + todayCount;
-  }, 0);
-
-  const grossToday = events.reduce((sum, ev) => {
-    const price =
-      ev.settings?.business?.pricing?.pricePerSession ??
-      ev.settings?.price ??
-      0;
-
-    const todayCount =
-      (ev.sessions ?? []).filter(s => isToday(s.createdAt)).length;
-
-    return sum + todayCount * price;
-  }, 0);
-
-  const totalGross = events.reduce((sum, ev) => {
-    const price =
-      ev.settings?.business?.pricing?.pricePerSession ??
-      ev.settings?.price ??
-      0;
-
-    return sum + (ev.sessions?.length ?? 0) * price;
-  }, 0);
+  const totalGross = events.reduce((sum, ev) =>
+    sum + (ev.sessions ?? []).reduce((s, sess) => s + getSessionRevenue(sess, ev), 0)
+  , 0);
 
   const totalPhotos = events.reduce(
     (sum, ev) =>
-      sum +
-      (ev.sessions ?? []).reduce(
-        (s, sess) => s + (sess.photosCount ?? 0),
-        0
-      ),
+      sum + (ev.sessions ?? []).reduce((s, sess) => s + (sess.photosCount ?? 0), 0),
     0
   );
 
@@ -4569,14 +5184,9 @@ This cannot be undone.`
     ev => ev.sessions ?? []
   );
 
-  const reportGross = reportEvents.reduce((sum, ev) => {
-    const price =
-      ev.settings?.business?.pricing?.pricePerSession ??
-      ev.settings?.price ??
-      0;
-
-    return sum + (ev.sessions?.length ?? 0) * price;
-  }, 0);
+  const reportGross = reportEvents.reduce((sum, ev) =>
+    sum + (ev.sessions ?? []).reduce((s, sess) => s + getSessionRevenue(sess, ev), 0)
+  , 0);
 
   const reportPhotos = reportEvents.reduce(
     (sum, ev) =>
@@ -4640,8 +5250,34 @@ This cannot be undone.`
     } catch { return false; }
   };
 
-  const getEvPrice = (ev) =>
-    ev?.settings?.business?.pricing?.pricePerSession ?? ev?.settings?.price ?? 0;
+  function getEvPrice(ev) {
+    return ev?.settings?.business?.pricing?.pricePerSession ?? ev?.settings?.price ?? 0;
+  }
+
+  // Returns actual revenue recorded in a session record.
+  // Business sessions written by the new recordSession carry sess.revenue.totalAmount.
+  // Rental sessions never have revenue — return 0.
+  // Older sessions without the revenue field fall back to the event's configured price.
+  function getSessionRevenue(sess, ev) {
+    if (sess?.appMode === "rental") return 0;
+    if (typeof sess?.revenue?.totalAmount === "number") return sess.revenue.totalAmount;
+    // Legacy session (no appMode field): use event price only for business events
+    const evMode = ev?.settings?.appMode ?? "business";
+    if (evMode === "rental") return 0;
+    return getEvPrice(ev);
+  }
+
+  function getSessionTax(sess) {
+    return sess?.revenue?.taxAmount ?? 0;
+  }
+
+  function getSessionAdditionalPrints(sess) {
+    return sess?.revenue?.additionalPrints ?? 0;
+  }
+
+  function getSessionAdditionalFee(sess) {
+    return sess?.revenue?.additionalFee ?? 0;
+  }
 
   function isSameLocalDay(ts) {
     try {
@@ -4657,29 +5293,68 @@ This cannot be undone.`
 
   // Per-event computed stats for the analytics tab
   const evSessions = currentEvent?.sessions ?? [];
-  const evPrice = getEvPrice(currentEvent);
   const evLog = currentEvent?.analytics?.sessionLog ?? [];
+  const evIsRental = (currentEvent?.settings?.appMode ?? "business") === "rental";
+  const evCurrency = currentEvent?.settings?.business?.pricing?.currency ?? "PHP";
 
-  const evDayCount = evSessions.filter(s => isSameLocalDay(s.createdAt)).length;
-  const evWeekCount = evSessions.filter(s => isThisWeek(s.createdAt)).length;
-  const evMonthCount = evSessions.filter(s => isThisMonth(s.createdAt)).length;
-  const evYtdCount = evSessions.filter(s => isThisYear(s.createdAt)).length;
+  const evDaySessions = evSessions.filter(s => isSameLocalDay(s.createdAt));
+  const evWeekSessions = evSessions.filter(s => isThisWeek(s.createdAt));
+  const evMonthSessions = evSessions.filter(s => isThisMonth(s.createdAt));
+  const evYtdSessions = evSessions.filter(s => isThisYear(s.createdAt));
+  const evDayCount = evDaySessions.length;
+  const evWeekCount = evWeekSessions.length;
+  const evMonthCount = evMonthSessions.length;
+  const evYtdCount = evYtdSessions.length;
   const evTotalCount = evSessions.length;
 
-  const evDayRevenue = evDayCount * evPrice;
-  const evWeekRevenue = evWeekCount * evPrice;
-  const evMonthRevenue = evMonthCount * evPrice;
-  const evYtdRevenue = evYtdCount * evPrice;
-  const evTotalRevenue = evTotalCount * evPrice;
+  const sumRevenue = (arr) => arr.reduce((s, sess) => s + getSessionRevenue(sess, currentEvent), 0);
+  const evDayRevenue = evIsRental ? 0 : sumRevenue(evDaySessions);
+  const evWeekRevenue = evIsRental ? 0 : sumRevenue(evWeekSessions);
+  const evMonthRevenue = evIsRental ? 0 : sumRevenue(evMonthSessions);
+  const evYtdRevenue = evIsRental ? 0 : sumRevenue(evYtdSessions);
+  const evTotalRevenue = evIsRental ? 0 : sumRevenue(evSessions);
 
   const evTotalPhotos = evSessions.reduce((s, sess) => s + (sess.photosCount ?? 0), 0);
-  const evAvgRevPerSession = evTotalCount > 0 ? evTotalRevenue / evTotalCount : 0;
+  const evAvgRevPerSession = (!evIsRental && evTotalCount > 0) ? evTotalRevenue / evTotalCount : 0;
   const evAvgPhotosPerSession = evTotalCount > 0 ? (evTotalPhotos / evTotalCount).toFixed(1) : "0.0";
 
-  const evCompletedCount = evLog.length
-    ? evLog.filter(s => s?.status === "completed").length
-    : evTotalCount;
-  const evTotalAttempted = evLog.length ? evLog.length : evTotalCount;
+  // Additional prints analytics (business only)
+  const evTotalAdditionalPrints = evIsRental ? 0 : evSessions.reduce((s, sess) => s + getSessionAdditionalPrints(sess), 0);
+  const evAdditionalPrintRevenue = evIsRental ? 0 : evSessions.reduce((s, sess) => s + getSessionAdditionalFee(sess), 0);
+  const evTotalTaxCollected = evIsRental ? 0 : evSessions.reduce((s, sess) => s + getSessionTax(sess), 0);
+
+  // Average session duration
+  const evSessionsWithDuration = evSessions.filter(s => typeof s.durationSec === "number" && s.durationSec > 0);
+  const evAvgDurationSec = evSessionsWithDuration.length > 0
+    ? Math.round(evSessionsWithDuration.reduce((s, sess) => s + sess.durationSec, 0) / evSessionsWithDuration.length)
+    : null;
+
+  // Payment provider breakdown (business only)
+  const evProviderBreakdown = evIsRental ? {} : evSessions.reduce((acc, sess) => {
+    const prov = sess?.revenue?.paymentProvider ?? "unknown";
+    acc[prov] = (acc[prov] || 0) + 1;
+    return acc;
+  }, {});
+
+  // Tone/filter usage
+  const evToneUsage = evSessions.reduce((acc, sess) => {
+    if (sess.tone) acc[sess.tone] = (acc[sess.tone] || 0) + 1;
+    return acc;
+  }, {});
+
+  // Frame style usage
+  const evFrameUsage = evSessions.reduce((acc, sess) => {
+    if (sess.frameStyle) acc[sess.frameStyle] = (acc[sess.frameStyle] || 0) + 1;
+    return acc;
+  }, {});
+
+  // Offline vs online sessions
+  const evOfflineCount = evSessions.filter(s => !!s.offlineMode).length;
+  const evOnlineCount = evTotalCount - evOfflineCount;
+
+  const evCompletedCount = evSessions.filter(s => s.completed !== false).length;
+  const evAbandonedCount = evTotalCount - evCompletedCount;
+  const evTotalAttempted = evTotalCount;
   const evCompletionRate = evTotalAttempted > 0
     ? Math.round((evCompletedCount / evTotalAttempted) * 100)
     : 100;
@@ -4744,13 +5419,11 @@ This cannot be undone.`
         try { const sd = new Date(s.createdAt); return sd >= day && sd < next; }
         catch { return false; }
       }).length;
-      const revenue = reportEvents.reduce((sum, ev) => {
-        const p = getEvPrice(ev);
-        return sum + (ev.sessions ?? []).filter(s => {
-          try { const sd = new Date(s.createdAt); return sd >= day && sd < next; }
-          catch { return false; }
-        }).length * p;
-      }, 0);
+      const revenue = reportEvents.reduce((sum, ev) =>
+        sum + (ev.sessions ?? [])
+          .filter(s => { try { const sd = new Date(s.createdAt); return sd >= day && sd < next; } catch { return false; } })
+          .reduce((s, sess) => s + getSessionRevenue(sess, ev), 0)
+      , 0);
       return {
         date: day.toLocaleDateString("en", { month: "short", day: "numeric" }),
         sessions,
@@ -4783,19 +5456,34 @@ This cannot be undone.`
   const reportEventBreakdown = useMemo(() => {
     return reportEvents.map(ev => {
       const s = ev.sessions ?? [];
-      const p = getEvPrice(ev);
+      const evMode = ev.settings?.appMode ?? "business";
+      const isRental = evMode === "rental";
       const completed = s.filter(sess => sess.completed !== false).length;
       const photos = s.reduce((sum, sess) => sum + (sess.photosCount ?? 0), 0);
+      const revenue = isRental ? 0 : s.reduce((sum, sess) => sum + getSessionRevenue(sess, ev), 0);
+      const taxCollected = isRental ? 0 : s.reduce((sum, sess) => sum + getSessionTax(sess), 0);
+      const additionalPrints = isRental ? 0 : s.reduce((sum, sess) => sum + getSessionAdditionalPrints(sess), 0);
+      const additionalFeeTotal = isRental ? 0 : s.reduce((sum, sess) => sum + getSessionAdditionalFee(sess), 0);
+      const avgDurationSec = (() => {
+        const ds = s.filter(sess => typeof sess.durationSec === "number" && sess.durationSec > 0);
+        return ds.length ? Math.round(ds.reduce((a, b) => a + b.durationSec, 0) / ds.length) : null;
+      })();
       return {
         id: ev.id,
         name: ev.name || "Untitled",
         date: ev.date || ev.created || "—",
+        mode: evMode,
         sessions: s.length,
         completed,
+        abandoned: s.length - completed,
         photos,
-        revenue: s.length * p,
+        revenue,
+        taxCollected,
+        additionalPrints,
+        additionalFeeTotal,
         rate: s.length > 0 ? Math.round((completed / s.length) * 100) : 0,
         avgPhotos: s.length > 0 ? (photos / s.length).toFixed(1) : "0.0",
+        avgDurationMin: avgDurationSec != null ? (avgDurationSec / 60).toFixed(1) : "—",
       };
     }).sort((a, b) => b.sessions - a.sessions);
   }, [reportEvents]);
@@ -4805,7 +5493,7 @@ This cannot be undone.`
     const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
     const counts = Array(7).fill(0);
     reportSessions.forEach(s => {
-      try { counts[new Date(s.createdAt).getDay()]++; } catch {}
+      try { counts[new Date(s.createdAt).getDay()]++; } catch { }
     });
     return days.map((d, i) => ({ day: d, sessions: counts[i] }));
   }, [reportSessions]);
@@ -4823,20 +5511,55 @@ This cannot be undone.`
     try { return isThisMonth(s.createdAt); } catch { return false; }
   }).length;
 
-  const reportRevenueToday = reportEvents.reduce((sum, ev) => {
-    const p = getEvPrice(ev);
-    return sum + (ev.sessions ?? []).filter(s => { try { return isToday(s.createdAt); } catch { return false; } }).length * p;
-  }, 0);
+  const reportRevenueToday = reportEvents.reduce((sum, ev) =>
+    sum + (ev.sessions ?? [])
+      .filter(s => { try { return isToday(s.createdAt); } catch { return false; } })
+      .reduce((s, sess) => s + getSessionRevenue(sess, ev), 0)
+  , 0);
 
-  const reportRevenueThisWeek = reportEvents.reduce((sum, ev) => {
-    const p = getEvPrice(ev);
-    return sum + (ev.sessions ?? []).filter(s => { try { return isThisWeek(s.createdAt); } catch { return false; } }).length * p;
-  }, 0);
+  const reportRevenueThisWeek = reportEvents.reduce((sum, ev) =>
+    sum + (ev.sessions ?? [])
+      .filter(s => { try { return isThisWeek(s.createdAt); } catch { return false; } })
+      .reduce((s, sess) => s + getSessionRevenue(sess, ev), 0)
+  , 0);
 
-  const reportRevenueThisMonth = reportEvents.reduce((sum, ev) => {
-    const p = getEvPrice(ev);
-    return sum + (ev.sessions ?? []).filter(s => { try { return isThisMonth(s.createdAt); } catch { return false; } }).length * p;
-  }, 0);
+  const reportRevenueThisMonth = reportEvents.reduce((sum, ev) =>
+    sum + (ev.sessions ?? [])
+      .filter(s => { try { return isThisMonth(s.createdAt); } catch { return false; } })
+      .reduce((s, sess) => s + getSessionRevenue(sess, ev), 0)
+  , 0);
+
+  // Additional print and tax analytics for reports
+  const reportTotalAdditionalPrints = reportSessions.reduce((s, sess) => s + getSessionAdditionalPrints(sess), 0);
+  const reportTotalAdditionalFee = reportSessions.reduce((s, sess) => s + getSessionAdditionalFee(sess), 0);
+  const reportTotalTaxCollected = reportSessions.reduce((s, sess) => s + getSessionTax(sess), 0);
+
+  // Sessions by mode
+  const reportRentalSessions = reportSessions.filter(s => s?.appMode === "rental").length;
+  const reportBusinessSessions = reportSessions.filter(s => s?.appMode === "business" || !s?.appMode).length;
+
+  // Average session duration (minutes)
+  const reportSessionsWithDuration = reportSessions.filter(s => typeof s.durationSec === "number" && s.durationSec > 0);
+  const reportAvgDurationMin = reportSessionsWithDuration.length > 0
+    ? (reportSessionsWithDuration.reduce((s, sess) => s + sess.durationSec, 0) / reportSessionsWithDuration.length / 60).toFixed(1)
+    : null;
+
+  // Payment provider breakdown (business sessions only)
+  const reportProviderBreakdown = reportSessions.reduce((acc, sess) => {
+    if (sess?.appMode === "rental") return acc;
+    const prov = sess?.revenue?.paymentProvider;
+    if (prov) acc[prov] = (acc[prov] || 0) + 1;
+    return acc;
+  }, {});
+
+  // Tone/filter usage across report
+  const reportToneUsage = reportSessions.reduce((acc, sess) => {
+    if (sess.tone) acc[sess.tone] = (acc[sess.tone] || 0) + 1;
+    return acc;
+  }, {});
+
+  // Offline vs online count
+  const reportOfflineCount = reportSessions.filter(s => !!s.offlineMode).length;
 
   const reportAvgSessionsPerEvent = reportEvents.length > 0
     ? Math.round(reportSessions.length / reportEvents.length)
@@ -4863,11 +5586,33 @@ This cannot be undone.`
 
   // Export helpers for Reports
   const exportReportCSV = () => {
-    const header = "Event,Date,Sessions,Completed,Photos,Revenue,Completion Rate,Avg Photos/Session";
+    const header = "Event,Date,Mode,Sessions,Completed,Abandoned,Photos,Revenue,Tax Collected,Additional Prints,Add-On Revenue,Completion Rate,Avg Photos/Session,Avg Duration (min)";
     const rows = reportEventBreakdown.map(ev =>
-      `"${ev.name}","${ev.date}",${ev.sessions},${ev.completed},${ev.photos},${ev.revenue},${ev.rate}%,${ev.avgPhotos}`
+      `"${ev.name}","${ev.date}","${ev.mode}",${ev.sessions},${ev.completed},${ev.abandoned},${ev.photos},${ev.revenue},${ev.taxCollected},${ev.additionalPrints},${ev.additionalFeeTotal},${ev.rate}%,${ev.avgPhotos},${ev.avgDurationMin}`
     );
-    const csv = [header, ...rows].join("\n");
+
+    // Report-level summary row
+    const summary = `"TOTAL","","",${reportSessions.length},${reportTotalCompleted},${reportSessions.length - reportTotalCompleted},${reportPhotos},${reportGross},${reportTotalTaxCollected},${reportTotalAdditionalPrints},${reportTotalAdditionalFee},${reportConversionRate}%,${reportAvgPhotosPerSession},${reportAvgDurationMin ?? "—"}`;
+
+    // Rental vs business breakdown
+    const modeRows = [
+      ``,
+      `"Mode Breakdown"`,
+      `"Rental Sessions",${reportRentalSessions}`,
+      `"Business Sessions",${reportBusinessSessions}`,
+    ];
+
+    // Tone usage
+    const toneRows = Object.entries(reportToneUsage).length > 0
+      ? [``, `"Tone Usage"`, ...Object.entries(reportToneUsage).sort((a,b) => b[1]-a[1]).map(([t,c]) => `"${t}",${c}`)]
+      : [];
+
+    // Provider breakdown
+    const provRows = Object.entries(reportProviderBreakdown).length > 0
+      ? [``, `"Payment Provider Breakdown"`, ...Object.entries(reportProviderBreakdown).sort((a,b) => b[1]-a[1]).map(([p,c]) => `"${p}",${c}`)]
+      : [];
+
+    const csv = [header, ...rows, summary, ...modeRows, ...toneRows, ...provRows].join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -4888,7 +5633,7 @@ This cannot be undone.`
       try {
         const ctx = { userId: identity.userId };
         const [
-          persistedEvents, appearance, settings, persistedTemplates, persistedFrames, persistedTones, persistedPalettes, currentEventId, currentSubTab,
+          persistedEvents, appearance, settings, persistedTemplates, persistedFrames, persistedTones, persistedPalettes, currentEventId, currentSubTab, persistedActiveMain,
         ] = await Promise.all([
           native?.getEvents?.(ctx),
           native?.getAppearance?.(ctx),
@@ -4899,6 +5644,7 @@ This cannot be undone.`
           native?.getPalettes?.(ctx),
           native?.getCurrentEventId?.(), // can remain global pin, or scope by user if desired
           native?.getCurrentSubTab?.(),
+          native?.getActiveMain?.(),
         ]);
 
         if (Array.isArray(persistedEvents)) setEvents(persistedEvents);
@@ -4916,6 +5662,7 @@ This cannot be undone.`
               }
               : null
           );
+          setBackgroundType(appearance.backgroundType ?? "media");
           setBoothName(appearance.boothName ?? "");
           setBoothSlogan(appearance.boothSlogan ?? "");
           setHeaderFont(appearance.headerFont ?? headerFont);
@@ -4991,13 +5738,13 @@ This cannot be undone.`
           // Business
           const business = settings.business ?? {};
           setPaymentEnabled(business.paymentEnabled ?? DEFAULT_BUSINESS.paymentEnabled);
-          const prov = business.payment?.providers ?? DEFAULT_BUSINESS.payment.providers;
-          setPaymentProviders({
-            gcash: !!prov.gcash,
-            paypal: !!prov.paypal,
-            stripe: !!prov.stripe,
-            cash: !!prov.cash,
-          });
+          setActiveProvider(business.activeProvider ?? null);
+          setPaymentProviders(business.payment?.providers ?? { ...DEFAULT_BUSINESS.payment.providers });
+          setStripeProviders(business.payment?.stripeProviders ?? { ...DEFAULT_STRIPE_PROVIDERS });
+          setXenditProviders(business.payment?.xenditProviders ?? { ...DEFAULT_XENDIT_PROVIDERS });
+          setPaypalProviders(business.payment?.paypalProviders ?? { ...DEFAULT_PAYPAL_PROVIDERS });
+          setCashMode(business.payment?.cashMode ?? "manual");
+          setGcashStaticQrDataUrl(business.payment?.gcashStaticQrDataUrl ?? "");
 
           const pricing = business.pricing ?? DEFAULT_BUSINESS.pricing;
           setPricingModel(pricing.model ?? DEFAULT_BUSINESS.pricing.model);
@@ -5019,9 +5766,13 @@ This cannot be undone.`
           const found = persistedEvents.find((e) => e.id === currentEventId);
           if (found) {
             setCurrentEvent(JSON.parse(JSON.stringify(found)));
-            setActiveMain("dashboard");
             setActiveSub(currentSubTab ?? "branding");
           }
+        }
+
+        // Restore active main tab (default to "home" if nothing persisted)
+        if (persistedActiveMain) {
+          setActiveMain(persistedActiveMain);
         }
         setHydrated(true); // <- mark hydration complete
       } catch (err) {
@@ -5065,8 +5816,9 @@ This cannot be undone.`
         endSessionSummaryEnabled,
       },
       business: {
+        activeProvider,
         paymentEnabled,
-        payment: { providers: { ...paymentProviders } },
+        payment: { providers: { ...paymentProviders }, stripeProviders: { ...stripeProviders }, xenditProviders: { ...xenditProviders }, paypalProviders: { ...paypalProviders } },
         pricing: {
           model: pricingModel,
           pricePerSession,
@@ -5090,6 +5842,7 @@ This cannot be undone.`
         backgroundMediaPath: backgroundMediaPath?.url ?? null,
         backgroundMediaName: backgroundMediaPath?.name ?? null,
         backgroundMediaMime: backgroundMediaPath?.mime ?? null,
+        backgroundType,
         boothName,
         boothSlogan,
         buttonBgColor,
@@ -5151,6 +5904,7 @@ This cannot be undone.`
       backgroundMediaPath: backgroundMediaPath?.url ?? null,
       backgroundMediaName: backgroundMediaPath?.name ?? null,
       backgroundMediaMime: backgroundMediaPath?.mime ?? null,
+      backgroundType,
       boothName,
       boothSlogan,
       buttonBgColor,
@@ -5186,7 +5940,7 @@ This cannot be undone.`
   ]);
 
   useEffect(() => {
-    if (!native?.setSettings || !ready) return;
+    if (!native?.setSettings || !ready || !hydrated) return;
 
     const settingsToSave = sanitizeSettings({
       selectedCameraId,
@@ -5195,6 +5949,25 @@ This cannot be undone.`
       cameraWidth,
       cameraHeight,
       facingMode,
+      selectedPrinter,
+      paperSize,
+      printCopies,
+      printColorMode,
+      printQuality,
+      printOrientation,
+      printDuplexMode,
+      printDpi,
+      usePrinterDefaults,
+      storagePath,
+      autoDeleteDays,
+      dimWhenIdle,
+      idleTimeout,
+      launchOnStartup,
+      autoRestart,
+      autoUpdateEnabled,
+      boothIdentityName,
+      boothLocation,
+      operatorName,
       countdown,
       retakeLimit,
       screenTimers,
@@ -5215,8 +5988,9 @@ This cannot be undone.`
         endSessionSummaryEnabled,
       },
       business: {
+        activeProvider,
         paymentEnabled,
-        payment: { providers: { ...paymentProviders } },
+        payment: { providers: { ...paymentProviders }, stripeProviders: { ...stripeProviders }, xenditProviders: { ...xenditProviders }, paypalProviders: { ...paypalProviders } },
         pricing: {
           model: pricingModel,
           pricePerSession,
@@ -5228,10 +6002,36 @@ This cannot be undone.`
       },
     });
 
+    try { localStorage.setItem("boothSettings", JSON.stringify(settingsToSave)); } catch {}
     native
       .setSettings(settingsToSave, ctx)
       .catch?.(() => { });
   }, [
+    selectedCameraId,
+    mirrorCamera,
+    cameraResolution,
+    cameraWidth,
+    cameraHeight,
+    facingMode,
+    selectedPrinter,
+    paperSize,
+    printCopies,
+    printColorMode,
+    printQuality,
+    printOrientation,
+    printDuplexMode,
+    printDpi,
+    usePrinterDefaults,
+    storagePath,
+    autoDeleteDays,
+    dimWhenIdle,
+    idleTimeout,
+    launchOnStartup,
+    autoRestart,
+    autoUpdateEnabled,
+    boothIdentityName,
+    boothLocation,
+    operatorName,
     countdown,
     retakeLimit,
     screenTimers,
@@ -5240,7 +6040,6 @@ This cannot be undone.`
     soundEnabled,
     language,
     price,
-    mirrorCamera,
     appMode,
     timersEnabled,
     rentalTimerEnabled,
@@ -5271,6 +6070,10 @@ This cannot be undone.`
     if (!native?.setCurrentSubTab) return;
     native?.setCurrentSubTab(activeSub).catch?.(() => { });
   }, [activeSub, native]);
+  useEffect(() => {
+    if (!native?.setActiveMain || !hydrated) return;
+    native.setActiveMain(activeMain).catch?.(() => { });
+  }, [activeMain, native, hydrated]);
 
   useEffect(() => {
     if (!currentEvent) return;
@@ -5359,6 +6162,15 @@ This cannot be undone.`
         if (!cancelled && prefRes?.ok && prefRes.preferences) {
           setAccountPreferences((prev) => ({ ...prev, ...prefRes.preferences }));
         }
+
+        if (!cancelled) {
+          const pmStatus = await window.electron?.getPayMongoStatus?.().catch(() => null);
+          if (pmStatus?.ok) {
+            setPaymongoConfigured(pmStatus.configured);
+            setPaymongoTestMode(pmStatus.testMode);
+            setPaymongoPublicKey(pmStatus.publicKey || "");
+          }
+        }
       } catch (err) {
         console.error("Failed to load account center:", err);
       }
@@ -5368,6 +6180,50 @@ This cannot be undone.`
       cancelled = true;
     };
   }, [activeMain, identity?.userId, profile, user]);
+
+  // Load PayMongo status at startup so the Business mode radio is not grayed
+  // out until the user happens to visit Account Center > Business.
+  useEffect(() => {
+    if (!identity?.userId) return;
+    let cancelled = false;
+    window.electron?.getPayMongoStatus?.()
+      .then((pmStatus) => {
+        if (!cancelled && pmStatus?.ok) {
+          setPaymongoConfigured(pmStatus.configured);
+          setPaymongoTestMode(pmStatus.testMode);
+          setPaymongoPublicKey(pmStatus.publicKey || "");
+        }
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [identity?.userId]);
+
+  const handleGcashQrUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => setGcashStaticQrDataUrl(ev.target.result ?? "");
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  };
+
+  const handleDetectCashHardware = async () => {
+    setCashHardwareDetecting(true);
+    try {
+      const res = await window.api?.invoke?.("cash:detectHardware");
+      const detected = res?.detected ?? false;
+      const devices = res?.devices ?? [];
+      setCashHardwareDetected(detected);
+      setCashHardwareDevices(devices);
+      if (!detected) setCashMode("manual");
+    } catch {
+      setCashHardwareDetected(false);
+      setCashHardwareDevices([]);
+      setCashMode("manual");
+    } finally {
+      setCashHardwareDetecting(false);
+    }
+  };
 
   // Autosave
   useEffect(() => {
@@ -5513,6 +6369,7 @@ This cannot be undone.`
           backgroundMediaPath: backgroundMediaPath?.url ?? null,
           backgroundMediaName: backgroundMediaPath?.name ?? null,
           backgroundMediaMime: backgroundMediaPath?.mime ?? null,
+          backgroundType,
           boothName,
           boothSlogan,
           headerFont,
@@ -5548,8 +6405,9 @@ This cannot be undone.`
             endSessionSummaryEnabled,
           },
           business: {
+            activeProvider,
             paymentEnabled,
-            payment: { providers: { ...paymentProviders } },
+            payment: { providers: { ...paymentProviders }, stripeProviders: { ...stripeProviders }, xenditProviders: { ...xenditProviders }, paypalProviders: { ...paypalProviders }, cashMode, gcashStaticQrDataUrl },
             pricing: {
               model: pricingModel,
               pricePerSession,
@@ -5587,37 +6445,11 @@ This cannot be undone.`
     }
   }
 
-  const [subscription, setSubscription] = useState(null);
-  const [subscriptionLoading, setSubscriptionLoading] = useState(false);
-  const [subscriptionError, setSubscriptionError] = useState(null);
-
-  const refreshSubscription = useCallback(async () => {
-    setSubscriptionLoading(true);
-    setSubscriptionError(null);
-    try {
-      const data = await licensingApi.getSubscription();
-      setSubscription(data || null);
-    } catch (err) {
-      console.error("Failed to load subscription", err);
-      // Surface the error so the UI can show a meaningful message
-      // instead of silently showing "No active plan".
-      setSubscriptionError(err?.message || "Could not reach billing server");
-      setSubscription(null);
-    } finally {
-      setSubscriptionLoading(false);
-    }
-  }, []);
-
   const refreshLicense = useCallback(async () => {
-    await Promise.all([
-      ctxRefreshLicense({ hard: true }).catch((err) =>
-        console.error("ctxRefreshLicense failed", err)
-      ),
-      refreshSubscription().catch((err) =>
-        console.error("refreshSubscription failed", err)
-      ),
-    ]);
-  }, [ctxRefreshLicense, refreshSubscription]);
+    await ctxRefreshLicense({ hard: true }).catch((err) =>
+      console.error("ctxRefreshLicense failed", err)
+    );
+  }, [ctxRefreshLicense]);
 
   const checkoutPendingRef = useRef(false);
 
@@ -5805,6 +6637,14 @@ This cannot be undone.`
 
   // Gallery plan state
   const [galleryPlan, setGalleryPlan] = useState("free"); // "free" | "plus" | "business"
+
+  // Reflect the live entitlement tier (free | plus | business) in the plan cards
+  // so the "Current Plan" highlight matches what the account actually has.
+  useEffect(() => {
+    const tier = gating?.galleryTier
+      || (gating?.galleryEnabled || gating?.galleryAddon ? "plus" : "free");
+    if (["free", "plus", "business"].includes(tier)) setGalleryPlan(tier);
+  }, [gating?.galleryTier, gating?.galleryEnabled, gating?.galleryAddon]);
 
   // ---------------------------
   // TEMPLATE EDITOR FUNCTIONS
@@ -6198,6 +7038,7 @@ This cannot be undone.`
         "2x6": [1, 3], // portrait strip
         "6x4": [3, 2], // landscape postcard
         "6x2": [3, 1], // landscape strip
+        "4x4": [1, 1], // square
       };
       const [ratioW, ratioH] = LAYOUT_ASPECT[layout] ?? LAYOUT_ASPECT["4x6"];
 
@@ -6388,7 +7229,7 @@ This cannot be undone.`
       {/* Google Fonts */}
       <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" />
       {/* ===== Shell: Sidebar + Main ===== */}
-      <div className="flex h-screen bg-[radial-gradient(circle_at_top,_rgba(79,70,229,0.06),_transparent_32%),linear-gradient(180deg,_#f8faff_0%,_#f1f5f9_100%)]">
+      <div className="flex h-screen bg-[radial-gradient(circle_at_top,_rgba(37,99,235,0.06),_transparent_32%),linear-gradient(180deg,_#f8faff_0%,_#f1f5f9_100%)]">
         {/* --- Left Sidebar --- */}
         <aside className="h-screen w-[280px] flex-shrink-0 border-r border-slate-200/80 bg-slate-50/80 backdrop-blur-xl flex flex-col shadow-[10px_0_40px_rgba(15,23,42,0.06)]">
           {/* Account summary */}
@@ -6418,7 +7259,7 @@ This cannot be undone.`
               </div>
 
               <div className="min-w-0 flex-1 text-left">
-                <div className="truncate text-sm font-medium text-slate-900 group-hover:text-indigo-600">
+                <div className="truncate text-sm font-medium text-slate-900 group-hover:text-blue-600">
                   {sidebarDisplayName}
                 </div>
                 <div className="truncate text-xs text-slate-500">
@@ -6427,7 +7268,7 @@ This cannot be undone.`
               </div>
 
               <svg
-                className="h-4 w-4 flex-shrink-0 text-slate-300 transition group-hover:text-indigo-500"
+                className="h-4 w-4 flex-shrink-0 text-slate-300 transition group-hover:text-blue-500"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -6493,13 +7334,13 @@ This cannot be undone.`
                       <button
                         key={id}
                         onClick={() => setActiveMain(id)}
-                        className={`w-full flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-medium transition-all active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 ${active
-                          ? "bg-indigo-50 text-indigo-700 shadow-[inset_0_0_0_1px_rgba(99,102,241,0.12)]"
+                        className={`w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 ${active
+                          ? "bg-blue-50 text-blue-700 shadow-[inset_0_0_0_1px_rgba(99,102,241,0.12)]"
                           : "text-slate-600 hover:bg-white hover:text-slate-900"
                           }`}
                       >
                         <svg
-                          className={`h-4 w-4 flex-shrink-0 ${active ? "text-indigo-600" : "text-slate-400"
+                          className={`h-4 w-4 flex-shrink-0 ${active ? "text-blue-600" : "text-slate-400"
                             }`}
                           fill="none"
                           stroke="currentColor"
@@ -6526,13 +7367,13 @@ This cannot be undone.`
                 </div>
                 <button
                   onClick={() => setActiveMain("settings")}
-                  className={`w-full flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-medium transition-all active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 ${activeMain === "settings"
-                    ? "bg-indigo-50 text-indigo-700 shadow-[inset_0_0_0_1px_rgba(99,102,241,0.12)]"
+                  className={`w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 ${activeMain === "settings"
+                    ? "bg-blue-50 text-blue-700 shadow-[inset_0_0_0_1px_rgba(99,102,241,0.12)]"
                     : "text-slate-600 hover:bg-white hover:text-slate-900"
                     }`}
                 >
                   <svg
-                    className={`h-4 w-4 flex-shrink-0 ${activeMain === "settings" ? "text-indigo-600" : "text-slate-400"
+                    className={`h-4 w-4 flex-shrink-0 ${activeMain === "settings" ? "text-blue-600" : "text-slate-400"
                       }`}
                     fill="none"
                     stroke="currentColor"
@@ -6550,13 +7391,13 @@ This cannot be undone.`
 
                 <button
                   onClick={() => setActiveMain("booths")}
-                  className={`w-full flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-medium transition-all active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 ${activeMain === "booths"
-                    ? "bg-indigo-50 text-indigo-700 shadow-[inset_0_0_0_1px_rgba(99,102,241,0.12)]"
+                  className={`w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 ${activeMain === "booths"
+                    ? "bg-blue-50 text-blue-700 shadow-[inset_0_0_0_1px_rgba(99,102,241,0.12)]"
                     : "text-slate-600 hover:bg-white hover:text-slate-900"
                     }`}
                 >
                   <svg
-                    className={`h-4 w-4 flex-shrink-0 ${activeMain === "booths" ? "text-indigo-600" : "text-slate-400"
+                    className={`h-4 w-4 flex-shrink-0 ${activeMain === "booths" ? "text-blue-600" : "text-slate-400"
                       }`}
                     fill="none"
                     stroke="currentColor"
@@ -6579,13 +7420,13 @@ This cannot be undone.`
                 </div>
                 <button
                   onClick={() => setActiveMain("reports")}
-                  className={`w-full flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-medium transition-all active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 ${activeMain === "reports"
-                    ? "bg-indigo-50 text-indigo-700 shadow-[inset_0_0_0_1px_rgba(99,102,241,0.12)]"
+                  className={`w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 ${activeMain === "reports"
+                    ? "bg-blue-50 text-blue-700 shadow-[inset_0_0_0_1px_rgba(99,102,241,0.12)]"
                     : "text-slate-600 hover:bg-white hover:text-slate-900"
                     }`}
                 >
                   <svg
-                    className={`h-4 w-4 flex-shrink-0 ${activeMain === "reports" ? "text-indigo-600" : "text-slate-400"
+                    className={`h-4 w-4 flex-shrink-0 ${activeMain === "reports" ? "text-blue-600" : "text-slate-400"
                       }`}
                     fill="none"
                     stroke="currentColor"
@@ -6609,15 +7450,15 @@ This cannot be undone.`
                   </div>
                   <button
                     onClick={() => setActiveMain("dashboard")}
-                    className="w-full rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-50 to-white px-3 py-3 text-left transition-all hover:border-indigo-200 hover:shadow-sm active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
+                    className="w-full rounded-lg border border-blue-100 bg-gradient-to-br from-blue-50 to-white px-3 py-3 text-left transition-all hover:border-blue-200 hover:shadow-sm active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <div className="truncate text-xs font-semibold text-indigo-900">
+                      <div className="truncate text-xs font-semibold text-blue-900">
                         {currentEvent.name || "Untitled"}
                       </div>
                       <span className="h-2 w-2 flex-shrink-0 rounded-full bg-emerald-400" />
                     </div>
-                    <div className="mt-1 text-[11px] text-indigo-500">
+                    <div className="mt-1 text-[11px] text-blue-500">
                       Open event workspace
                     </div>
                   </button>
@@ -6646,13 +7487,13 @@ This cannot be undone.`
                 <button
                   key={id}
                   onClick={() => setActiveMain(id)}
-                  className={`w-full flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-medium transition-all active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 ${activeMain === id
-                    ? "bg-indigo-50 text-indigo-700 shadow-[inset_0_0_0_1px_rgba(99,102,241,0.12)]"
+                  className={`w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 ${activeMain === id
+                    ? "bg-blue-50 text-blue-700 shadow-[inset_0_0_0_1px_rgba(99,102,241,0.12)]"
                     : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
                     }`}
                 >
                   <svg
-                    className={`h-4 w-4 flex-shrink-0 ${activeMain === id ? "text-indigo-600" : "text-slate-400"
+                    className={`h-4 w-4 flex-shrink-0 ${activeMain === id ? "text-blue-600" : "text-slate-400"
                       }`}
                     fill="none"
                     stroke="currentColor"
@@ -6668,7 +7509,7 @@ This cannot be undone.`
             <div className="border-t border-slate-200/80 pt-4">
               <button
                 onClick={handleLogoutClick}
-                className="w-full flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-medium text-red-500 transition-all hover:bg-red-50 hover:text-red-600 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
+                className="w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-red-500 transition-all hover:bg-red-50 hover:text-red-600 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
               >
                 <svg
                   className="h-4 w-4 flex-shrink-0"
@@ -6709,7 +7550,7 @@ This cannot be undone.`
                     <button
                       type="button"
                       onClick={() => setActiveMain("events")}
-                      className="mt-4 inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 active:scale-[0.98]"
+                      className="mt-4 inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 active:scale-[0.98]"
                     >
                       Go to Events
                     </button>
@@ -6742,7 +7583,7 @@ This cannot be undone.`
                         <button
                           type="button"
                           onClick={() => setActiveSub(activeSub)}
-                          className="font-medium text-indigo-600 hover:text-indigo-700 transition-colors active:scale-[0.98]"
+                          className="font-medium text-blue-600 hover:text-blue-700 transition-colors active:scale-[0.98]"
                         >
                           {activeSub === "background color"
                             ? "Background Color"
@@ -6760,7 +7601,7 @@ This cannot be undone.`
                         <h3 className="text-sm font-semibold text-gray-900 truncate">
                           {currentEvent?.name || "Untitled event"}
                         </h3>
-                        <span className="flex-shrink-0 rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-medium text-indigo-600 border border-indigo-100">
+                        <span className="flex-shrink-0 rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-600 border border-blue-100">
                           {currentEvent?.settings?.appMode ?? appMode ?? DEFAULT_APP_MODE}
                         </span>
                         <div className="hidden md:flex items-center gap-3 text-[11px] text-gray-400">
@@ -6779,7 +7620,7 @@ This cannot be undone.`
                           type="checkbox"
                           checked={autosaveEnabled}
                           onChange={(e) => setAutosaveEnabled(e.target.checked)}
-                          className="w-3.5 h-3.5 rounded accent-indigo-600"
+                          className="w-3.5 h-3.5 rounded accent-blue-600"
                         />
                         Autosave
                       </label>
@@ -6797,6 +7638,14 @@ This cannot be undone.`
                         onClick={async () => {
                           try {
                             const evCopy = JSON.parse(JSON.stringify(currentEvent));
+
+                            const hasTemplates = Array.isArray(evCopy.appliedTemplates) && evCopy.appliedTemplates.length > 0;
+                            if (!hasTemplates) {
+                              showToast?.("This event has no templates. Create and apply at least one template before starting the booth.");
+                              setActiveSub("templates");
+                              return;
+                            }
+
                             const mergedEvent = {
                               ...evCopy,
                               settings: { ...(evCopy.settings || {}), ...settingsToSave },
@@ -6826,57 +7675,32 @@ This cannot be undone.`
 
               {/* DASHBOARD SUB-TABS */}
               {activeMain === "dashboard" && currentEvent && (
-                <div className={`${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_SOFT} mb-6 p-4`}>
-                  <div className="space-y-3">
-                    <div>
-                      <div className={`${EYEBROW} mb-2`}>Creative Setup</div>
-                      <div className="flex flex-wrap gap-2">
-                        {[
-                          ["branding", "Branding"],
-                          ["templates", "Templates"],
-                          ["frames", "Frames"],
-                          ["tones", "Tones"],
-                          ["background color", "Background Color"],
-                        ].map(([tab, label]) => (
-                          <button
-                            key={tab}
-                            type="button"
-                            onClick={() => setActiveSub(tab)}
-                            className={`px-4 py-2 text-sm font-semibold rounded-full transition-all active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed ${activeSub === tab
-                              ? "bg-indigo-600 text-white shadow-md shadow-indigo-200"
-                              : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-                              }`}
-                          >
-                            {label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    <hr className="border-slate-100" />
-
-                    <div>
-                      <div className={`${EYEBROW} mb-2`}>Controls & Analytics</div>
-                      <div className="flex flex-wrap gap-2">
-                        {[
-                          ["controls", "Controls"],
-                          ["analytics", "Analytics"],
-                          ["sharing", "Sharing"],
-                        ].map(([tab, label]) => (
-                          <button
-                            key={tab}
-                            type="button"
-                            onClick={() => setActiveSub(tab)}
-                            className={`px-4 py-2 text-sm font-semibold rounded-full transition-all active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed ${activeSub === tab
-                              ? "bg-indigo-600 text-white shadow-md shadow-indigo-200"
-                              : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-                              }`}
-                          >
-                            {label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
+                <div className={`${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_SOFT} mb-6 p-1.5`}>
+                  <div className="flex flex-wrap gap-1">
+                    {[
+                      ["branding", "Branding", "M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"],
+                      ["templates", "Templates", "M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zm0 8a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zm10 0a1 1 0 011-1h4a1 1 0 011 1v6a1 1 0 01-1 1h-4a1 1 0 01-1-1v-6z"],
+                      ["frames", "Frames", "M4 16V4a2 2 0 012-2h8a2 2 0 012 2v12m-6 4h.01M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"],
+                      ["samples", "Samples", "M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"],
+                      ["tones", "Tones", "M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2z"],
+                      ["background color", "Colors", "M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485"],
+                      ["controls", "Controls", "M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"],
+                      ["analytics", "Analytics", "M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"],
+                      ["sharing", "Sharing", "M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"],
+                    ].map(([tab, label, icon]) => (
+                      <button
+                        key={tab}
+                        type="button"
+                        onClick={() => setActiveSub(tab)}
+                        className={`inline-flex items-center gap-1.5 px-3.5 py-2 text-sm font-medium rounded-md transition-all active:scale-[0.98] ${activeSub === tab
+                          ? "bg-blue-600 text-white shadow-sm"
+                          : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                          }`}
+                      >
+                        <svg className="h-3.5 w-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d={icon} /></svg>
+                        {label}
+                      </button>
+                    ))}
                   </div>
                 </div>
               )}
@@ -6890,7 +7714,7 @@ This cannot be undone.`
 
               {activeMain === "booths" && (
                 <div className="space-y-4">
-                  <div className="relative overflow-hidden rounded-3xl border border-white/20 bg-gradient-to-br from-indigo-500 via-indigo-600 to-violet-700 px-6 py-6 text-white shadow-[0_24px_64px_rgba(79,70,229,0.25)]">
+                  <div className="relative overflow-hidden rounded-xl border border-white/20 bg-gradient-to-br from-blue-500 via-blue-600 to-blue-800 px-6 py-6 text-white shadow-[0_24px_64px_rgba(37,99,235,0.25)]">
                     <WavePattern />
                     <div className="relative z-10">
                       <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/15 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white">Remote</div>
@@ -6965,7 +7789,7 @@ This cannot be undone.`
                 <div className="space-y-5">
 
                   {/* ===== Header — gradient banner ===== */}
-                  <div className="relative overflow-hidden rounded-3xl border border-white/20 bg-gradient-to-br from-indigo-500 via-indigo-600 to-violet-700 px-6 py-6 text-white shadow-[0_24px_64px_rgba(79,70,229,0.25)]">
+                  <div className="relative overflow-hidden rounded-xl border border-white/20 bg-gradient-to-br from-blue-500 via-blue-600 to-blue-800 px-6 py-6 text-white shadow-[0_24px_64px_rgba(37,99,235,0.25)]">
                     <WavePattern />
                     <div className="relative z-10 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                       <div>
@@ -6977,14 +7801,14 @@ This cannot be undone.`
                         <select
                           value={reportEventId}
                           onChange={(e) => setReportEventId(e.target.value)}
-                          className="rounded-full border border-white/25 bg-white/15 px-4 py-2 text-sm text-white font-medium outline-none hover:bg-white/25 transition"
+                          className="rounded-lg border border-white/25 bg-white/15 px-4 py-2 text-sm text-white font-medium outline-none hover:bg-white/25 transition"
                         >
                           <option value="all" className="text-slate-900">All events</option>
                           {events.map(ev => (
                             <option key={ev.id} value={ev.id} className="text-slate-900">{ev.name}</option>
                           ))}
                         </select>
-                        <button onClick={exportReportCSV} className="inline-flex items-center justify-center rounded-full bg-white px-5 py-2 text-sm font-semibold text-indigo-700 shadow-md transition hover:-translate-y-0.5 hover:shadow-lg active:scale-[0.98]">
+                        <button onClick={exportReportCSV} className="inline-flex items-center justify-center rounded-lg bg-white px-5 py-2 text-sm font-semibold text-blue-700 shadow-md transition hover:-translate-y-0.5 hover:shadow-lg active:scale-[0.98]">
                           Export CSV
                         </button>
                       </div>
@@ -7003,7 +7827,7 @@ This cannot be undone.`
                         <div className={EYEBROW}>{label}</div>
                         <div className="mt-2 text-xl font-bold tabular-nums text-slate-900">{sessions}</div>
                         <div className="text-xs text-slate-400">sessions</div>
-                        <div className="mt-1 text-lg font-semibold tabular-nums text-indigo-600">{peso(revenue)}</div>
+                        <div className="mt-1 text-lg font-semibold tabular-nums text-blue-600">{peso(revenue)}</div>
                         <div className="text-xs text-slate-400">revenue</div>
                       </div>
                     ))}
@@ -7016,7 +7840,7 @@ This cannot be undone.`
                       { label: "Completion Rate", value: `${reportConversionRate}%`, color: reportConversionRate >= 80 ? "text-emerald-600" : reportConversionRate >= 50 ? "text-amber-600" : "text-red-500" },
                       { label: "Avg Sessions / Event", value: reportAvgSessionsPerEvent, color: "text-slate-900" },
                       { label: "Avg Photos / Session", value: reportAvgPhotosPerSession, color: "text-slate-900" },
-                      { label: "Peak Hour", value: `${peakHour}:00`, color: "text-indigo-600" },
+                      { label: "Peak Hour", value: `${peakHour}:00`, color: "text-blue-600" },
                     ].map(({ label, value, color }) => (
                       <div key={label} className={`${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_SOFT} p-4`}>
                         <div className="text-[11px] font-medium text-slate-400 uppercase tracking-wide">{label}</div>
@@ -7024,6 +7848,87 @@ This cannot be undone.`
                       </div>
                     ))}
                   </div>
+
+                  {/* ===== Extended analytics: mode, quality, revenue detail ===== */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    {[
+                      { label: "Rental Sessions", value: reportRentalSessions, color: "text-amber-600", sub: "no revenue" },
+                      { label: "Business Sessions", value: reportBusinessSessions, color: "text-blue-600", sub: "with payment" },
+                      { label: "Offline Sessions", value: reportOfflineCount, color: "text-slate-700", sub: "saved locally" },
+                      { label: "Avg Duration", value: reportAvgDurationMin != null ? `${reportAvgDurationMin} min` : "—", color: "text-slate-900", sub: "per session" },
+                    ].map(({ label, value, color, sub }) => (
+                      <div key={label} className={`${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_SOFT} p-4`}>
+                        <div className="text-[11px] font-medium text-slate-400 uppercase tracking-wide">{label}</div>
+                        <div className={`mt-1.5 text-xl font-bold tabular-nums ${color}`}>{value}</div>
+                        <div className="text-[11px] text-slate-400 mt-0.5">{sub}</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Revenue detail row (non-zero values only) */}
+                  {(reportTotalAdditionalPrints > 0 || reportTotalTaxCollected > 0 || reportTotalAdditionalFee > 0) && (
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      {[
+                        { label: "Additional Prints Sold", value: reportTotalAdditionalPrints.toString(), sub: "extra prints" },
+                        { label: "Add-On Revenue", value: peso(reportTotalAdditionalFee), sub: "from extra prints" },
+                        { label: "Tax Collected", value: peso(reportTotalTaxCollected), sub: "total tax" },
+                      ].map(({ label, value, sub }) => (
+                        <div key={label} className={`${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_SOFT} p-4`}>
+                          <div className="text-[11px] font-medium text-slate-400 uppercase tracking-wide">{label}</div>
+                          <div className="mt-1.5 text-xl font-bold tabular-nums text-blue-600">{value}</div>
+                          <div className="text-[11px] text-slate-400 mt-0.5">{sub}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Tone usage + Provider breakdown */}
+                  {(Object.keys(reportToneUsage).length > 0 || Object.keys(reportProviderBreakdown).length > 0) && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {Object.keys(reportToneUsage).length > 0 && (
+                        <div className={`${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_SOFT} p-4`}>
+                          <div className="text-sm font-semibold text-slate-800 mb-3">Tone / Filter Usage</div>
+                          <div className="space-y-2">
+                            {Object.entries(reportToneUsage).sort((a,b) => b[1]-a[1]).slice(0,6).map(([tone, count]) => {
+                              const maxVal = Math.max(...Object.values(reportToneUsage));
+                              return (
+                                <div key={tone}>
+                                  <div className="flex items-center justify-between text-xs mb-0.5">
+                                    <span className="text-slate-700 capitalize font-medium">{tone}</span>
+                                    <span className="text-slate-500 tabular-nums">{count}×</span>
+                                  </div>
+                                  <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                                    <div className="h-full bg-violet-500 rounded-full" style={{ width: `${(count/maxVal)*100}%` }} />
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                      {Object.keys(reportProviderBreakdown).length > 0 && (
+                        <div className={`${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_SOFT} p-4`}>
+                          <div className="text-sm font-semibold text-slate-800 mb-3">Payment Provider Breakdown</div>
+                          <div className="space-y-2">
+                            {Object.entries(reportProviderBreakdown).sort((a,b) => b[1]-a[1]).map(([prov, count]) => {
+                              const maxVal = Math.max(...Object.values(reportProviderBreakdown));
+                              return (
+                                <div key={prov}>
+                                  <div className="flex items-center justify-between text-xs mb-0.5">
+                                    <span className="text-slate-700 capitalize font-medium">{prov}</span>
+                                    <span className="text-slate-500 tabular-nums">{count} sessions</span>
+                                  </div>
+                                  <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                                    <div className="h-full bg-blue-500 rounded-full" style={{ width: `${(count/maxVal)*100}%` }} />
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   {/* ===== 30-Day Trend — Sessions & Revenue LineChart ===== */}
                   <div className={`${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_SOFT} p-5`}>
@@ -7045,7 +7950,7 @@ This cannot be undone.`
                             formatter={(value, name) => [name === "revenue" ? peso(value) : value, name === "revenue" ? "Revenue" : "Sessions"]}
                           />
                           <Legend verticalAlign="top" height={30} iconType="circle" wrapperStyle={{ fontSize: 12, color: "#64748b" }} />
-                          <Line yAxisId="sessions" type="monotone" dataKey="sessions" stroke="#4f46e5" strokeWidth={2.5} dot={false} activeDot={{ r: 5, fill: "#4f46e5" }} name="Sessions" />
+                          <Line yAxisId="sessions" type="monotone" dataKey="sessions" stroke="#2563eb" strokeWidth={2.5} dot={false} activeDot={{ r: 5, fill: "#2563eb" }} name="Sessions" />
                           <Line yAxisId="revenue" type="monotone" dataKey="revenue" stroke="#10b981" strokeWidth={2} dot={false} strokeDasharray="5 3" activeDot={{ r: 4, fill: "#10b981" }} name="Revenue" />
                         </LineChart>
                       </ResponsiveContainer>
@@ -7066,7 +7971,7 @@ This cannot be undone.`
                             <XAxis dataKey="hour" tick={{ fontSize: 10, fill: "#94a3b8" }} tickLine={false} axisLine={{ stroke: "#e2e8f0" }} interval={2} />
                             <YAxis tick={{ fontSize: 10, fill: "#94a3b8" }} tickLine={false} axisLine={false} allowDecimals={false} />
                             <Tooltip contentStyle={{ borderRadius: 12, border: "1px solid #e2e8f0", fontSize: 13 }} formatter={(v) => [v, "Sessions"]} labelFormatter={(h) => `${h}:00`} />
-                            <Bar dataKey="sessions" fill="#4f46e5" radius={[4, 4, 0, 0]} maxBarSize={20} />
+                            <Bar dataKey="sessions" fill="#2563eb" radius={[4, 4, 0, 0]} maxBarSize={20} />
                           </BarChart>
                         </ResponsiveContainer>
                       </div>
@@ -7105,7 +8010,7 @@ This cannot be undone.`
                           <XAxis dataKey="week" tick={{ fontSize: 10, fill: "#94a3b8" }} tickLine={false} axisLine={{ stroke: "#e2e8f0" }} />
                           <YAxis tick={{ fontSize: 11, fill: "#94a3b8" }} tickLine={false} axisLine={false} allowDecimals={false} />
                           <Tooltip contentStyle={{ borderRadius: 12, border: "1px solid #e2e8f0", fontSize: 13 }} formatter={(v) => [v, "Sessions"]} />
-                          <Bar dataKey="sessions" fill="#4f46e5" radius={[4, 4, 0, 0]} maxBarSize={28} />
+                          <Bar dataKey="sessions" fill="#2563eb" radius={[4, 4, 0, 0]} maxBarSize={28} />
                         </BarChart>
                       </ResponsiveContainer>
                     </div>
@@ -7130,7 +8035,7 @@ This cannot be undone.`
                                   className="h-full rounded-full transition-all duration-500"
                                   style={{
                                     width: `${(count / reportMaxTplUsage) * 100}%`,
-                                    background: `linear-gradient(90deg, #4f46e5, #8b5cf6)`,
+                                    background: `linear-gradient(90deg, #2563eb, #3b82f6)`,
                                   }}
                                 />
                               </div>
@@ -7153,35 +8058,46 @@ This cannot be undone.`
                           <thead>
                             <tr className="bg-slate-50/80">
                               <th className="text-left px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-400">Event</th>
+                              <th className="text-right px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-400">Mode</th>
                               <th className="text-right px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-400">Sessions</th>
                               <th className="text-right px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-400">Completed</th>
                               <th className="text-right px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-400">Photos</th>
                               <th className="text-right px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-400">Revenue</th>
+                              <th className="text-right px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-400">Tax</th>
+                              <th className="text-right px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-400">Extra Prints</th>
                               <th className="text-right px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-400">Rate</th>
-                              <th className="text-right px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-400">Avg Photos</th>
+                              <th className="text-right px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-400">Avg Photos</th>
+                              <th className="text-right px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-400">Avg Duration</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100">
                             {reportEventBreakdown.map((ev) => (
                               <tr key={ev.id} className="hover:bg-slate-50/60 transition-colors">
                                 <td className="px-5 py-3">
-                                  <div className="font-medium text-slate-800 truncate max-w-[200px]">{ev.name}</div>
+                                  <div className="font-medium text-slate-800 truncate max-w-[160px]">{ev.name}</div>
                                   <div className="text-[11px] text-slate-400 mt-0.5">{ev.date}</div>
+                                </td>
+                                <td className="text-right px-4 py-3">
+                                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold capitalize ${ev.mode === "rental" ? "bg-amber-50 text-amber-700" : "bg-blue-50 text-blue-700"}`}>
+                                    {ev.mode}
+                                  </span>
                                 </td>
                                 <td className="text-right px-4 py-3 font-medium tabular-nums text-slate-700">{ev.sessions}</td>
                                 <td className="text-right px-4 py-3 tabular-nums text-slate-600">{ev.completed}</td>
                                 <td className="text-right px-4 py-3 tabular-nums text-slate-600">{ev.photos.toLocaleString()}</td>
-                                <td className="text-right px-4 py-3 font-medium tabular-nums text-indigo-600">{peso(ev.revenue)}</td>
+                                <td className="text-right px-4 py-3 font-medium tabular-nums text-blue-600">{ev.mode === "rental" ? <span className="text-slate-400">—</span> : peso(ev.revenue)}</td>
+                                <td className="text-right px-4 py-3 tabular-nums text-slate-500">{ev.mode === "rental" ? <span className="text-slate-300">—</span> : ev.taxCollected > 0 ? peso(ev.taxCollected) : <span className="text-slate-300">—</span>}</td>
+                                <td className="text-right px-4 py-3 tabular-nums text-slate-500">{ev.mode === "rental" ? <span className="text-slate-300">—</span> : ev.additionalPrints > 0 ? ev.additionalPrints : <span className="text-slate-300">—</span>}</td>
                                 <td className="text-right px-4 py-3">
-                                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums ${
-                                    ev.rate >= 80 ? "bg-emerald-50 text-emerald-700" :
-                                    ev.rate >= 50 ? "bg-amber-50 text-amber-700" :
-                                    "bg-red-50 text-red-600"
-                                  }`}>
+                                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums ${ev.rate >= 80 ? "bg-emerald-50 text-emerald-700" :
+                                      ev.rate >= 50 ? "bg-amber-50 text-amber-700" :
+                                        "bg-red-50 text-red-600"
+                                    }`}>
                                     {ev.rate}%
                                   </span>
                                 </td>
-                                <td className="text-right px-5 py-3 tabular-nums text-slate-600">{ev.avgPhotos}</td>
+                                <td className="text-right px-4 py-3 tabular-nums text-slate-600">{ev.avgPhotos}</td>
+                                <td className="text-right px-5 py-3 tabular-nums text-slate-500">{ev.avgDurationMin}</td>
                               </tr>
                             ))}
                           </tbody>
@@ -7189,20 +8105,23 @@ This cannot be undone.`
                             <tfoot>
                               <tr className="bg-slate-50/80 border-t border-slate-200">
                                 <td className="px-5 py-3 font-semibold text-slate-700">Total</td>
+                                <td className="px-4 py-3" />
                                 <td className="text-right px-4 py-3 font-semibold tabular-nums text-slate-800">{reportSessions.length}</td>
                                 <td className="text-right px-4 py-3 font-semibold tabular-nums text-slate-700">{reportTotalCompleted}</td>
                                 <td className="text-right px-4 py-3 font-semibold tabular-nums text-slate-700">{reportPhotos.toLocaleString()}</td>
-                                <td className="text-right px-4 py-3 font-semibold tabular-nums text-indigo-600">{peso(reportGross)}</td>
+                                <td className="text-right px-4 py-3 font-semibold tabular-nums text-blue-600">{peso(reportGross)}</td>
+                                <td className="text-right px-4 py-3 font-semibold tabular-nums text-slate-600">{reportTotalTaxCollected > 0 ? peso(reportTotalTaxCollected) : "—"}</td>
+                                <td className="text-right px-4 py-3 font-semibold tabular-nums text-slate-600">{reportTotalAdditionalPrints > 0 ? reportTotalAdditionalPrints : "—"}</td>
                                 <td className="text-right px-4 py-3">
-                                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums ${
-                                    reportConversionRate >= 80 ? "bg-emerald-50 text-emerald-700" :
-                                    reportConversionRate >= 50 ? "bg-amber-50 text-amber-700" :
-                                    "bg-red-50 text-red-600"
-                                  }`}>
+                                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums ${reportConversionRate >= 80 ? "bg-emerald-50 text-emerald-700" :
+                                      reportConversionRate >= 50 ? "bg-amber-50 text-amber-700" :
+                                        "bg-red-50 text-red-600"
+                                    }`}>
                                     {reportConversionRate}%
                                   </span>
                                 </td>
-                                <td className="text-right px-5 py-3 font-semibold tabular-nums text-slate-700">{reportAvgPhotosPerSession}</td>
+                                <td className="text-right px-4 py-3 font-semibold tabular-nums text-slate-700">{reportAvgPhotosPerSession}</td>
+                                <td className="text-right px-5 py-3 font-semibold tabular-nums text-slate-600">{reportAvgDurationMin != null ? `${reportAvgDurationMin} min` : "—"}</td>
                               </tr>
                             </tfoot>
                           )}
@@ -7217,7 +8136,7 @@ This cannot be undone.`
               {activeMain === "settings" && (
                 <div className="space-y-6">
                   {/* ================= Header ================= */}
-                  <div className="relative overflow-hidden rounded-3xl border border-white/20 bg-gradient-to-br from-indigo-500 via-indigo-600 to-violet-700 px-6 py-6 text-white shadow-[0_24px_64px_rgba(79,70,229,0.25)]">
+                  <div className="relative overflow-hidden rounded-xl border border-white/20 bg-gradient-to-br from-blue-500 via-blue-600 to-blue-800 px-6 py-6 text-white shadow-[0_24px_64px_rgba(37,99,235,0.25)]">
                     <WavePattern />
                     <div className="relative z-10 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                       <div>
@@ -7235,14 +8154,14 @@ This cannot be undone.`
                         <button
                           type="button"
                           onClick={saveSettings}
-                          className="inline-flex items-center justify-center rounded-full bg-white px-5 py-2.5 text-sm font-semibold text-indigo-700 shadow-md transition hover:-translate-y-0.5 hover:shadow-lg active:scale-[0.98]"
+                          className="inline-flex items-center justify-center rounded-lg bg-white px-5 py-2.5 text-sm font-semibold text-blue-700 shadow-md transition hover:-translate-y-0.5 hover:shadow-lg active:scale-[0.98]"
                         >
                           Save settings
                         </button>
                         <button
                           type="button"
                           onClick={resetSettingsToDefault}
-                          className="inline-flex items-center justify-center rounded-full border border-white/25 bg-white/15 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-white/25 active:scale-[0.98]"
+                          className="inline-flex items-center justify-center rounded-lg border border-white/25 bg-white/15 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-white/25 active:scale-[0.98]"
                         >
                           Reset to defaults
                         </button>
@@ -7322,8 +8241,8 @@ This cannot be undone.`
                           key={tab.id}
                           type="button"
                           onClick={() => setActiveSettingsTab(tab.id)}
-                          className={`px-4 py-2 text-sm font-semibold transition-all active:scale-[0.98] rounded-full ${activeSettingsTab === tab.id
-                            ? "bg-indigo-600 text-white shadow-md shadow-indigo-200"
+                          className={`px-4 py-2 text-sm font-semibold transition-all active:scale-[0.98] rounded-lg ${activeSettingsTab === tab.id
+                            ? "bg-blue-600 text-white shadow-md shadow-blue-200"
                             : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
                             }`}
                         >
@@ -7763,6 +8682,101 @@ This cannot be undone.`
                             </div>
                           </div>
                         </div>
+
+                        {/* Auto-Cut Detection — DNP + HiTi */}
+                        <div className={`xl:col-span-3 ${SURFACE_BG} ${SURFACE_BORDER} ${SMALL_CARD_RADIUS} p-4`}>
+                          <div className="flex items-start justify-between gap-4">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm font-medium text-gray-900">Auto-Cut Detection</span>
+                                <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-700">DNP · HiTi</span>
+                              </div>
+                              <p className="mt-1 text-xs text-gray-500">
+                                Scans your Windows print queue for DNP and HiTi photo printers and reads their current cut-mode settings.
+                                For 2×6 strip output, auto-cut must be enabled in the printer driver.
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={handleCutScan}
+                              disabled={cutScanning}
+                              className={`${BTN_PRIMARY} flex-shrink-0 text-xs px-4 py-2`}
+                            >
+                              {cutScanning ? "Scanning…" : "Scan Printers"}
+                            </button>
+                          </div>
+
+                          {cutScanError && (
+                            <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+                              {cutScanError}
+                            </div>
+                          )}
+
+                          {cutScanned && !cutScanError && cutPrinters.length === 0 && (
+                            <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                              No DNP or HiTi printers found. Make sure the printer driver is installed and the device is connected.
+                            </div>
+                          )}
+
+                          {cutPrinters.length > 0 && (
+                            <div className="mt-4 space-y-3">
+                              {cutPrinters.map((printer) => (
+                                <div key={printer.name} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                                  <div className="flex items-start justify-between gap-3 flex-wrap">
+                                    <div className="min-w-0">
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        <p className="text-sm font-semibold text-slate-900 truncate">{printer.name}</p>
+                                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${printer.brand === "HiTi" ? "bg-purple-100 text-purple-700" : "bg-blue-100 text-blue-700"}`}>{printer.brand}</span>
+                                      </div>
+                                      <p className="text-xs text-slate-500 mt-0.5 truncate">{printer.driver}</p>
+                                    </div>
+                                    <span className={`flex-shrink-0 rounded-full px-2.5 py-1 text-[10px] font-bold ${printer.has2InchCut ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
+                                      {printer.has2InchCut ? "Strip cut active" : "Strip cut not set"}
+                                    </span>
+                                  </div>
+
+                                  {printer.cutMode && (
+                                    <p className="mt-2 text-xs text-slate-600">Current cut setting: <span className="font-semibold">{printer.cutMode}</span></p>
+                                  )}
+
+                                  {!printer.has2InchCut && (
+                                    <div className="mt-3 rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-xs text-slate-600 space-y-1">
+                                      {printer.brand === "HiTi" ? (
+                                        <>
+                                          <p className="font-semibold text-slate-700">HiTi — enable strip cut:</p>
+                                          <p>Open <strong>Windows Settings → Printers &amp; scanners</strong>, select your HiTi printer and open <strong>Printing preferences</strong>. Under <strong>Media Size</strong> choose <strong>2×6 Strip</strong> or enable <strong>Strip Print</strong> mode. Alternatively open <strong>HiTi Printer Manager</strong> and enable <strong>Auto Cut</strong>. On P520L / P720L models set <strong>CutPage</strong> to <strong>Enabled</strong>.</p>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <p className="font-semibold text-slate-700">DNP — enable 2-inch cut:</p>
+                                          <p>Open <strong>Windows Settings → Printers &amp; scanners</strong>, select your DNP printer and open <strong>Printing preferences</strong>. In the <strong>Paper/Quality</strong> or <strong>Layout</strong> tab set <strong>Print Size</strong> to <strong>2×6 Strip</strong> or enable <strong>Auto Cut</strong>. On DS-series printers look for <strong>Cutter Control</strong> in the <strong>Advanced</strong> tab.</p>
+                                        </>
+                                      )}
+                                    </div>
+                                  )}
+
+                                  {printer.cutSupported && printer.properties.length > 0 && (
+                                    <div className="mt-3">
+                                      <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Driver properties</p>
+                                      <div className="space-y-1">
+                                        {printer.properties
+                                          .filter((p) => /cut|strip|cutter|pagesize|mediasize|printsize|printtype|mediatype|cutpage/i.test(p.PropertyName ?? ""))
+                                          .slice(0, 6)
+                                          .map((prop) => (
+                                            <div key={prop.PropertyName} className="flex items-center justify-between gap-2 rounded bg-white border border-slate-100 px-2.5 py-1.5 text-xs">
+                                              <span className="text-slate-400 font-mono truncate">{prop.PropertyName}</span>
+                                              <span className="text-slate-800 font-semibold flex-shrink-0">{prop.Value}</span>
+                                            </div>
+                                          ))}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                              <p className="text-xs text-slate-400 mt-1">After changing cut settings in Windows, click <strong>Scan Printers</strong> again to verify.</p>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     )}
 
@@ -7882,6 +8896,7 @@ This cannot be undone.`
                           </div>
                         </div>
                       </div>
+
                     )}
 
                     {activeSettingsTab === "general" && (
@@ -7932,51 +8947,7 @@ This cannot be undone.`
                           </div>
                         </div>
 
-                        {/* Session behavior */}
-                        <div className={`${SURFACE_BG} ${SURFACE_BORDER} ${SMALL_CARD_RADIUS} p-4`}>
-                          <div className="text-sm font-medium text-gray-900">Session behavior</div>
-                          <div className="text-xs text-gray-500 mt-1">
-                            Control how each photo session runs.
-                          </div>
-
-                          <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <label className="block text-xs text-gray-700">
-                              Countdown (seconds)
-                              <input
-                                type="number"
-                                min={1}
-                                max={30}
-                                value={countdown}
-                                onChange={(e) => setCountdown(Number(e.target.value) || 5)}
-                                className={`${SURFACE_BG} ${SURFACE_BORDER} ${INPUT_RADIUS} px-3 py-2 mt-1 w-full`}
-                              />
-                            </label>
-
-                            <label className="block text-xs text-gray-700">
-                              Number of shots
-                              <input
-                                type="number"
-                                min={1}
-                                max={10}
-                                value={numberOfShots}
-                                onChange={(e) => setNumberOfShots(Number(e.target.value) || 3)}
-                                className={`${SURFACE_BG} ${SURFACE_BORDER} ${INPUT_RADIUS} px-3 py-2 mt-1 w-full`}
-                              />
-                            </label>
-
-                            <label className="block text-xs text-gray-700">
-                              Retake limit
-                              <input
-                                type="number"
-                                min={0}
-                                max={20}
-                                value={retakeLimit}
-                                onChange={(e) => setRetakeLimit(Number(e.target.value) || 0)}
-                                className={`${SURFACE_BG} ${SURFACE_BORDER} ${INPUT_RADIUS} px-3 py-2 mt-1 w-full`}
-                              />
-                            </label>
-                          </div>
-                        </div>
+                        {/* Note: Session behavior (countdown, shots, retakes) is configured per-event in Dashboard > Controls */}
 
                         {/* Idle & display */}
                         <div className={`${SURFACE_BG} ${SURFACE_BORDER} ${SMALL_CARD_RADIUS} p-4`}>
@@ -8166,7 +9137,10 @@ This cannot be undone.`
                                 <input
                                   type="checkbox"
                                   checked={autoUpdateEnabled}
-                                  onChange={(e) => setAutoUpdateEnabled(e.target.checked)}
+                                  onChange={(e) => {
+                                    setAutoUpdateEnabled(e.target.checked);
+                                    safeInvoke("app:setAutoUpdate", e.target.checked);
+                                  }}
                                 />
                                 Enable automatic updates
                               </label>
@@ -8174,15 +9148,33 @@ This cannot be undone.`
 
                             <div className="flex flex-wrap items-center gap-3 pt-2">
                               <button
-                                onClick={typeof checkForUpdates === "function" ? checkForUpdates : undefined}
-                                disabled={typeof checkForUpdates !== "function"}
+                                onClick={checkForUpdates}
+                                disabled={updateState === "checking" || updateState === "downloading"}
                                 className={`${BTN_GHOST} text-sm px-4 py-2`}
                               >
-                                Check for updates
+                                {updateState === "checking" ? "Checking..." : "Check for updates"}
                               </button>
+                              {updateState === "available" && (
+                                <button
+                                  onClick={downloadUpdate}
+                                  className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 transition"
+                                >
+                                  Download update
+                                </button>
+                              )}
+                              {updateState === "downloading" && (
+                                <span className="text-sm text-blue-600 font-medium">Downloading {updatePercent}%</span>
+                              )}
+                              {(updateState === "ready" || updateState === "downloaded") && (
+                                <button
+                                  onClick={installUpdate}
+                                  className="rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-700 transition"
+                                >
+                                  Install & restart
+                                </button>
+                              )}
                               <button
-                                onClick={typeof clearCache === "function" ? clearCache : undefined}
-                                disabled={typeof clearCache !== "function"}
+                                onClick={clearCache}
                                 className={`${BTN_GHOST} text-sm px-4 py-2`}
                               >
                                 Clear cache
@@ -8241,101 +9233,293 @@ This cannot be undone.`
               )}
 
               {activeMain === "helpcenter" && (
-                <div className={cardClass}>
-                  {/* Header */}
-                  <div className="flex items-start justify-between">
-                    <div>
-
-                    </div>
-
+                <div className="space-y-6">
+                  {/* Step-by-step Setup Guide — collapsible */}
+                  <div className={cardClass}>
                     <button
-                      className="text-xs text-gray-600 hover:text-gray-900 underline-offset-2 hover:underline"
-                      onClick={openAllDocs}
+                      type="button"
+                      onClick={() => setSetupGuideOpen((v) => !v)}
+                      className="w-full flex items-center justify-between text-left"
                     >
-                      View all docs
+                      <div>
+                        <h3 className="text-sm font-bold text-slate-900">Setup Guide for New Operators</h3>
+                        <p className="mt-1 text-xs text-slate-500">Follow these steps in order to get your photobooth ready for its first event.</p>
+                      </div>
+                      <svg className={`w-5 h-5 text-slate-400 transition-transform ${setupGuideOpen ? "rotate-180" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
                     </button>
+
+                    {setupGuideOpen && <div className="mt-5 grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-0">
+                      {[
+                        {
+                          step: 1,
+                          title: "Configure your camera",
+                          where: "Settings > Camera",
+                          instructions: [
+                            "Click the Camera tab in Settings.",
+                            "Select your camera device from the dropdown (DSLR, webcam, or USB capture card).",
+                            "Choose a resolution (1080p recommended for most printers).",
+                            "Enable 'Mirror camera' if you want a selfie-style preview.",
+                            "Click 'Save settings' at the bottom of the page.",
+                          ],
+                          action: () => { setActiveMain("settings"); setActiveSettingsTab("camera"); },
+                        },
+                        {
+                          step: 2,
+                          title: "Set up your printer",
+                          where: "Settings > Printing",
+                          instructions: [
+                            "Go to the Printing tab in Settings.",
+                            "Make sure your printer driver is installed and the printer is turned on.",
+                            "Select the printer from the dropdown list.",
+                            "Set paper size (4x6 is standard for photo booths).",
+                            "Click 'Test print' to verify alignment before going live.",
+                            "Click 'Save settings'.",
+                          ],
+                          action: () => { setActiveMain("settings"); setActiveSettingsTab("printing"); },
+                        },
+                        {
+                          step: 3,
+                          title: "Choose a storage folder",
+                          where: "Settings > Storage",
+                          instructions: [
+                            "Go to the Storage tab in Settings.",
+                            "Click 'Choose folder' and select where photos will be saved.",
+                            "Set auto-cleanup days (e.g., 14 days) to avoid filling your disk.",
+                            "Click 'Save settings'.",
+                          ],
+                          action: () => { setActiveMain("settings"); setActiveSettingsTab("storage"); },
+                        },
+                        {
+                          step: 4,
+                          title: "Create your first event",
+                          where: "Events page",
+                          instructions: [
+                            "Go to the Events page from the sidebar.",
+                            "Click 'New Event' and enter the event name, date, and location.",
+                            "The event will be created with default settings that you can customize.",
+                          ],
+                          action: () => { setActiveMain("events"); },
+                        },
+                        {
+                          step: 5,
+                          title: "Set up branding",
+                          where: "Dashboard > Branding",
+                          instructions: [
+                            "Open your event, then go to the Dashboard > Branding tab.",
+                            "Upload your logo or set a booth name and tagline.",
+                            "Add a background image, video, or select 'Live Camera' for a mirror effect.",
+                            "Customize colors, fonts, and button styles to match your brand.",
+                            "Check the Live Preview at the bottom to see how it looks.",
+                          ],
+                          action: currentEvent ? () => { setActiveMain("dashboard"); setActiveSub("branding"); } : null,
+                        },
+                        {
+                          step: 6,
+                          title: "Create a template",
+                          where: "Dashboard > Templates",
+                          instructions: [
+                            "Open your event, then go to Dashboard > Templates.",
+                            "Click 'New Template' to open the editor.",
+                            "Drag and resize photo slots on the 4x6 canvas.",
+                            "Save the template and apply it to your event.",
+                          ],
+                          action: currentEvent ? () => { setActiveMain("dashboard"); setActiveSub("templates"); } : null,
+                        },
+                        {
+                          step: 7,
+                          title: "Configure session controls",
+                          where: "Dashboard > Controls",
+                          instructions: [
+                            "Open your event, then go to Dashboard > Controls.",
+                            "Set countdown timer, number of shots per session, and retake limits.",
+                            "Choose 'Rental' mode (free use) or 'Business' mode (paid per session).",
+                            "For rental events, optionally set a rental timer and session usage limit.",
+                          ],
+                          action: currentEvent ? () => { setActiveMain("dashboard"); setActiveSub("controls"); } : null,
+                        },
+                        {
+                          step: 8,
+                          title: "Run a test session",
+                          where: "Events page > Start Booth",
+                          instructions: [
+                            "Go to the Events page and select your event.",
+                            "Click 'Start Booth' to launch the photobooth flow.",
+                            "Walk through the full flow: welcome > template > photo > print.",
+                            "Verify that photos capture correctly, print looks good, and the booth returns to welcome.",
+                            "Press Esc to exit booth mode and return to the admin dashboard.",
+                          ],
+                          action: null,
+                        },
+                      ].map(({ step, title, where, instructions, action }) => (
+                        <div key={step} className="flex gap-4 py-4 border-b border-slate-100 last:border-0">
+                          <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center text-sm font-bold">
+                            {step}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-semibold text-slate-800">{title}</span>
+                              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-500">{where}</span>
+                            </div>
+                            <ol className="mt-2 space-y-1">
+                              {instructions.map((inst, i) => (
+                                <li key={i} className="text-xs text-slate-500 leading-relaxed flex gap-2">
+                                  <span className="text-slate-300 flex-shrink-0">{i + 1}.</span>
+                                  <span>{inst}</span>
+                                </li>
+                              ))}
+                            </ol>
+                            {action && (
+                              <button
+                                type="button"
+                                onClick={action}
+                                className="mt-2 text-xs font-semibold text-blue-600 hover:underline"
+                              >
+                                Go to {where} &rarr;
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>}
                   </div>
 
-                  {/* Help Cards */}
-                  <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
-                    {/* Getting Started */}
-                    <div className={`${smallCardClass} group`}>
-                      <div className="flex items-center gap-2">
-                        <div className="w-7 h-7 rounded-md bg-gray-100 flex items-center justify-center text-xs font-semibold text-gray-700">
-                          🚀
-                        </div>
-                        <span className="text-xs font-medium text-gray-700">
-                          Getting Started
-                        </span>
+                  {/* Quick Start Guides */}
+                  <div className={cardClass}>
+                    <div className="flex items-center justify-between mb-5">
+                      <div>
+                        <h3 className="text-sm font-bold text-slate-900">Quick Start Guides</h3>
+                        <p className="mt-1 text-xs text-slate-500">Step-by-step walkthroughs for common tasks.</p>
                       </div>
-
-                      <p className="text-sm mt-2 text-gray-800 leading-relaxed">
-                        Learn how to create events, upload logos, configure timers,
-                        and run your first session.
-                      </p>
-
-                      <button
-                        className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-indigo-600 hover:text-indigo-700"
-                        onClick={openGettingStartedGuide}
-                      >
-                        Read guide →
-                      </button>
                     </div>
 
-                    {/* Template Editor */}
-                    <div className={`${smallCardClass} group`}>
-                      <div className="flex items-center gap-2">
-                        <div className="w-7 h-7 rounded-md bg-gray-100 flex items-center justify-center text-xs font-semibold text-gray-700">
-                          🧩
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {[
+                        {
+                          icon: "M13 10V3L4 14h7v7l9-11h-7z",
+                          title: "Getting Started",
+                          desc: "Create your first event, set up branding, configure camera and printer, and run a test session.",
+                          action: openGettingStartedGuide,
+                          actionLabel: "Read guide",
+                          color: "text-blue-600",
+                          bg: "bg-blue-50",
+                        },
+                        {
+                          icon: "M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zm0 8a1 1 0 011-1h6a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1v-2zm8 0a1 1 0 011-1h6a1 1 0 011 1v2a1 1 0 01-1 1h-6a1 1 0 01-1-1v-2z",
+                          title: "Template Editor",
+                          desc: "Drag, resize, rotate, and align photo slots on the print canvas to create custom layouts.",
+                          action: openTemplateEditorGuide,
+                          actionLabel: "Open editor",
+                          color: "text-violet-600",
+                          bg: "bg-violet-50",
+                        },
+                        {
+                          icon: "M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z",
+                          title: "Payments & GCash",
+                          desc: "Enable payment collection per event, configure GCash or cash mode, and set session pricing.",
+                          action: openPaymentsGuide,
+                          actionLabel: "Configure",
+                          color: "text-emerald-600",
+                          bg: "bg-emerald-50",
+                        },
+                      ].map(({ icon, title, desc, action, actionLabel, color, bg }) => (
+                        <div key={title} className={`${smallCardClass} flex flex-col justify-between`}>
+                          <div>
+                            <div className="flex items-center gap-2.5 mb-2">
+                              <div className={`w-8 h-8 rounded-lg ${bg} flex items-center justify-center`}>
+                                <svg className={`w-4 h-4 ${color}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={icon} />
+                                </svg>
+                              </div>
+                              <span className="text-sm font-semibold text-slate-800">{title}</span>
+                            </div>
+                            <p className="text-xs text-slate-500 leading-relaxed">{desc}</p>
+                          </div>
+                          <button
+                            className={`mt-3 inline-flex items-center gap-1 text-xs font-semibold ${color} hover:underline`}
+                            onClick={action}
+                          >
+                            {actionLabel} <span aria-hidden="true">&rarr;</span>
+                          </button>
                         </div>
-                        <span className="text-xs font-medium text-gray-700">
-                          Template Editor
-                        </span>
-                      </div>
-
-                      <p className="text-sm mt-2 text-gray-800 leading-relaxed">
-                        Understand how to drag, resize, rotate, and align photo slots
-                        on the 4×6 canvas.
-                      </p>
-
-                      <button
-                        className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-indigo-600 hover:text-indigo-700"
-                        onClick={openTemplateEditorGuide}
-                      >
-                        Learn editor →
-                      </button>
-                    </div>
-
-                    {/* Payments */}
-                    <div className={`${smallCardClass} group`}>
-                      <div className="flex items-center gap-2">
-                        <div className="w-7 h-7 rounded-md bg-gray-100 flex items-center justify-center text-xs font-semibold text-gray-700">
-                          💳
-                        </div>
-                        <span className="text-xs font-medium text-gray-700">
-                          Payments
-                        </span>
-                      </div>
-
-                      <p className="text-sm mt-2 text-gray-800 leading-relaxed">
-                        Set up and manage payment methods including GCash,
-                        PayPal, Stripe, or Cash mode.
-                      </p>
-
-                      <button
-                        className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-indigo-600 hover:text-indigo-700"
-                        onClick={openPaymentsGuide}
-                      >
-                        Configure payments →
-                      </button>
+                      ))}
                     </div>
                   </div>
 
-                  {/* Footer Tip */}
-                  <div className="mt-6 rounded-md border border-gray-200 bg-gray-50 p-3">
-                    <p className="text-xs text-gray-600">
-                      💡 Tip: You can access help anytime from the top-right menu while running a session.
-                    </p>
+                  {/* Common Tasks */}
+                  <div className={cardClass}>
+                    <h3 className="text-sm font-bold text-slate-900 mb-4">Common Tasks</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {[
+                        { q: "How do I set up my camera?", a: "Go to Settings > Camera, select your device, choose resolution, and click Save settings." },
+                        { q: "How do I connect a printer?", a: "Go to Settings > Printing, select a printer from the list, set paper size and quality, then Save settings." },
+                        { q: "Where are photos stored?", a: "Go to Settings > Storage, choose a folder, and set auto-cleanup days. Photos are saved per event and session." },
+                        { q: "How do I change the booth background?", a: "Open an event > Dashboard > Branding > Background Media. Upload an image/video or select Live Camera." },
+                        { q: "How do I upgrade my plan?", a: "Go to Account Center > Billing, choose a plan, and pay via GCash. Your plan activates after verification." },
+                        { q: "How does idle dimming work?", a: "Go to Settings > General, enable idle dimming, and set the timeout. The booth screen dims after inactivity." },
+                      ].map(({ q, a }) => (
+                        <div key={q} className="rounded-lg border border-slate-100 bg-slate-50/60 p-3">
+                          <div className="text-xs font-semibold text-slate-800">{q}</div>
+                          <div className="mt-1 text-xs text-slate-500 leading-relaxed">{a}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Keyboard Shortcuts & Tips */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className={cardClass}>
+                      <h3 className="text-sm font-bold text-slate-900 mb-3">Keyboard Shortcuts</h3>
+                      <div className="space-y-2">
+                        {[
+                          { keys: "Ctrl + R", desc: "Refresh the app" },
+                          { keys: "Ctrl + Shift + I", desc: "Open developer tools" },
+                          { keys: "Esc", desc: "Exit booth mode / close modals" },
+                          { keys: "Space", desc: "Trigger shutter during session" },
+                        ].map(({ keys, desc }) => (
+                          <div key={keys} className="flex items-center justify-between text-xs">
+                            <span className="text-slate-500">{desc}</span>
+                            <kbd className="rounded border border-slate-200 bg-slate-50 px-2 py-0.5 font-mono text-[10px] text-slate-600">{keys}</kbd>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className={cardClass}>
+                      <h3 className="text-sm font-bold text-slate-900 mb-3">Tips</h3>
+                      <div className="space-y-2.5">
+                        {[
+                          "Always save settings before starting a booth session.",
+                          "Run a test print to verify layout and alignment before events.",
+                          "Use the yearly plan to save PHP 10,200 compared to monthly billing.",
+                          "Set auto-cleanup to avoid running out of disk space during events.",
+                          "Use the live camera background for an engaging welcome screen.",
+                        ].map((tip) => (
+                          <div key={tip} className="flex items-start gap-2 text-xs text-slate-600">
+                            <svg className="w-3.5 h-3.5 flex-shrink-0 text-blue-400 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            <span>{tip}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Support Contact */}
+                  <div className="rounded-xl border border-blue-100 bg-blue-50/50 p-4 flex items-center justify-between gap-4">
+                    <div>
+                      <div className="text-sm font-semibold text-blue-900">Need more help?</div>
+                      <p className="mt-0.5 text-xs text-blue-700">Contact Studio Photuna support for assistance with setup, billing, or technical issues.</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => window.system?.openExternal?.("mailto:support@studiophotuna.com")}
+                      className="flex-shrink-0 rounded-lg bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-700 transition"
+                    >
+                      Contact support
+                    </button>
                   </div>
                 </div>
               )}
@@ -8384,7 +9568,7 @@ This cannot be undone.`
                         <h4 className="text-sm font-semibold text-gray-900">Create new event</h4>
                         <p className="text-xs text-gray-400 mt-0.5">Name your event, then configure it from the dashboard.</p>
                       </div>
-                      <span className="flex-shrink-0 text-[11px] font-medium text-indigo-600 bg-indigo-50 border border-indigo-100 rounded-full px-2.5 py-1">Quick setup</span>
+                      <span className="flex-shrink-0 text-[11px] font-medium text-blue-600 bg-blue-50 border border-blue-100 rounded-full px-2.5 py-1">Quick setup</span>
                     </div>
 
                     <form onSubmit={createEvent} className="space-y-3">
@@ -8399,7 +9583,7 @@ This cannot be undone.`
                         <button
                           type="submit"
                           disabled={!ready || !newEventName.trim()}
-                          className="flex-shrink-0 inline-flex items-center justify-center rounded-full bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md shadow-indigo-200 transition hover:-translate-y-0.5 hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+                          className="flex-shrink-0 inline-flex items-center justify-center rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md shadow-blue-200 transition hover:-translate-y-0.5 hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           Create
                         </button>
@@ -8413,7 +9597,7 @@ This cannot be undone.`
                             key={name}
                             type="button"
                             onClick={() => setNewEventName(name)}
-                            className="rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-[11px] font-medium text-gray-600 hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700 transition-all"
+                            className="rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-[11px] font-medium text-gray-600 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 transition-all"
                           >
                             {name}
                           </button>
@@ -8442,11 +9626,11 @@ This cannot be undone.`
                     {!hydrated ? (
                       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
                         {Array.from({ length: 6 }).map((_, index) => (
-                          <div key={`event-skeleton-${index}`} className="animate-pulse bg-slate-100 rounded-2xl h-20 w-full" />
+                          <div key={`event-skeleton-${index}`} className="animate-pulse bg-slate-100 rounded-lg h-20 w-full" />
                         ))}
                       </div>
                     ) : events.length === 0 ? (
-                      <div className="rounded-3xl border border-dashed border-slate-200 p-12 text-center">
+                      <div className="rounded-xl border border-dashed border-slate-200 p-12 text-center">
                         <div className="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center mx-auto mb-3">
                           <svg className="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
@@ -8457,7 +9641,7 @@ This cannot be undone.`
                         <button
                           type="button"
                           onClick={() => document.getElementById("create-event-input")?.focus()}
-                          className="mt-4 inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 active:scale-[0.98]"
+                          className="mt-4 inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 active:scale-[0.98]"
                         >
                           Create event
                         </button>
@@ -8473,14 +9657,14 @@ This cannot be undone.`
                           return (
                             <div
                               key={ev.id}
-                              className={`flex flex-col rounded-3xl border bg-white p-4 shadow-sm transition-all ${isActive ? "border-indigo-300 ring-2 ring-indigo-100 shadow-[0_8px_30px_rgba(79,70,229,0.10)]" : "border-slate-200 hover:border-slate-300 hover:shadow-md"
+                              className={`flex flex-col rounded-xl border bg-white p-4 shadow-sm transition-all ${isActive ? "border-blue-300 ring-2 ring-blue-100 shadow-[0_8px_30px_rgba(37,99,235,0.10)]" : "border-slate-200 hover:border-slate-300 hover:shadow-md"
                                 }`}
                             >
                               {/* Card header */}
                               <div className="flex items-start justify-between gap-2">
                                 <div className="min-w-0">
                                   <div className="flex items-center gap-1.5">
-                                    {isActive && <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 flex-shrink-0" />}
+                                    {isActive && <span className="w-1.5 h-1.5 rounded-full bg-blue-500 flex-shrink-0" />}
                                     <div className="truncate text-sm font-semibold text-gray-900">
                                       {ev.name || "Untitled event"}
                                     </div>
@@ -8517,7 +9701,7 @@ This cannot be undone.`
                                   { count: ev.appliedTones?.length ?? 0, label: "tone" },
                                 ].map(({ count, label }) =>
                                   count > 0 ? (
-                                    <span key={label} className="rounded-full bg-indigo-50 border border-indigo-100 px-2 py-0.5 text-[10px] font-medium text-indigo-600">
+                                    <span key={label} className="rounded-full bg-blue-50 border border-blue-100 px-2 py-0.5 text-[10px] font-medium text-blue-600">
                                       {count} {label}{count !== 1 ? "s" : ""}
                                     </span>
                                   ) : null
@@ -8537,7 +9721,7 @@ This cannot be undone.`
                                     setActiveMain("dashboard");
                                     setActiveSub("branding");
                                   }}
-                                  className="flex-1 inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 active:scale-[0.98]"
+                                  className="flex-1 inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 active:scale-[0.98]"
                                 >
                                   Open editor
                                 </button>
@@ -8546,6 +9730,16 @@ This cannot be undone.`
                                   onClick={async () => {
                                     try {
                                       const evCopy = JSON.parse(JSON.stringify(ev));
+
+                                      const hasTemplates = Array.isArray(evCopy.appliedTemplates) && evCopy.appliedTemplates.length > 0;
+                                      if (!hasTemplates) {
+                                        showToast?.("This event has no templates. Create and apply at least one template first.");
+                                        setCurrentEvent(evCopy);
+                                        setActiveMain("dashboard");
+                                        setActiveSub("templates");
+                                        return;
+                                      }
+
                                       const mergedEvent = {
                                         ...evCopy,
                                         settings: { ...(evCopy.settings || {}), ...settingsToSave },
@@ -8566,7 +9760,7 @@ This cannot be undone.`
                                       console.error("Start Photo booth failed:", e);
                                     }
                                   }}
-                                  className="flex-1 inline-flex items-center justify-center rounded-full bg-indigo-600 px-3 py-2 text-xs font-semibold text-white shadow-sm shadow-indigo-200 transition hover:-translate-y-0.5 hover:bg-indigo-700 active:scale-[0.98]"
+                                  className="flex-1 inline-flex items-center justify-center rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white shadow-sm shadow-blue-200 transition hover:-translate-y-0.5 hover:bg-blue-700 active:scale-[0.98]"
                                 >
                                   Start booth
                                 </button>
@@ -8667,6 +9861,29 @@ This cannot be undone.`
                       <div className={cardClass}>
                         <div className="text-sm font-semibold text-slate-800">Background Media</div>
 
+                        <div className="mt-3 flex items-center gap-2">
+                          {["media", "camera"].map((type) => (
+                            <button
+                              key={type}
+                              type="button"
+                              onClick={() => setBackgroundType(type)}
+                              className={`rounded-full px-4 py-1.5 text-xs font-semibold capitalize transition ${
+                                backgroundType === type
+                                  ? "bg-slate-900 text-white"
+                                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                              }`}
+                            >
+                              {type === "media" ? "Image / Video" : "Live Camera"}
+                            </button>
+                          ))}
+                        </div>
+
+                        {backgroundType === "camera" ? (
+                          <div className="mt-3 rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs text-blue-700">
+                            <p className="font-semibold">Live camera feed as background</p>
+                            <p className="mt-1 text-blue-600">The booth welcome screen will display a mirrored live camera preview behind the branding overlay. The camera selected in Settings will be used.</p>
+                          </div>
+                        ) : (
                         <div className="mt-3">
                           {backgroundMediaPath ? (
                             <div className="flex items-center gap-4">
@@ -8785,6 +10002,7 @@ This cannot be undone.`
                             />
                           )}
                         </div>
+                        )}
                       </div>
 
                       {/* Colors */}
@@ -8795,10 +10013,7 @@ This cannot be undone.`
                           {[
                             ["Header", headerFontColor, setHeaderFontColor],
                             ["General", generalFontColor, setGeneralFontColor],
-                            ["Button Text", buttonFontColor, setButtonFontColor],
                             ["Background", bgColor, setBgColor],
-                            ["Button BG", buttonBgColor, setButtonBgColor],
-                            ["Button Hover", buttonHoverColor, setButtonHoverColor],
                           ].map(([label, value, setter]) => (
                             <label key={label} className="text-xs text-gray-700">
                               {label}
@@ -8833,11 +10048,10 @@ This cannot be undone.`
                           />
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
                           {[
                             ["Header font", headerFont, setHeaderFont],
                             ["Body font", generalFont, setGeneralFont],
-                            ["Button font", buttonFont, setbuttonFont],
                           ].map(([label, value, setter]) => (
                             <label key={label} className="text-xs font-medium text-slate-600">
                               {label}
@@ -8857,27 +10071,59 @@ This cannot be undone.`
                         </div>
                       </div>
 
-                      {/* Booth Texts */}
+                      {/* Start Button */}
                       <div className={cardClass}>
-                        <div className="text-sm font-semibold text-slate-800">Start Button Menu</div>
+                        <div className="text-sm font-semibold text-slate-800">Start Button</div>
 
-                        {/* NEW: Start Button section */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
-                          <label className="inline-flex items-center gap-2 text-sm">
-                            <input
-                              type="checkbox"
-                              checked={startButtonHidden}
-                              onChange={(e) => setStartButtonHidden(e.target.checked)}
-                            />
-                            Hide “Start” button on Welcome Screen
-                          </label>
+                        <label className="inline-flex items-center gap-2 text-sm mt-4">
+                          <input
+                            type="checkbox"
+                            checked={startButtonHidden}
+                            onChange={(e) => setStartButtonHidden(e.target.checked)}
+                          />
+                          Hide button on Welcome Screen
+                        </label>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
                           <input
                             value={startButtonText}
                             onChange={(e) => setStartButtonText(e.target.value)}
-                            placeholder="Start button text (e.g., Tap to Start)"
+                            placeholder="Button label (e.g., Tap to Start)"
                             className={`${SURFACE_BG} ${SURFACE_BORDER} ${INPUT_RADIUS} px-3 py-2 text-sm transition-all hover:bg-gray-50 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed`}
                             disabled={startButtonHidden}
                           />
+                          <label className="text-xs font-medium text-slate-600">
+                            Font
+                            <select
+                              value={buttonFont}
+                              onChange={(e) => setbuttonFont(e.target.value)}
+                              disabled={startButtonHidden}
+                              className={`${SURFACE_BG} ${SURFACE_BORDER} ${INPUT_RADIUS} px-3 py-2 mt-1 w-full text-sm transition-all hover:bg-gray-50 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed`}
+                            >
+                              {GOOGLE_FONTS.map((f) => (
+                                <option key={f} value={f}>{f}</option>
+                              ))}
+                            </select>
+                          </label>
+                        </div>
+
+                        <div className="grid grid-cols-3 gap-4 mt-3">
+                          {[
+                            ["BG Color", buttonBgColor, setButtonBgColor],
+                            ["Hover Color", buttonHoverColor, setButtonHoverColor],
+                            ["Text Color", buttonFontColor, setButtonFontColor],
+                          ].map(([label, value, setter]) => (
+                            <label key={label} className="text-xs text-gray-700">
+                              {label}
+                              <input
+                                type="color"
+                                value={value}
+                                onChange={(e) => setter(e.target.value)}
+                                disabled={startButtonHidden}
+                                className="block mt-1 w-10 h-8 rounded disabled:opacity-40"
+                              />
+                            </label>
+                          ))}
                         </div>
                       </div>
 
@@ -8894,15 +10140,34 @@ This cannot be undone.`
                             '--btn-color': buttonFontColor,
                           }}
                         >
-                          {backgroundMediaPath && (
+                          {backgroundType === "camera" ? (
+                            <div className="absolute inset-0">
+                              <video
+                                ref={(el) => {
+                                  if (!el) return;
+                                  if (el.srcObject) return;
+                                  (async () => {
+                                    try {
+                                      const constraints = selectedCameraId
+                                        ? { video: { deviceId: { exact: selectedCameraId } }, audio: false }
+                                        : { video: true, audio: false };
+                                      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                                      if (el) el.srcObject = stream;
+                                    } catch (e) { console.warn("Preview camera failed:", e?.message); }
+                                  })();
+                                }}
+                                autoPlay muted playsInline
+                                className="w-full h-full object-cover -scale-x-100"
+                              />
+                              <div className="absolute inset-0 bg-black/30" />
+                            </div>
+                          ) : backgroundMediaPath ? (
                             <div className="absolute inset-0">
                               {(() => {
                                 const src = backgroundMediaPath.previewUrl ?? backgroundMediaPath.url;
                                 const name = backgroundMediaPath.name?.toLowerCase() ?? '';
                                 const mime = backgroundMediaPath.mime ?? '';
-                                // Prefer MIME when present (covers jpg/png/webp/gif/bmp/tiff/etc.)
                                 const isImageMime = mime.startsWith('image/');
-                                // Fallback to extension if MIME is missing
                                 const isImageExt = /\.(gif|jpe?g|png|webp|bmp|tiff?)$/.test(name);
                                 const isSvg = mime === 'image/svg+xml' || name.endsWith('.svg');
                                 const isImage = (isImageMime || isImageExt) && !isSvg;
@@ -8926,7 +10191,7 @@ This cannot be undone.`
                                 );
                               })()}
                             </div>
-                          )}
+                          ) : null}
 
                           <div className="relative z-10 flex flex-col items-center gap-1">
                             {logoPath ? (
@@ -8959,7 +10224,7 @@ This cannot be undone.`
                             )}
                             {!startButtonHidden && (
                               <button
-                                className="mt-4 px-4 py-2 text-sm rounded-md transition-colors bg-[var(--btn-bg)] hover:bg-[var(--btn-hover)] text-[var(--btn-color)]"
+                                className="mt-4 px-8 py-3 text-base font-semibold rounded-full shadow-md transition-colors bg-[var(--btn-bg)] hover:bg-[var(--btn-hover)] text-[var(--btn-color)]"
                                 style={{ fontFamily: 'var(--btn-font)' }}
                               >
                                 {startButtonText || "Tap to Start"}
@@ -8988,6 +10253,7 @@ This cannot be undone.`
                             setTemplateError("");
                             setSelectionIds([]);
                             setTemplateLayout("4x6"); // default
+                            setTemplatePrintMode("single"); // default
                             setIsTemplateModalOpen(true);
                           }}
                           className={BTN_PRIMARY}
@@ -8999,7 +10265,7 @@ This cannot be undone.`
                       {/* Template List */}
                       <div className="mt-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                         {!hydrated ? Array.from({ length: 6 }).map((_, index) => (
-                          <div key={`template-skeleton-${index}`} className="animate-pulse bg-slate-100 rounded-2xl h-20 w-full" />
+                          <div key={`template-skeleton-${index}`} className="animate-pulse bg-slate-100 rounded-lg h-20 w-full" />
                         )) : templates.map((tpl) => {
                           const layout = tpl.previewMeta?.layout ?? "4x6";
                           const aspectMap = {
@@ -9018,12 +10284,28 @@ This cannot be undone.`
                           return (
                             <div
                               key={tpl.id}
-                              className="p-4 rounded-2xl border border-slate-200 bg-white flex flex-col gap-3"
+                              className="p-4 rounded-lg border border-slate-200 bg-white flex flex-col gap-3"
                             >
                               <div>
-                                <div className="text-sm font-medium truncate">{tpl.name}</div>
-                                <div className="text-xs text-gray-600">
-                                  {getTemplateSlotCount(tpl)} slots
+                                <div className="flex items-center gap-2">
+                                  <div className="text-sm font-medium truncate">{tpl.name}</div>
+                                  {tpl.isDefault && (
+                                    <span className="flex-shrink-0 rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-700">Default</span>
+                                  )}
+                                </div>
+                                <div className="mt-0.5 flex items-center flex-wrap gap-1 text-xs text-gray-500">
+                                  <span>{getTemplateSlotCount(tpl)} slots</span>
+                                  {tpl.previewMeta?.layout && (
+                                    <span className="text-slate-400">· {tpl.previewMeta.layout.replace("x", "×")}</span>
+                                  )}
+                                  {(tpl.previewMeta?.layout === "4x6" || tpl.previewMeta?.layout === "6x4") && (
+                                    tpl.previewMeta?.printMode === "dual"
+                                      ? <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700">2-Strip</span>
+                                      : <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500">Single</span>
+                                  )}
+                                  {(tpl.previewMeta?.layout === "2x6" || tpl.previewMeta?.layout === "6x2") && (
+                                    <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold text-indigo-600">Strip</span>
+                                  )}
                                 </div>
                               </div>
 
@@ -9056,6 +10338,8 @@ This cannot be undone.`
                                   onClick={() => {
                                     setEditingTemplate(tpl);
                                     setTemplateName(tpl.name);
+                                    setTemplateLayout(tpl.previewMeta?.layout ?? "4x6");
+                                    setTemplatePrintMode(tpl.previewMeta?.printMode ?? "single");
 
                                     const slots = (tpl.previewMeta?.slots ?? []).map((s) => ({
                                       ...JSON.parse(JSON.stringify(s)),
@@ -9073,7 +10357,7 @@ This cannot be undone.`
                                     setSelectionIds([]);
                                     setIsTemplateModalOpen(true);
                                   }}
-                                  className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed"
+                                  className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed"
                                 >
                                   Edit
                                 </button>
@@ -9161,6 +10445,8 @@ This cannot be undone.`
                               }
                               initialLayout={layout}
                               onLayoutChange={(next) => setTemplateLayout(next)}
+                              initialPrintMode={editingTemplate?.previewMeta?.printMode ?? templatePrintMode}
+                              onPrintModeChange={(next) => setTemplatePrintMode(next)}
                               frames={frames}
                               initialAttachedFrameIds={initialAttachedFrameIds}
                               initialActiveFrameId={initialActiveFrameId}
@@ -9193,7 +10479,7 @@ This cannot be undone.`
 
                       <div className="mt-4 grid grid-cols-2 md:grid-cols-2 xl:grid-cols-4 gap-2">
                         {!hydrated ? Array.from({ length: 8 }).map((_, index) => (
-                          <div key={`frame-skeleton-${index}`} className="animate-pulse bg-slate-100 rounded-2xl h-20 w-full" />
+                          <div key={`frame-skeleton-${index}`} className="animate-pulse bg-slate-100 rounded-lg h-20 w-full" />
                         )) : frames.map((frame) => {
                           const applied = currentEvent.appliedFrames?.some((f) => f.id === frame.id);
                           const appliedEntry = (currentEvent.appliedFrames ?? []).find(f => f.id === frame.id);
@@ -9208,10 +10494,13 @@ This cannot be undone.`
                           const thumbSrc = firstKey ? frame.previews[firstKey].originalDataUrl : null;
 
                           return (
-                            <div key={frame.id} className="p-4 rounded-2xl border border-slate-200 bg-white flex flex-col gap-3">
+                            <div key={frame.id} className="p-4 rounded-lg border border-slate-200 bg-white flex flex-col gap-3">
                               {/* Title: "<aspect> - <frame name>" */}
-                              <div className="text-sm font-medium truncate">
-                                {aspectLabel} - {frame.name}
+                              <div className="flex items-center gap-2">
+                                <div className="text-sm font-medium truncate">{aspectLabel} - {frame.name}</div>
+                                {frame.isDefault && (
+                                  <span className="flex-shrink-0 rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-700">Default</span>
+                                )}
                               </div>
 
                               {/* Single thumbnail */}
@@ -9413,6 +10702,132 @@ This cannot be undone.`
                     </div>
                   )}
 
+                  {/* Sample Layouts */}
+                  {activeMain === "dashboard" && currentEvent && activeSub === "samples" && (
+                    <div className={cardClass}>
+                      <div>
+                        <div className="text-sm font-semibold text-slate-800">Sample Layouts</div>
+                        <p className="mt-1 text-xs text-gray-500">
+                          Ready-made templates and frames. Pick what you want — nothing is added unless you choose it.
+                          Applied layouts only affect <strong>{currentEvent.name}</strong>.
+                        </p>
+                      </div>
+
+                      {/* Sample templates */}
+                      <div className="mt-6">
+                        <div className="mb-3 text-[10px] font-semibold uppercase tracking-widest text-slate-400">Templates</div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                          {DEFAULT_TEMPLATES.map((tpl) => {
+                            const inLibrary = templates.some(t => t.id === tpl.id);
+                            const alreadyApplied = currentEvent?.appliedTemplates?.some(t => t.id === tpl.id) ?? false;
+                            const layout = tpl.previewMeta?.layout ?? "4x6";
+                            const sampleAspectMap = { "4x6": "aspect-[4/6]", "2x6": "aspect-[2/6]", "6x4": "aspect-[6/4]", "6x2": "aspect-[6/2]" };
+                            const aspectClass = sampleAspectMap[layout] ?? "aspect-[4/6]";
+                            const thumbSrc = tpl.previewMeta?.thumbnailDataUrl;
+                            const isTall = layout === "4x6" || layout === "2x6";
+                            return (
+                              <div key={tpl.id} className="rounded-lg border border-slate-200 bg-white p-4 flex flex-col gap-3">
+                                <div>
+                                  <div className="text-sm font-medium text-slate-800">{tpl.name}</div>
+                                  <div className="text-xs text-slate-400">
+                                    {(tpl.previewMeta?.slots?.length ?? 0)} slots · {layout}
+                                  </div>
+                                </div>
+                                {thumbSrc && (
+                                  <div className="flex justify-center">
+                                    <div className={`${aspectClass} ${isTall ? "h-48" : "w-48"} overflow-hidden rounded border`}>
+                                      <img src={thumbSrc} alt={tpl.name} className="w-full h-full object-contain" loading="lazy" />
+                                    </div>
+                                  </div>
+                                )}
+                                <div className="flex items-center gap-2 flex-wrap pt-1">
+                                  {alreadyApplied ? (
+                                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
+                                      <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>
+                                      Applied
+                                    </span>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleApplySampleTemplate(tpl)}
+                                      className={BTN_PRIMARY + " text-xs px-3 py-1.5"}
+                                    >
+                                      Apply to event
+                                    </button>
+                                  )}
+                                  {!inLibrary && !alreadyApplied && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleAddSampleTemplate(tpl)}
+                                      className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 active:scale-[0.98]"
+                                    >
+                                      Save to library
+                                    </button>
+                                  )}
+                                  {inLibrary && !alreadyApplied && (
+                                    <span className="text-[11px] text-slate-400">In library</span>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Sample frames */}
+                      <div className="mt-8">
+                        <div className="mb-3 text-[10px] font-semibold uppercase tracking-widest text-slate-400">Frames</div>
+                        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
+                          {DEFAULT_FRAMES.map((frame) => {
+                            const inLibrary = frames.some(f => f.id === frame.id);
+                            const alreadyApplied = currentEvent?.appliedFrames?.some(f => f.id === frame.id) ?? false;
+                            const sampleFrameOrder = ["4x6", "2x6", "6x4", "6x2"];
+                            const firstKey = sampleFrameOrder.find(k => frame.previews?.[k]?.originalDataUrl) ?? null;
+                            const thumbSrc = firstKey ? frame.previews[firstKey].originalDataUrl : null;
+                            return (
+                              <div key={frame.id} className="rounded-lg border border-slate-200 bg-white p-3 flex flex-col gap-3">
+                                <div className="text-sm font-medium text-slate-800 truncate">{frame.name}</div>
+                                {thumbSrc ? (
+                                  <img src={thumbSrc} alt={frame.name} className="w-full h-40 object-contain border rounded" loading="lazy" />
+                                ) : (
+                                  <div className="h-40 border rounded bg-slate-50 flex items-center justify-center text-xs text-slate-400">No preview</div>
+                                )}
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  {alreadyApplied ? (
+                                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
+                                      <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>
+                                      Applied
+                                    </span>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleApplySampleFrame(frame)}
+                                      className={BTN_PRIMARY + " text-xs px-3 py-1.5"}
+                                    >
+                                      Apply to event
+                                    </button>
+                                  )}
+                                  {!inLibrary && !alreadyApplied && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleAddSampleFrame(frame)}
+                                      className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 active:scale-[0.98]"
+                                    >
+                                      Save to library
+                                    </button>
+                                  )}
+                                  {inLibrary && !alreadyApplied && (
+                                    <span className="text-[11px] text-slate-400">In library</span>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Tones */}
                   {activeMain === "dashboard" && currentEvent && activeSub === "tones" && (
                     <div className={cardClass}>
@@ -9426,7 +10841,7 @@ This cannot be undone.`
                             currentEvent.appliedTones?.some((t) => t.id === tone.id);
 
                           return (
-                            <div key={tone.id} className="p-4 rounded-2xl border border-slate-200 bg-white">
+                            <div key={tone.id} className="p-4 rounded-lg border border-slate-200 bg-white">
                               <div className="text-sm font-medium">{tone.name}</div>
 
                               <div className="mt-2 text-xs text-gray-600">
@@ -9513,7 +10928,7 @@ This cannot be undone.`
                           const isActiveForFrames = selectedBgColorId === p.id;
 
                           return (
-                            <div key={p.id} className="p-4 rounded-2xl border border-slate-200 bg-white flex flex-col gap-3">
+                            <div key={p.id} className="p-4 rounded-lg border border-slate-200 bg-white flex flex-col gap-3">
                               <div>{paletteName(p)}</div>
                               {/* Swatch/Gradient */}
                               <div
@@ -9673,14 +11088,21 @@ This cannot be undone.`
                             />
                             Rental (skip payment)
                           </label>
-                          <label className="inline-flex items-center gap-2 text-sm">
+                          <label className={`inline-flex items-center gap-2 text-sm ${anyProviderConfigured ? "" : "opacity-50 cursor-not-allowed"}`}>
                             <input
                               type="radio"
                               name="business"
                               checked={appMode === "business"}
                               onChange={() => setAppMode("business")}
+                              disabled={!anyProviderConfigured}
                             />
                             Business (payment available)
+                            {!anyProviderConfigured && (
+                              <span className="text-[10px] text-amber-700 ml-1">Set up a payment provider in Account → Business</span>
+                            )}
+                            {anyProviderConfigured && activeProviderIsTest && (
+                              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700 ml-1">Test Mode</span>
+                            )}
                           </label>
                         </div>
 
@@ -9722,7 +11144,7 @@ This cannot be undone.`
                                 setTimersEnabled(true);
                                 showToast("Using current timers for this event");
                               }}
-                              className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 active:scale-[0.98]"
+                              className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 active:scale-[0.98]"
                             >
                               Use timers
                             </button>
@@ -9732,7 +11154,7 @@ This cannot be undone.`
                                 setTimersEnabled(true);
                                 showToast("Reset to default timers");
                               }}
-                              className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 active:scale-[0.98]"
+                              className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 active:scale-[0.98]"
                             >
                               Reset
                             </button>
@@ -9817,25 +11239,31 @@ This cannot be undone.`
 
                           <div className={cardClass}>
                             <div className="text-sm font-semibold text-slate-800">Offline & saving</div>
+                            {!storagePath && (
+                              <p className="mt-1 text-xs text-amber-600">
+                                A storage path must be configured in Settings → Storage before offline mode can be enabled.
+                              </p>
+                            )}
                             <div className="mt-2 grid grid-cols-2 gap-2">
-                              <label className="inline-flex items-center gap-2 text-sm">
+                              <label className={`inline-flex items-center gap-2 text-sm ${!storagePath ? "opacity-40 cursor-not-allowed" : ""}`}>
                                 <input
                                   type="checkbox"
                                   checked={offlineModeEnabled}
+                                  disabled={!storagePath}
                                   onChange={(e) => setOfflineModeEnabled(e.target.checked)}
                                 />
                                 Offline mode
                               </label>
-                              <label className="text-xs text-gray-700">
+                              <label className={`text-xs text-gray-700 ${!offlineModeEnabled ? "opacity-40" : ""}`}>
                                 Auto-save target
                                 <select
                                   value={autoSaveTarget}
+                                  disabled={!offlineModeEnabled}
                                   onChange={(e) => setAutoSaveTarget(e.target.value)}
                                   className={`${SURFACE_BG} ${SURFACE_BORDER} w-full ${INPUT_RADIUS} px-3 py-2 text-sm outline-none mt-1`}
                                 >
                                   <option value="local">Local storage</option>
                                   <option value="usb">USB drive</option>
-                                  <option value="cloud">Cloud (when online)</option>
                                 </select>
                               </label>
                               <label className="inline-flex items-center gap-2 text-sm col-span-2">
@@ -9865,29 +11293,139 @@ This cannot be undone.`
                                 />
                                 Enable payment
                               </label>
-                              <div className="mt-2 grid grid-cols-2 gap-2">
-                                {[
-                                  ["GCash", "gcash"],
-                                  ["PayPal", "paypal"],
-                                  ["Stripe (Card)", "stripe"],
-                                  ["Cash", "cash"],
-                                ].map(([label, key]) => (
-                                  <label key={key} className="inline-flex items-center gap-2 text-sm">
-                                    <input
-                                      type="checkbox"
-                                      checked={!!paymentProviders[key]}
-                                      onChange={(e) =>
-                                        setPaymentProviders((prev) => ({ ...prev, [key]: e.target.checked }))
-                                      }
-                                      disabled={!paymentEnabled}
-                                    />
-                                    {label}
-                                  </label>
-                                ))}
+                              {/* Active provider info + provider-specific methods */}
+                              {!activeProvider ? (
+                                <p className="mt-2 text-xs text-amber-600">No payment provider selected. Configure one in Account → Business.</p>
+                              ) : (
+                                <div className="mt-2 space-y-3">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-[11px] text-slate-500">Via:</span>
+                                    <span className="text-[11px] font-semibold text-slate-700 capitalize">{activeProvider}</span>
+                                    {activeProviderIsTest && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">Test Mode</span>}
+                                  </div>
+
+                                  {/* PayMongo methods */}
+                                  {activeProvider === "paymongo" && (
+                                    <div className="grid grid-cols-2 gap-2">
+                                      {[["GCash", "gcash"], ["Maya", "maya"], ["GrabPay", "grabpay"], ["Card", "card"]].map(([label, key]) => (
+                                        <label key={key} className={`inline-flex items-center gap-2 text-sm ${!paymentEnabled || !paymongoConfigured ? "opacity-50 cursor-not-allowed" : ""}`}>
+                                          <input type="checkbox" checked={!!paymentProviders[key]} onChange={(e) => setPaymentProviders((prev) => ({ ...prev, [key]: e.target.checked }))} disabled={!paymentEnabled || !paymongoConfigured} />
+                                          {label}
+                                        </label>
+                                      ))}
+                                      {!paymongoConfigured && <p className="col-span-2 text-[10px] text-amber-600">PayMongo not connected — configure in Account → Business.</p>}
+                                    </div>
+                                  )}
+
+                                  {/* Stripe methods */}
+                                  {activeProvider === "stripe" && (
+                                    <div className="grid grid-cols-2 gap-2">
+                                      {[["Cards", "card"], ["Apple Pay", "applePay"], ["Google Pay", "googlePay"], ["Link", "link"], ["SEPA", "sepa"], ["iDEAL", "ideal"]].map(([label, key]) => (
+                                        <label key={key} className={`inline-flex items-center gap-2 text-sm ${!paymentEnabled || !stripeConfigured ? "opacity-50 cursor-not-allowed" : ""}`}>
+                                          <input type="checkbox" checked={!!stripeProviders[key]} onChange={(e) => setStripeProviders((prev) => ({ ...prev, [key]: e.target.checked }))} disabled={!paymentEnabled || !stripeConfigured} />
+                                          {label}
+                                        </label>
+                                      ))}
+                                      {!stripeConfigured && <p className="col-span-2 text-[10px] text-amber-600">Stripe not connected — configure in Account → Business.</p>}
+                                    </div>
+                                  )}
+
+                                  {/* Xendit methods */}
+                                  {activeProvider === "xendit" && (
+                                    <div className="space-y-2">
+                                      <div className="grid grid-cols-2 gap-2">
+                                        {[["Cards", "card"], ["OVO", "ovo"], ["DANA", "dana"], ["GoPay", "gopay"], ["LinkAja", "linkaja"], ["ShopeePay", "shopeepay"], ["QRIS", "qris"]].map(([label, key]) => (
+                                          <label key={key} className={`inline-flex items-center gap-2 text-sm ${!paymentEnabled || !xenditConfigured ? "opacity-50 cursor-not-allowed" : ""}`}>
+                                            <input type="checkbox" checked={!!xenditProviders[key]} onChange={(e) => setXenditProviders((prev) => ({ ...prev, [key]: e.target.checked }))} disabled={!paymentEnabled || !xenditConfigured} />
+                                            {label}
+                                          </label>
+                                        ))}
+                                      </div>
+                                      <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mt-1">Virtual Accounts</p>
+                                      <div className="grid grid-cols-2 gap-2">
+                                        {[["BCA", "va_bca"], ["BNI", "va_bni"], ["BRI", "va_bri"], ["Mandiri", "va_mandiri"]].map(([label, key]) => (
+                                          <label key={key} className={`inline-flex items-center gap-2 text-sm ${!paymentEnabled || !xenditConfigured ? "opacity-50 cursor-not-allowed" : ""}`}>
+                                            <input type="checkbox" checked={!!xenditProviders[key]} onChange={(e) => setXenditProviders((prev) => ({ ...prev, [key]: e.target.checked }))} disabled={!paymentEnabled || !xenditConfigured} />
+                                            {label} VA
+                                          </label>
+                                        ))}
+                                      </div>
+                                      <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mt-1">Retail Outlets</p>
+                                      <div className="grid grid-cols-2 gap-2">
+                                        {[["Alfamart", "alfamart"], ["Indomaret", "indomaret"]].map(([label, key]) => (
+                                          <label key={key} className={`inline-flex items-center gap-2 text-sm ${!paymentEnabled || !xenditConfigured ? "opacity-50 cursor-not-allowed" : ""}`}>
+                                            <input type="checkbox" checked={!!xenditProviders[key]} onChange={(e) => setXenditProviders((prev) => ({ ...prev, [key]: e.target.checked }))} disabled={!paymentEnabled || !xenditConfigured} />
+                                            {label}
+                                          </label>
+                                        ))}
+                                      </div>
+                                      {!xenditConfigured && <p className="text-[10px] text-amber-600">Xendit not connected — configure in Account → Business.</p>}
+                                    </div>
+                                  )}
+
+                                  {/* PayPal methods */}
+                                  {activeProvider === "paypal" && (
+                                    <div className="grid grid-cols-2 gap-2">
+                                      {[["PayPal Wallet", "wallet"], ["Pay Later", "payLater"], ["Venmo", "venmo"], ["Cards", "card"]].map(([label, key]) => (
+                                        <label key={key} className={`inline-flex items-center gap-2 text-sm ${!paymentEnabled || !paypalConfigured ? "opacity-50 cursor-not-allowed" : ""}`}>
+                                          <input type="checkbox" checked={!!paypalProviders[key]} onChange={(e) => setPaypalProviders((prev) => ({ ...prev, [key]: e.target.checked }))} disabled={!paymentEnabled || !paypalConfigured} />
+                                          {label}
+                                        </label>
+                                      ))}
+                                      {!paypalConfigured && <p className="col-span-2 text-[10px] text-amber-600">PayPal not connected — configure in Account → Business.</p>}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+
+                              {/* Cash — always available regardless of gateway */}
+                              <div className="mt-3 border-t border-slate-100 pt-3">
+                                <label className={`inline-flex items-center gap-2 text-sm ${!paymentEnabled ? "opacity-50 cursor-not-allowed" : ""}`}>
+                                  <input type="checkbox" checked={!!paymentProviders.cash} onChange={(e) => setPaymentProviders((prev) => ({ ...prev, cash: e.target.checked }))} disabled={!paymentEnabled} />
+                                  Cash
+                                </label>
                               </div>
-                              <p className="text-xs text-gray-600 mt-2">
-                                Admin can enable/disable payment methods per event.
-                              </p>
+
+                              {/* Cash mode sub-option */}
+                              {paymentEnabled && paymentProviders.cash && (
+                                <div className="mt-2 ml-1 border-l-2 border-slate-200 pl-3 space-y-2">
+                                  <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Cash mode</p>
+                                  <label className="flex items-center gap-2 text-xs cursor-pointer">
+                                    <input type="radio" name="cashMode" value="manual" checked={cashMode === "manual"} onChange={() => setCashMode("manual")} />
+                                    <span>Manual — operator clicks confirm</span>
+                                  </label>
+                                  <label className={`flex items-center gap-2 text-xs ${!cashHardwareDetected ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}>
+                                    <input type="radio" name="cashMode" value="hardware" checked={cashMode === "hardware"} onChange={() => cashHardwareDetected && setCashMode("hardware")} disabled={!cashHardwareDetected} />
+                                    <span>Hardware (bill / coin acceptor)</span>
+                                    {cashHardwareDetected ? <span className="ml-1 rounded-full bg-green-100 px-1.5 py-0.5 text-[10px] font-semibold text-green-700">Detected</span> : <span className="ml-1 text-[10px] text-slate-400">not detected</span>}
+                                  </label>
+                                  {cashHardwareDetected && cashHardwareDevices.length > 0 && <p className="text-[10px] text-slate-500 italic">{cashHardwareDevices.join(", ")}</p>}
+                                  <button type="button" disabled={cashHardwareDetecting} onClick={handleDetectCashHardware} className="text-[11px] text-blue-600 underline disabled:opacity-50">{cashHardwareDetecting ? "Scanning…" : "Scan for hardware"}</button>
+                                </div>
+                              )}
+
+                              {/* GCash static QR — available when PayMongo is active and GCash is enabled */}
+                              {paymentEnabled && activeProvider === "paymongo" && paymentProviders.gcash && (
+                                <div className="mt-3 border-l-2 border-blue-200 pl-3 space-y-1.5">
+                                  <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">GCash Static QR (fallback)</p>
+                                  {gcashStaticQrDataUrl ? (
+                                    <div className="flex items-start gap-3 mt-1">
+                                      <img src={gcashStaticQrDataUrl} alt="GCash QR" className="w-20 h-20 rounded-lg border border-slate-200 object-contain bg-white" />
+                                      <div className="flex flex-col gap-1">
+                                        <span className="text-[11px] text-green-700 font-semibold">QR uploaded</span>
+                                        <label className="cursor-pointer text-[11px] text-blue-600 underline">Replace<input type="file" accept="image/*" className="hidden" onChange={handleGcashQrUpload} /></label>
+                                        <button type="button" onClick={() => setGcashStaticQrDataUrl("")} className="text-left text-[11px] text-red-500 underline">Remove</button>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-blue-300 bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700 hover:bg-blue-100 transition">
+                                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
+                                      Upload GCash QR image
+                                      <input type="file" accept="image/*" className="hidden" onChange={handleGcashQrUpload} />
+                                    </label>
+                                  )}
+                                </div>
+                              )}
                             </div>
 
 
@@ -9982,42 +11520,203 @@ This cannot be undone.`
                     </div>
                   )}
 
-                  {/* Socials Sharing */}
+                  {/* Sharing & Delivery */}
                   {activeMain === "dashboard" && currentEvent && activeSub === "sharing" && (
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="space-y-4">
+
+                      {/* Sharing Methods */}
                       <div className={cardClass}>
-                        <div className="text-sm font-semibold text-slate-800">Overview</div>
-                        <div className="mt-3 grid grid-cols-2 gap-3">
-                          <div className={smallCardClass}>
-                            <div className="text-xs text-gray-600">Sessions Today</div>
-                            <div className="text-xl font-semibold">
-                              {completedSessionsToday(currentEvent)}
-                            </div>
-                            <div className="text-xs text-gray-600">Completed sessions</div>
-                          </div>
-                          <div className={smallCardClass}>
-                            <div className="text-xs text-gray-600">Revenue Today</div>
-                            <div className="text-xl font-semibold">
-                              ₱{currentEvent?.analytics?.revenueToday ?? 0}
-                            </div>
-                            <div className="text-xs text-gray-600">Payments & add-ons</div>
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <div className="text-sm font-semibold text-slate-800">Sharing Methods</div>
+                            <div className="text-xs text-slate-500 mt-0.5">How guests receive their photos and videos after each session.</div>
                           </div>
                         </div>
-                      </div>
-                      <div className={cardClass}>
-                        <div className="text-sm font-semibold text-slate-800">Weekly Sessions</div>
-                        <div className="mt-3 text-2xl font-semibold">
-                          {currentEvent?.analytics?.sessionsWeekly ?? 0}
+                        <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+
+                          {/* QR Code — powered by the online gallery (Plus & Business) */}
+                          <div className={`flex items-start gap-3 ${SURFACE_BG} ${SURFACE_BORDER} ${SMALL_CARD_RADIUS} p-3.5 transition ${galleryAddonEnabled ? "ring-1 ring-blue-200 border-blue-200" : ""}`}>
+                            <div className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg ${galleryAddonEnabled ? "bg-blue-100 text-blue-600" : "bg-slate-100 text-slate-400"}`}>
+                              <svg className="h-4.5 w-4.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 4a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H4a1 1 0 01-1-1V4zm2 1v2h2V5H5zm-2 8a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H4a1 1 0 01-1-1v-4zm2 1v2h2v-2H5zm8-10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1V4zm2 1v2h2V5h-2z" /></svg>
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between">
+                                <div className="text-sm font-semibold text-slate-800">QR Code</div>
+                                {galleryAddonEnabled ? (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-600">
+                                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Active
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-blue-600">Plus &amp; Business</span>
+                                )}
+                              </div>
+                              <div className="text-xs text-slate-500 mt-0.5">
+                                {galleryAddonEnabled
+                                  ? "Guests scan a QR code on the final screen to view and download their photos and videos from their online gallery."
+                                  : "Unlock QR sharing by upgrading to a Plus or Business gallery plan. The booth shows the gallery QR automatically once active."}
+                              </div>
+                              {!galleryAddonEnabled && (
+                                <button
+                                  type="button"
+                                  onClick={() => { setActiveMain("account"); setAccountTab("gallery"); }}
+                                  className="mt-2 text-xs font-bold text-blue-600 hover:text-blue-500"
+                                >
+                                  View gallery plans →
+                                </button>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* AirDrop — macOS only, planned */}
+                          <div className={`flex items-start gap-3 ${SURFACE_BG} ${SURFACE_BORDER} ${SMALL_CARD_RADIUS} p-3.5 opacity-80`}>
+                            <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-400">
+                              <svg className="h-4.5 w-4.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.858 15.355-5.858 21.213 0" /></svg>
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between">
+                                <div className="text-sm font-semibold text-slate-600">AirDrop</div>
+                                <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-400">Mac only</span>
+                              </div>
+                              <div className="text-xs text-slate-400 mt-0.5">AirDrop delivery is limited to macOS booths and isn't available yet. It's disabled for now.</div>
+                            </div>
+                            <label className="relative inline-flex items-center cursor-not-allowed" title="Mac only — coming soon">
+                              <input type="checkbox" className="sr-only peer" checked={false} disabled readOnly />
+                              <div className="w-9 h-5 bg-slate-200 rounded-full opacity-60 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4" />
+                            </label>
+                          </div>
+
+                          {/* Email — planned, notify on release */}
+                          <div className={`flex items-start gap-3 ${SURFACE_BG} ${SURFACE_BORDER} ${SMALL_CARD_RADIUS} p-3.5 opacity-80`}>
+                            <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-400">
+                              <svg className="h-4.5 w-4.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between">
+                                <div className="text-sm font-semibold text-slate-600">Email</div>
+                                <span className="inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-600">Coming soon</span>
+                              </div>
+                              <div className="text-xs text-slate-400 mt-0.5">Email delivery isn't available yet. It's disabled for now — we'll notify you the moment it's enabled.</div>
+                            </div>
+                            <label className="relative inline-flex items-center cursor-not-allowed" title="Coming soon">
+                              <input type="checkbox" className="sr-only peer" checked={false} disabled readOnly />
+                              <div className="w-9 h-5 bg-slate-200 rounded-full opacity-60 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4" />
+                            </label>
+                          </div>
+
                         </div>
-                        <div className="text-xs text-gray-600">Chart</div>
-                      </div>
-                      <div className={cardClass}>
-                        <div className="text-sm font-semibold text-slate-800">Monthly Revenue</div>
-                        <div className="mt-3 text-2xl font-semibold">
-                          ₱{currentEvent?.analytics?.revenueMonthly ?? 0}
+                        <div className="mt-3 rounded-lg bg-slate-50 border border-slate-100 px-3 py-2 text-[11px] text-slate-500">
+                          QR sharing is powered by your online gallery (included with Plus &amp; Business). AirDrop and Email are in development and will be enabled automatically when ready.
                         </div>
-                        <div className="text-xs text-gray-600">Chart</div>
                       </div>
+
+                      {/* Delivery Flow */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className={cardClass}>
+                          <div className="text-sm font-semibold text-slate-800">Delivery Screen</div>
+                          <div className="text-xs text-slate-500 mt-0.5">Configure the post-session delivery screen guests see.</div>
+                          <div className="mt-4 space-y-3">
+                            <label className="block text-xs text-gray-700">
+                              Screen title
+                              <input
+                                type="text"
+                                value={currentEvent?.sharing?.screenTitle ?? "Your photos are ready!"}
+                                onChange={(e) => {
+                                  const updated = { ...currentEvent, sharing: { ...(currentEvent.sharing || {}), screenTitle: e.target.value } };
+                                  setCurrentEvent(updated);
+                                }}
+                                placeholder="Your photos are ready!"
+                                className={`${SURFACE_BG} ${SURFACE_BORDER} w-full ${INPUT_RADIUS} px-3 py-2 text-sm outline-none mt-1 focus:border-blue-300 focus:ring-2 focus:ring-blue-100 transition`}
+                              />
+                            </label>
+                            <label className="block text-xs text-gray-700">
+                              Screen message
+                              <textarea
+                                value={currentEvent?.sharing?.screenMessage ?? "Scan the QR code or choose a delivery method below."}
+                                onChange={(e) => {
+                                  const updated = { ...currentEvent, sharing: { ...(currentEvent.sharing || {}), screenMessage: e.target.value } };
+                                  setCurrentEvent(updated);
+                                }}
+                                placeholder="Scan the QR code or choose a delivery method below."
+                                rows={2}
+                                className={`${SURFACE_BG} ${SURFACE_BORDER} w-full ${INPUT_RADIUS} px-3 py-2 text-sm outline-none mt-1 focus:border-blue-300 focus:ring-2 focus:ring-blue-100 transition resize-none`}
+                              />
+                            </label>
+                            <label className="block text-xs text-gray-700">
+                              Screen timeout (seconds)
+                              <input
+                                type="number"
+                                min={5}
+                                max={120}
+                                value={currentEvent?.sharing?.screenTimeout ?? 30}
+                                onChange={(e) => {
+                                  const updated = { ...currentEvent, sharing: { ...(currentEvent.sharing || {}), screenTimeout: Number(e.target.value) } };
+                                  setCurrentEvent(updated);
+                                }}
+                                className={`${SURFACE_BG} ${SURFACE_BORDER} w-full ${INPUT_RADIUS} px-3 py-2 text-sm outline-none mt-1 focus:border-blue-300 focus:ring-2 focus:ring-blue-100 transition`}
+                              />
+                            </label>
+                          </div>
+                        </div>
+
+                        <div className={cardClass}>
+                          <div className="text-sm font-semibold text-slate-800">Guest Output</div>
+                          <div className="text-xs text-slate-500 mt-0.5">Control what guests receive and output quality.</div>
+                          <div className="mt-4 space-y-3">
+                            <label className="block text-xs text-gray-700">
+                              Output format
+                              <select
+                                value={currentEvent?.sharing?.outputFormat ?? "jpg"}
+                                onChange={(e) => {
+                                  const updated = { ...currentEvent, sharing: { ...(currentEvent.sharing || {}), outputFormat: e.target.value } };
+                                  setCurrentEvent(updated);
+                                }}
+                                className={`${SURFACE_BG} ${SURFACE_BORDER} w-full ${INPUT_RADIUS} px-3 py-2 text-sm outline-none mt-1 focus:border-blue-300 focus:ring-2 focus:ring-blue-100 transition`}
+                              >
+                                <option value="jpg">JPEG (smaller file size)</option>
+                                <option value="png">PNG (lossless quality)</option>
+                              </select>
+                            </label>
+                            <label className="block text-xs text-gray-700">
+                              Image quality
+                              <select
+                                value={currentEvent?.sharing?.imageQuality ?? "high"}
+                                onChange={(e) => {
+                                  const updated = { ...currentEvent, sharing: { ...(currentEvent.sharing || {}), imageQuality: e.target.value } };
+                                  setCurrentEvent(updated);
+                                }}
+                                className={`${SURFACE_BG} ${SURFACE_BORDER} w-full ${INPUT_RADIUS} px-3 py-2 text-sm outline-none mt-1 focus:border-blue-300 focus:ring-2 focus:ring-blue-100 transition`}
+                              >
+                                <option value="original">Original (full resolution)</option>
+                                <option value="high">High (optimized)</option>
+                                <option value="medium">Medium (web-friendly)</option>
+                              </select>
+                            </label>
+                            <label className="flex items-center gap-2 text-sm text-gray-700">
+                              <input
+                                type="checkbox"
+                                checked={currentEvent?.sharing?.includeVideo ?? true}
+                                onChange={(e) => {
+                                  const updated = { ...currentEvent, sharing: { ...(currentEvent.sharing || {}), includeVideo: e.target.checked } };
+                                  setCurrentEvent(updated);
+                                }}
+                              />
+                              Include video in delivery
+                            </label>
+                            <label className="flex items-center gap-2 text-sm text-gray-700">
+                              <input
+                                type="checkbox"
+                                checked={currentEvent?.sharing?.watermark ?? false}
+                                onChange={(e) => {
+                                  const updated = { ...currentEvent, sharing: { ...(currentEvent.sharing || {}), watermark: e.target.checked } };
+                                  setCurrentEvent(updated);
+                                }}
+                              />
+                              Add watermark to shared photos
+                            </label>
+                          </div>
+                        </div>
+                      </div>
+
                     </div>
                   )}
 
@@ -10038,7 +11737,7 @@ This cannot be undone.`
                             <div key={label} className={`${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_SOFT} p-4`}>
                               <div className="flex items-center justify-between">
                                 <div className="text-xs font-medium text-gray-500">{label}</div>
-                                <span className="text-[10px] font-bold text-indigo-500 bg-indigo-50 rounded-full px-1.5 py-0.5">{badge}</span>
+                                <span className="text-[10px] font-bold text-blue-500 bg-blue-50 rounded-full px-1.5 py-0.5">{badge}</span>
                               </div>
                               <div className="mt-2 text-3xl font-bold text-gray-900 tabular-nums">{value}</div>
                               <div className="text-[11px] text-gray-400 mt-0.5">sessions</div>
@@ -10059,7 +11758,7 @@ This cannot be undone.`
                           ].map(({ label, value }) => (
                             <div key={label + "rev"} className={`${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_SOFT} p-4`}>
                               <div className="text-xs font-medium text-gray-500">{label}</div>
-                              <div className="mt-2 text-2xl font-bold text-indigo-600 tabular-nums">{peso(value)}</div>
+                              <div className="mt-2 text-2xl font-bold text-blue-600 tabular-nums">{peso(value)}</div>
                               <div className="text-[11px] text-gray-400 mt-0.5">gross revenue</div>
                             </div>
                           ))}
@@ -10077,7 +11776,7 @@ This cannot be undone.`
                             {evHourlyData.map((v, i) => (
                               <div
                                 key={i}
-                                className="flex-1 rounded-sm bg-indigo-500/70 hover:bg-indigo-600 transition-colors"
+                                className="flex-1 rounded-sm bg-blue-500/70 hover:bg-blue-600 transition-colors"
                                 style={{ height: `${(v / evMaxHourly) * 100}%`, minHeight: v > 0 ? 3 : 1 }}
                                 title={`${v} session${v !== 1 ? "s" : ""} at ${i}:00`}
                               />
@@ -10097,12 +11796,12 @@ This cannot be undone.`
                               <div key={i} className="flex-1 flex flex-col items-center gap-1">
                                 <div className="w-full flex flex-col justify-end" style={{ height: 72 }}>
                                   <div
-                                    className={`w-full rounded-sm transition-colors ${i === _nowAn.getDay() ? "bg-indigo-600" : "bg-indigo-300/70"}`}
+                                    className={`w-full rounded-sm transition-colors ${i === _nowAn.getDay() ? "bg-blue-600" : "bg-blue-300/70"}`}
                                     style={{ height: `${(v / evMaxWeekly) * 100}%`, minHeight: v > 0 ? 3 : 1 }}
                                     title={`${EV_DAY_LABELS[i]}: ${v} session${v !== 1 ? "s" : ""}`}
                                   />
                                 </div>
-                                <div className={`text-[10px] ${i === _nowAn.getDay() ? "text-indigo-600 font-semibold" : "text-gray-400"}`}>
+                                <div className={`text-[10px] ${i === _nowAn.getDay() ? "text-blue-600 font-semibold" : "text-gray-400"}`}>
                                   {EV_DAY_LABELS[i]}
                                 </div>
                               </div>
@@ -10173,7 +11872,7 @@ This cannot be undone.`
                                   </div>
                                   <div className="h-1.5 w-full bg-gray-100 rounded-full overflow-hidden">
                                     <div
-                                      className="h-full bg-indigo-500 rounded-full transition-all"
+                                      className="h-full bg-blue-500 rounded-full transition-all"
                                       style={{ width: `${(count / evMaxTpl) * 100}%` }}
                                     />
                                   </div>
@@ -10183,6 +11882,129 @@ This cannot be undone.`
                           )}
                         </div>
                       </div>
+
+                      {/* ── Row 5: Session Quality ── */}
+                      <div>
+                        <div className={`${EYEBROW} mb-2`}>Session Quality</div>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                          {[
+                            { label: "Completed", value: evCompletedCount, sub: "sessions" },
+                            { label: "Abandoned", value: evAbandonedCount, sub: "sessions" },
+                            { label: "Completion Rate", value: `${evCompletionRate}%`, sub: "of all sessions" },
+                            { label: "Avg Duration", value: evAvgDurationSec != null ? `${(evAvgDurationSec / 60).toFixed(1)} min` : "—", sub: "per session" },
+                          ].map(({ label, value, sub }) => (
+                            <div key={label} className={`${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_SOFT} p-4`}>
+                              <div className="text-xs font-medium text-gray-500">{label}</div>
+                              <div className="mt-2 text-2xl font-bold text-gray-900 tabular-nums">{value}</div>
+                              <div className="text-[11px] text-gray-400 mt-0.5">{sub}</div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* ── Row 6: Connectivity split ── */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className={`${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_SOFT} p-4`}>
+                          <div className="text-sm font-semibold text-gray-800 mb-3">Online vs Offline</div>
+                          <div className="grid grid-cols-2 gap-3">
+                            {[
+                              { label: "Online Sessions", value: evOnlineCount, color: "text-emerald-600" },
+                              { label: "Offline Sessions", value: evOfflineCount, color: "text-amber-600" },
+                            ].map(({ label, value, color }) => (
+                              <div key={label} className={smallCardClass}>
+                                <div className="text-[11px] text-gray-500 leading-tight">{label}</div>
+                                <div className={`mt-1 text-2xl font-bold tabular-nums ${color}`}>{value}</div>
+                              </div>
+                            ))}
+                          </div>
+                          {evTotalCount > 0 && (
+                            <div className="mt-3 h-2 w-full rounded-full bg-gray-100 overflow-hidden">
+                              <div
+                                className="h-full bg-emerald-500 rounded-full transition-all"
+                                style={{ width: `${Math.round((evOnlineCount / evTotalCount) * 100)}%` }}
+                              />
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Tone/Filter usage */}
+                        <div className={`${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_SOFT} p-4`}>
+                          <div className="text-sm font-semibold text-gray-800 mb-3">Tone / Filter Usage</div>
+                          {Object.keys(evToneUsage).length === 0 ? (
+                            <div className="text-xs text-gray-400 flex items-center justify-center h-16">No tone data yet</div>
+                          ) : (
+                            <div className="space-y-2">
+                              {Object.entries(evToneUsage).sort((a,b) => b[1]-a[1]).slice(0,5).map(([tone, count]) => {
+                                const maxTone = Math.max(...Object.values(evToneUsage));
+                                return (
+                                  <div key={tone}>
+                                    <div className="flex items-center justify-between text-xs mb-0.5">
+                                      <span className="text-gray-700 capitalize font-medium">{tone}</span>
+                                      <span className="text-gray-500 tabular-nums">{count}×</span>
+                                    </div>
+                                    <div className="h-1.5 w-full bg-gray-100 rounded-full overflow-hidden">
+                                      <div className="h-full bg-violet-500 rounded-full" style={{ width: `${(count/maxTone)*100}%` }} />
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* ── Row 7: Frame usage ── */}
+                      <div className={`${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_SOFT} p-4`}>
+                        <div className="text-sm font-semibold text-gray-800 mb-3">Frame Style Usage</div>
+                        {Object.keys(evFrameUsage).length === 0 ? (
+                          <div className="text-xs text-gray-400 flex items-center justify-center h-16">No frame data yet</div>
+                        ) : (
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                            {Object.entries(evFrameUsage).sort((a,b) => b[1]-a[1]).map(([frame, count]) => (
+                              <div key={frame} className={smallCardClass}>
+                                <div className="text-[11px] text-gray-500 capitalize">{frame}</div>
+                                <div className="mt-1 text-xl font-bold text-gray-900 tabular-nums">{count}×</div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* ── Row 8: Business revenue details (business mode only) ── */}
+                      {!evIsRental && (
+                        <div>
+                          <div className={`${EYEBROW} mb-2`}>Revenue Details</div>
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                            {[
+                              { label: "Additional Prints", value: evTotalAdditionalPrints, sub: "total prints sold" },
+                              { label: "Add-On Revenue", value: peso(evAdditionalPrintRevenue), sub: "from extra prints" },
+                              { label: "Tax Collected", value: peso(evTotalTaxCollected), sub: "total tax" },
+                              { label: "Avg Rev / Session", value: peso(evAvgRevPerSession), sub: "across all sessions" },
+                            ].map(({ label, value, sub }) => (
+                              <div key={label} className={`${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_SOFT} p-4`}>
+                                <div className="text-xs font-medium text-gray-500">{label}</div>
+                                <div className="mt-2 text-2xl font-bold text-blue-600 tabular-nums">{value}</div>
+                                <div className="text-[11px] text-gray-400 mt-0.5">{sub}</div>
+                              </div>
+                            ))}
+                          </div>
+
+                          {/* Payment provider breakdown */}
+                          {Object.keys(evProviderBreakdown).length > 0 && (
+                            <div className={`mt-3 ${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_SOFT} p-4`}>
+                              <div className="text-sm font-semibold text-gray-800 mb-3">Payment Provider Breakdown</div>
+                              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                {Object.entries(evProviderBreakdown).sort((a,b) => b[1]-a[1]).map(([provider, count]) => (
+                                  <div key={provider} className={smallCardClass}>
+                                    <div className="text-[11px] text-gray-500 capitalize">{provider}</div>
+                                    <div className="mt-1 text-xl font-bold text-gray-900 tabular-nums">{count} sessions</div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
 
                       {/* User Analytics Dashboard */}
                       <div className="mt-8 border-t pt-8">
@@ -10215,7 +12037,7 @@ This cannot be undone.`
                   <div className="mt-5 flex items-center justify-end gap-3">
                     <button
                       onClick={() => setDeleteTarget(null)}
-                      className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
+                      className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
                     >
                       Cancel
                     </button>
@@ -10233,6 +12055,11 @@ This cannot be undone.`
                               setCurrentEvent(null);
                               setActiveMain("events");
                             }
+
+                            // Delete all Supabase storage objects and gallery rows for this event.
+                            // Fire-and-forget — don't block the UI on a network call.
+                            native?.cleanupEventStorage?.(deleteTarget.id)
+                              ?.catch((err) => console.warn("[AdminDashboard] event storage cleanup failed:", err));
 
                             showToast("Event deleted");
                           }
@@ -10312,6 +12139,7 @@ This cannot be undone.`
                                     backgroundMediaPath: backgroundMediaPath?.url ?? null,
                                     backgroundMediaName: backgroundMediaPath?.name ?? null,
                                     backgroundMediaMime: backgroundMediaPath?.mime ?? null,
+                                    backgroundType,
                                     boothName,
                                     boothSlogan,
                                     buttonBgColor,
@@ -10333,7 +12161,7 @@ This cannot be undone.`
                           setDeleteTarget(null);
                         }
                       }}
-                      className="inline-flex items-center justify-center rounded-full bg-red-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md shadow-red-200 transition hover:-translate-y-0.5 hover:bg-red-700"
+                      className="inline-flex items-center justify-center rounded-lg bg-red-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md shadow-red-200 transition hover:-translate-y-0.5 hover:bg-red-700"
                     >
                       Delete
                     </button>

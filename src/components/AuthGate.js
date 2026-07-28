@@ -16,12 +16,6 @@ const GoogleIcon = () => (
   </svg>
 );
 
-const AppleIcon = () => (
-  <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-current">
-    <path d="M16.365 12.159c.03 3.304 2.887 4.404 2.919 4.42-.025.08-.456 1.565-1.508 3.104-.908 1.332-1.852 2.662-3.334 2.689-1.458.026-1.927-.873-3.593-.873-1.667 0-2.191.846-3.571.899-1.44.054-2.539-1.44-3.455-2.766-1.878-2.716-3.315-7.664-1.388-11.007.956-1.666 2.664-2.724 4.514-2.75 1.41-.028 2.738.953 3.593.953.856 0 2.475-1.179 4.178-1.005.711.029 2.71.287 3.99 2.165-.103.064-2.383 1.39-2.345 4.171zM13.58 3.658c.764-.925 1.275-2.215 1.137-3.5-1.1.045-2.434.732-3.231 1.655-.71.816-1.328 2.128-1.163 3.388 1.229.095 2.492-.619 3.257-1.543z" />
-  </svg>
-);
-
 /* ------------------------------------------------------------------ */
 /*  Small subcomponents                                                */
 /* ------------------------------------------------------------------ */
@@ -34,7 +28,7 @@ function Footer() {
         <a href="mailto:support@photuna.app?subject=Studio%20Photuna%20Terms" className="hover:text-slate-700 transition-colors">Terms &amp; Conditions</a>
         <a href="mailto:support@photuna.app?subject=Studio%20Photuna%20Privacy" className="hover:text-slate-700 transition-colors">Privacy Policy</a>
       </nav>
-      <p className="mt-2">© {new Date().getFullYear()} Studio Photuna. All Rights Reserved.</p>
+      <p className="mt-2">&copy; {new Date().getFullYear()} Studio Photuna. All Rights Reserved.</p>
     </footer>
   );
 }
@@ -71,7 +65,7 @@ function PillInput({ id, label, type = 'text', value, onChange, placeholder, req
         autoComplete={autoComplete}
         required={required}
         minLength={minLength}
-        className="min-h-[52px] w-full rounded-2xl border border-[#dedfe6] bg-white px-4 text-sm text-[#111827] outline-none transition placeholder:text-[#8b92a6] focus:border-[#6f4dff] focus:ring-4 focus:ring-[#6f4dff]/10"
+        className="min-h-[52px] w-full rounded-2xl border border-[#dedfe6] bg-white px-4 text-sm text-[#111827] outline-none transition placeholder:text-[#8b92a6] focus:border-[#2563eb] focus:ring-4 focus:ring-[#2563eb]/10"
       />
     </div>
   );
@@ -83,7 +77,7 @@ function PillPasswordField({ value, onChange, showPassword, onToggle }) {
       <label htmlFor="password" className="mb-2 block text-sm font-extrabold text-[#111827]">
         Password
       </label>
-      <div className="group flex min-h-[52px] items-center rounded-2xl border border-[#dedfe6] bg-white pr-2 transition focus-within:border-[#6f4dff] focus-within:ring-4 focus-within:ring-[#6f4dff]/10">
+      <div className="group flex min-h-[52px] items-center rounded-2xl border border-[#dedfe6] bg-white pr-2 transition focus-within:border-[#2563eb] focus-within:ring-4 focus-within:ring-[#2563eb]/10">
         <input
           id="password"
           type={showPassword ? 'text' : 'password'}
@@ -137,8 +131,8 @@ const authInfoSlides = [
     copy: 'The account layer keeps trial, subscription, and device access attached to the correct operator so refreshes and restarts stay predictable.',
     cards: [
       ['01', '14-day trial', 'Start with full access before choosing a paid plan.'],
-      ['02', 'Monthly plan', '$30 per month for operators who need flexibility.'],
-      ['03', 'Yearly plan', '$204 yearly, equal to $17 per month for the best value.'],
+      ['02', 'Monthly plan', '₱1,800 per month for operators who need flexibility.'],
+      ['03', 'Yearly plan', '₱11,400 yearly, equal to ₱950 per month for the best value.'],
       ['04', 'Secure logout', 'Clears stored identity so the next restart does not restore the old user.'],
     ],
   },
@@ -155,7 +149,6 @@ export default function AuthGate({ children }) {
     register,
     logout,
     loginWithGoogle,
-    loginWithApple,
     sendPasswordReset,
   } = useAuth();
   const { gating, refreshLicense } = useLicense();
@@ -177,7 +170,7 @@ export default function AuthGate({ children }) {
     monthly: {
       label: 'Monthly',
       plan: 'monthly',
-      price: '$30/mo',
+      price: '₱1,800/mo',
       note: 'Best for operators who want monthly flexibility before committing.',
       cta: 'Subscribe Monthly',
       chips: ['Monthly billing', 'Full software access', 'Cancel when needed'],
@@ -185,8 +178,8 @@ export default function AuthGate({ children }) {
     yearly: {
       label: 'Yearly',
       plan: 'yearly',
-      price: '$17/mo',
-      note: '$204 billed yearly. Save 43% compared with monthly billing.',
+      price: '₱950/mo',
+      note: '₱11,400 billed yearly. Save 47% compared with monthly billing.',
       cta: 'Subscribe Yearly',
       chips: ['Best value', 'Priority support', '12-month business access'],
     },
@@ -229,7 +222,7 @@ export default function AuthGate({ children }) {
     };
   }, [loading, mode]);
 
-  /* -------------------- handlers (unchanged behavior) -------------------- */
+  /* -------------------- handlers -------------------- */
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -268,20 +261,14 @@ export default function AuthGate({ children }) {
     }
   };
 
-  const handleSocialLogin = async (provider) => {
+  const handleGoogleLogin = async () => {
     setMsg('');
     setLoading(true);
     try {
-      if (provider === 'google') {
-        if (!loginWithGoogle) throw new Error('Google sign-in not available.');
-        await loginWithGoogle();
-      }
-      if (provider === 'apple') {
-        if (!loginWithApple) throw new Error('Apple sign-in not available.');
-        await loginWithApple();
-      }
+      if (!loginWithGoogle) throw new Error('Google sign-in not available.');
+      await loginWithGoogle();
     } catch (error) {
-      setMsg(error?.message ? String(error.message) : `${provider} sign-in failed.`);
+      setMsg(error?.message ? String(error.message) : 'Google sign-in failed.');
     } finally {
       setLoading(false);
     }
@@ -356,35 +343,24 @@ export default function AuthGate({ children }) {
             ].join(' ')}
           >
             <section className="relative flex h-screen items-center justify-center overflow-hidden bg-white px-5 py-5 sm:px-8 lg:px-12">
-              <div className="pointer-events-none absolute left-[-130px] top-[-90px] h-64 w-80 rotate-[-10deg] rounded-[58px] bg-[radial-gradient(circle_at_35%_40%,rgba(111,77,255,0.18),transparent_50%),#f4f5f8]" />
-              <div className="pointer-events-none absolute bottom-[-150px] right-[-150px] h-72 w-80 rotate-[12deg] rounded-[64px] bg-[radial-gradient(circle_at_70%_25%,rgba(34,197,94,0.14),transparent_46%),#f4f5f8]" />
+              <div className="pointer-events-none absolute left-[-130px] top-[-90px] h-64 w-80 rotate-[-10deg] rounded-[58px] bg-[radial-gradient(circle_at_35%_40%,rgba(37,99,235,0.15),transparent_50%),#eff6ff]" />
+              <div className="pointer-events-none absolute bottom-[-150px] right-[-150px] h-72 w-80 rotate-[12deg] rounded-[64px] bg-[radial-gradient(circle_at_70%_25%,rgba(37,99,235,0.10),transparent_46%),#eff6ff]" />
 
               <div className="relative z-10 w-full max-w-[500px]">
                 <div className="mb-6 flex justify-center">
-                  <img src="/logo.png" alt="Studio Photuna" className="h-16 w-auto sm:h-[72px]" />
+                  <img src="/logo-dark.png" alt="Studio Photuna" className="h-16 w-auto sm:h-[72px]" />
                 </div>
 
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <button
-                    type="button"
-                    onClick={() => handleSocialLogin('google')}
-                    disabled={loading}
-                    className="inline-flex min-h-[52px] w-full items-center justify-center gap-3 rounded-full border border-[#dedfe6] bg-white px-5 text-sm font-black text-[#111827] transition hover:bg-[#f4f5f8] disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    <GoogleIcon />
-                    Sign in with Google
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleSocialLogin('apple')}
-                    disabled={loading}
-                    className="inline-flex min-h-[52px] w-full items-center justify-center gap-3 rounded-full border border-[#dedfe6] bg-white px-5 text-sm font-black text-[#111827] transition hover:bg-[#f4f5f8] disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    <AppleIcon />
-                    Sign in with Apple
-                  </button>
-                </div>
+                {/* Google sign-in — full width, single button */}
+                <button
+                  type="button"
+                  onClick={handleGoogleLogin}
+                  disabled={loading}
+                  className="inline-flex min-h-[52px] w-full items-center justify-center gap-3 rounded-full border border-[#dedfe6] bg-white px-5 text-sm font-black text-[#111827] transition hover:bg-[#f4f5f8] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <GoogleIcon />
+                  Sign in with Google
+                </button>
 
                 {/* Divider */}
                 <div className="my-5 flex items-center gap-4">
@@ -451,7 +427,7 @@ export default function AuthGate({ children }) {
                     <div className="flex justify-end">
                       <button
                         type="button"
-                        className="text-sm font-extrabold text-[#6f4dff] transition hover:text-[#4b32c3]"
+                        className="text-sm font-extrabold text-[#2563eb] transition hover:text-[#1d4ed8]"
                         onClick={handleForgotPassword}
                       >
                         Forgot Password?
@@ -462,7 +438,7 @@ export default function AuthGate({ children }) {
                   <button
                     type="submit"
                     disabled={loading}
-                    className="inline-flex min-h-[54px] w-full items-center justify-center rounded-full bg-[#6f4dff] px-6 text-[15px] font-black text-white transition hover:-translate-y-0.5 hover:bg-[#4b32c3] disabled:cursor-not-allowed disabled:opacity-60"
+                    className="inline-flex min-h-[54px] w-full items-center justify-center rounded-full bg-[#2563eb] px-6 text-[15px] font-black text-white transition hover:-translate-y-0.5 hover:bg-[#1d4ed8] disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {viewCopy.submitLabel}
                   </button>
@@ -475,7 +451,7 @@ export default function AuthGate({ children }) {
                         setMsg('');
                         setMode((c) => (c === 'login' ? 'register' : 'login'));
                       }}
-                      className="font-black text-[#111827] underline decoration-[#dedfe6] underline-offset-4 transition hover:text-[#6f4dff]"
+                      className="font-black text-[#111827] underline decoration-[#dedfe6] underline-offset-4 transition hover:text-[#2563eb]"
                     >
                       {viewCopy.switchAction}
                     </button>
@@ -486,27 +462,27 @@ export default function AuthGate({ children }) {
               </div>
             </section>
 
-            <section className="relative hidden h-screen overflow-hidden bg-[#f4f5f8] text-[#111827] lg:block">
-              <div className="pointer-events-none absolute right-[-160px] top-[-110px] h-[330px] w-[430px] rotate-[9deg] rounded-[72px] bg-[radial-gradient(circle_at_70%_35%,rgba(111,77,255,0.18),transparent_48%),#e9ebf2]" />
-              <div className="pointer-events-none absolute bottom-[-160px] left-[18%] h-[320px] w-[360px] rotate-[-10deg] rounded-[76px] bg-[radial-gradient(circle_at_30%_30%,rgba(236,72,153,0.12),transparent_46%),#eceef5]" />
+            <section className="relative hidden h-screen overflow-hidden bg-[#0f172a] text-white lg:block">
+              <div className="pointer-events-none absolute right-[-160px] top-[-110px] h-[330px] w-[430px] rotate-[9deg] rounded-[72px] bg-[radial-gradient(circle_at_70%_35%,rgba(37,99,235,0.28),transparent_48%),#0f1f4a]" />
+              <div className="pointer-events-none absolute bottom-[-160px] left-[18%] h-[320px] w-[360px] rotate-[-10deg] rounded-[76px] bg-[radial-gradient(circle_at_30%_30%,rgba(96,165,250,0.12),transparent_46%),#060e23]" />
 
               <div className="relative z-10 flex h-full flex-col justify-center px-10 py-10 xl:px-16">
                 <div key={activeInfo.title}>
-                  <p className="text-xs font-black uppercase tracking-[0.22em] text-[#6f4dff]">{activeInfo.eyebrow}</p>
-                  <h2 className="max-w-xl text-5xl font-black leading-[1.03] tracking-[-0.06em] text-[#111827] xl:text-6xl">
+                  <p className="text-xs font-black uppercase tracking-[0.22em] text-blue-400">{activeInfo.eyebrow}</p>
+                  <h2 className="max-w-xl text-5xl font-black leading-[1.03] tracking-[-0.06em] text-white xl:text-6xl">
                     {activeInfo.title}
                   </h2>
-                  <p className="mt-5 max-w-xl text-base leading-7 text-[#5f6678]">
+                  <p className="mt-5 max-w-xl text-base leading-7 text-white/55">
                     {activeInfo.copy}
                   </p>
                 </div>
 
                 <div className="mt-8 grid grid-cols-2 gap-4">
                   {activeInfo.cards.map(([number, title, copy]) => (
-                    <div key={`${activeInfo.eyebrow}-${title}`} className="min-h-[168px] rounded-[26px] border border-[#dedfe6] bg-white p-5 shadow-[0_16px_46px_rgba(17,24,39,0.08)] transition duration-300 hover:-translate-y-1">
-                      <span className="grid h-10 w-10 place-items-center rounded-full bg-[#f4f5f8] text-xs font-black text-[#6f4dff]">{number}</span>
-                      <h3 className="mt-5 text-lg font-black text-[#111827]">{title}</h3>
-                      <p className="mt-2 text-sm leading-6 text-[#5f6678]">{copy}</p>
+                    <div key={`${activeInfo.eyebrow}-${title}`} className="min-h-[168px] rounded-[26px] border border-white/10 bg-white/5 p-5 backdrop-blur-sm transition duration-300 hover:-translate-y-1">
+                      <span className="grid h-10 w-10 place-items-center rounded-full bg-blue-500/20 text-xs font-black text-blue-300">{number}</span>
+                      <h3 className="mt-5 text-lg font-black text-white">{title}</h3>
+                      <p className="mt-2 text-sm leading-6 text-white/50">{copy}</p>
                     </div>
                   ))}
                 </div>
@@ -519,7 +495,7 @@ export default function AuthGate({ children }) {
                       onClick={() => setActiveAuthSlide(index)}
                       className={[
                         'h-2.5 rounded-full transition-all',
-                        activeAuthSlide === index ? 'w-10 bg-[#6f4dff]' : 'w-2.5 bg-[#cfd3dd] hover:bg-[#8b92a6]',
+                        activeAuthSlide === index ? 'w-10 bg-blue-400' : 'w-2.5 bg-white/25 hover:bg-white/50',
                       ].join(' ')}
                       aria-label={`Show ${slide.eyebrow}`}
                     />
@@ -533,7 +509,7 @@ export default function AuthGate({ children }) {
     );
   }
 
-  /* -------------------- LOGGED IN — account center (refreshed) -------------------- */
+  /* -------------------- LOGGED IN — account center -------------------- */
 
   return (
     <div className="min-h-screen bg-white px-4 py-6 font-sans text-[#5f6678] sm:px-6 lg:px-8" style={{ fontFamily: 'Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
@@ -555,10 +531,10 @@ export default function AuthGate({ children }) {
 
         <div className="overflow-hidden rounded-[28px] border border-[#dedfe6] bg-white shadow-[0_30px_90px_rgba(17,24,39,0.12)]">
           <div className="relative overflow-hidden border-b border-[#dedfe6] bg-[#f4f5f8] px-6 py-7 text-[#111827] sm:px-8">
-            <div className="pointer-events-none absolute right-[-80px] top-[-70px] h-48 w-64 rotate-[10deg] rounded-[46px] bg-[radial-gradient(circle_at_70%_30%,rgba(111,77,255,0.2),transparent_50%),#e8e9f0]" />
+            <div className="pointer-events-none absolute right-[-80px] top-[-70px] h-48 w-64 rotate-[10deg] rounded-[46px] bg-[radial-gradient(circle_at_70%_30%,rgba(37,99,235,0.2),transparent_50%),#dbeafe]" />
             <div className="relative z-10 flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
               <div>
-                <div className="inline-flex items-center gap-2 rounded-full border border-[#dedfe6] bg-white px-3 py-1 text-xs font-black uppercase tracking-[0.18em] text-[#6f4dff]">
+                <div className="inline-flex items-center gap-2 rounded-full border border-[#dedfe6] bg-white px-3 py-1 text-xs font-black uppercase tracking-[0.18em] text-[#2563eb]">
                   Account Center
                 </div>
                 <h2
@@ -613,15 +589,15 @@ export default function AuthGate({ children }) {
                 </p>
 
                 {!gating.allow && (
-                  <div className="mt-5 rounded-3xl border border-indigo-100 bg-indigo-50/70 p-4">
+                  <div className="mt-5 rounded-3xl border border-blue-100 bg-blue-50/70 p-4">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                       <div>
-                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-indigo-700">Studio Photuna Pro</p>
+                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-700">Studio Photuna Pro</p>
                         <h4 className="mt-1 text-2xl font-semibold text-slate-950">{selectedProPlan.price}</h4>
                         <p className="mt-1 max-w-lg text-sm leading-6 text-slate-600">{selectedProPlan.note}</p>
                       </div>
 
-                      <div className="inline-flex rounded-full border border-indigo-200 bg-white p-1">
+                      <div className="inline-flex rounded-full border border-blue-200 bg-white p-1">
                         {Object.values(proPlans).map((item) => (
                           <button
                             key={item.plan}
@@ -642,7 +618,7 @@ export default function AuthGate({ children }) {
 
                     <div className="mt-4 flex flex-wrap gap-2">
                       {selectedProPlan.chips.map((chip) => (
-                        <span key={chip} className="rounded-full border border-indigo-100 bg-white px-3 py-1 text-xs font-semibold text-slate-600">
+                        <span key={chip} className="rounded-full border border-blue-100 bg-white px-3 py-1 text-xs font-semibold text-slate-600">
                           {chip}
                         </span>
                       ))}
@@ -654,14 +630,14 @@ export default function AuthGate({ children }) {
                   {!gating.allow && (
                     <>
                       <button
-                        className="rounded-full bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md shadow-indigo-200 transition hover:-translate-y-0.5 hover:bg-indigo-700 disabled:opacity-50"
+                        className="rounded-full bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md shadow-blue-200 transition hover:-translate-y-0.5 hover:bg-blue-700 disabled:opacity-50"
                         onClick={redeemTrial}
                         disabled={planLoading}
                       >
                         {planLoading ? 'Please wait...' : 'Redeem 14-day Trial'}
                       </button>
                       <button
-                        className="rounded-full border border-indigo-200 bg-indigo-50 px-5 py-2.5 text-sm font-semibold text-indigo-700 transition hover:bg-indigo-100 disabled:opacity-50"
+                        className="rounded-full border border-blue-200 bg-blue-50 px-5 py-2.5 text-sm font-semibold text-blue-700 transition hover:bg-blue-100 disabled:opacity-50"
                         onClick={() => upgrade(selectedProPlan.plan)}
                         disabled={planLoading}
                       >

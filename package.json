@@ -1,11 +1,11 @@
 {
   "name": "photuna-app",
-  "version": "0.1.0",
+  "version": "0.2.5",
   "private": true,
   "homepage": ".",
   "main": "electron/main.js",
   "description": "Studio Photuna – Ahead of the moment",
-  "author": "Studio Photuna <admin@studiophotuna.com>",
+  "author": "Studio Photuna <studiophotuna.com>",
   "dependencies": {
     "@headlessui/react": "^2.2.9",
     "@heroicons/react": "^2.2.0",
@@ -50,12 +50,12 @@
   "scripts": {
     "start": "concurrently \"npm run react-start\" \"npm run electron-start\"",
     "react-start": "cross-env BROWSER=none react-scripts start",
-    "electron": "cross-env ELECTRON_START_URL=http://localhost:3000 electron . --no-watcher",
+    "electron": "cross-env ELECTRON_START_URL=https://app.studiophotuna.com electron . --no-watcher",
     "electron-start": "wait-on http://localhost:3000 && cross-env ELECTRON_START_URL=http://localhost:3000 electron . --no-watcher",
     "build": "CI=false react-scripts build",
     "test": "react-scripts test",
-    "dist": "electron-builder",
-    "dist:win": "electron-builder --win",
+    "dist": "react-scripts build && electron-builder",
+    "dist:win": "react-scripts build && electron-builder --win",
     "eject": "react-scripts eject",
     "start:all": "concurrently -n WEB,ELECTRON -c \"bgBlue.bold,bgMagenta.bold\" \"npm:react-start\" \"npm:electron-start\""
   },
@@ -78,12 +78,12 @@
     ],
     "extraResources": [
       {
-        "from": ".env",
-        "to": ".env"
-      },
-      {
         "from": "electron/bin/photo-print-helper.exe",
         "to": "bin/photo-print-helper.exe"
+      },
+      {
+        "from": ".env",
+        "to": ".env"
       }
     ],
     "directories": {
@@ -99,7 +99,11 @@
       "perMachine": false,
       "allowToChangeInstallationDirectory": true
     },
-    "publish": null
+    "publish": {
+      "provider": "github",
+      "owner": "studiophotuna",
+      "repo": "photuna-app"
+    }
   },
   "eslintConfig": {
     "extends": [

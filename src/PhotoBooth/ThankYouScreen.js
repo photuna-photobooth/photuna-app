@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import { CheckCircleIcon } from "@heroicons/react/24/solid";
 import { normalizeToFileUrl } from "../utils/mediaUrl";
 import { loadGoogleFont } from "../utils/fontLoader";
+import { useLayout } from "../utils/useLayout";
 
 function getBridge() {
   if (typeof window === "undefined") return null;
@@ -79,8 +80,10 @@ export default function ThankYouScreen({
   logo = null,
   countdownStart = 10,
   onRestart,
+  sessionSummary = null,
 }) {
   const api = getBridge();
+  const { isPortrait, isUnsupported } = useLayout();
 
   const [countdown, setCountdown] = useState(countdownStart);
   const [currentEvent, setCurrentEvent] = useState(event ?? null);
@@ -212,9 +215,18 @@ export default function ThankYouScreen({
   const isGif =
     !!backgroundMediaPath && backgroundMediaPath.toLowerCase().endsWith(".gif");
 
+  if (isUnsupported) {
+    return (
+      <div className="w-full h-screen flex flex-col items-center justify-center text-center gap-6" style={{ backgroundColor: bgColor }}>
+        <p style={{ fontFamily: headerFont, color: headerFontColor, fontSize: 'clamp(22px, 3vw, 56px)', fontWeight: 'bold' }}>Display Not Supported</p>
+        <p style={{ fontFamily: generalFont, color: generalFontColor, fontSize: 'clamp(14px, 1.8vw, 34px)' }}>Minimum resolution: 1080 × 1920 (Full HD portrait)</p>
+      </div>
+    );
+  }
+
   return (
     <div
-      className="relative w-full h-screen overflow-hidden flex items-center justify-center"
+      className={`relative w-full h-screen overflow-hidden ${isPortrait ? "flex flex-col" : "flex items-center justify-center"}`}
       style={{
         backgroundColor: bgColor,
         color: generalFontColor,
@@ -222,44 +234,52 @@ export default function ThankYouScreen({
       }}
     >
 
-      {/* Header */}
-      <div className="absolute top-24 z-30">
-        {logoPath ? (<img src={logoPath} alt="logo" className="max-w-[500px] sm:max-w-[500px] md:max-w-[600px]" />) : (<>
-          <h1
-            className="text-5xl font-bold"
-            style={{ fontFamily: headerFont, color: headerFontColor }}
-          >
-            {boothName}
-          </h1>
-          {tagline && <p className="text-lg flex items-center justify-center" style={{ color: generalFontColor }}>
-            {tagline}
-          </p>}</>)}
-      </div>
+      {/* Portrait Row 1: logo + countdown */}
+      {isPortrait && (
+        <div className="shrink-0 flex items-center justify-between z-30" style={{ padding: '2vh 4vw' }}>
+          {logoPath
+            ? <img src={logoPath} alt="logo" style={{ maxHeight: '6vh' }} className="w-auto object-contain" />
+            : <span className="font-bold" style={{ fontFamily: headerFont, color: headerFontColor, fontSize: 'clamp(18px, 2.5vw, 46px)' }}>{boothName}</span>
+          }
+          <div className="px-5 py-2 rounded-full font-bold shadow-sm" style={{ backgroundColor: buttonBgColor, color: buttonFontColor, fontFamily: generalFont, fontSize: 'clamp(16px, 2vw, 38px)' }} aria-live="polite">
+            {countdown}{t.seconds}
+          </div>
+        </div>
+      )}
 
-      {/* Center minimal content */}
+      {/* Landscape: absolute logo header */}
+      {!isPortrait && (
+        <div className="absolute top-24 z-30">
+          {logoPath ? (<img src={logoPath} alt="logo" className="max-w-[500px] sm:max-w-[500px] md:max-w-[600px]" />) : (<>
+            <h1 className="font-bold" style={{ fontFamily: headerFont, color: headerFontColor, fontSize: 'clamp(22px, 3.5vw, 56px)' }}>{boothName}</h1>
+            {tagline && <p className="text-lg flex items-center justify-center" style={{ color: generalFontColor }}>{tagline}</p>}
+          </>)}
+        </div>
+      )}
+
+      {/* Center/Row2 minimal content */}
       <motion.div
-        className="relative z-10 w-[92vw] max-w-2xl text-center px-6"
+        className={`relative z-10 text-center px-6 ${isPortrait ? "flex-1 min-h-0 flex flex-col items-center justify-center" : "w-[92vw] max-w-2xl"}`}
         initial={{ opacity: 0, y: 14 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.35, ease: "easeOut" }}
       >
 
         <h1
-          className="mt-4 text-6xl font-extrabold tracking-tight"
-          style={{ fontFamily: headerFont, color: headerFontColor }}
+          className="mt-4 font-extrabold tracking-tight"
+          style={{ fontFamily: headerFont, color: headerFontColor, fontSize: isPortrait ? 'clamp(28px, 4vw, 76px)' : 'clamp(28px, 4.5vw, 72px)' }}
         >
           {t.ready}
         </h1>
 
-        <p className="mt-10 text-lg opacity-75">{t.Thankyou}</p>
+        <p className={`mt-10 opacity-75 ${isPortrait ? "" : "text-lg"}`} style={isPortrait ? { fontSize: 'clamp(14px, 1.8vw, 34px)' } : undefined}>{t.Thankyou}</p>
 
-        <p className="mt-6 text-md opacity-50">
-          {t.returningIn}{" "}
-          <span className="font-bold opacity-80">
-            {countdown}
-            {t.seconds}
-          </span>
-        </p>
+        {!isPortrait && (
+          <p className="mt-6 text-md opacity-50">
+            {t.returningIn}{" "}
+            <span className="font-bold opacity-80">{countdown}{t.seconds}</span>
+          </p>
+        )}
 
         <motion.button
           onClick={onRestart}

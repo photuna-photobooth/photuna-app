@@ -15,6 +15,10 @@ export function normalizeToFileUrl(raw) {
   let p = String(raw).replace(/\\/g, '/');
 
   if (p.startsWith('file:')) {
+    // Decode any existing percent-encoding before re-encoding to avoid double-encoding
+    // (e.g. pathToFileURL returns file:///D:/My%20Photos/... and encodeURI would turn
+    // %20 into %2520, breaking the URL).
+    try { p = decodeURI(p); } catch { /* keep as-is if malformed */ }
     p = 'file:///' + p.replace(/^file:\/+/, '').replace(/^\/+/, '');
     return encodeURI(p);
   }

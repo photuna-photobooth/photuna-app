@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { normalizeToFileUrl } from "../utils/mediaUrl";
 import { loadGoogleFont } from "../utils/fontLoader";
+import { useLayout } from "../utils/useLayout";
 
 /* ---------------------------- Helpers ---------------------------- */
 /** Parse capture filename meta: capture_<index>-of-<total>_<timestamp>.jpg */
@@ -29,7 +30,7 @@ const STRINGS = {
     slotBadge: (n) => `#${n}`,
     secondsSuffix: "s",
   },
-  Tagalog: {
+  tl: {
     by: "gawa ng",
     brandDefaultName: "Studio Photuna",
     brandDefaultSlogan: "Mas nauna sa sandali.",
@@ -51,6 +52,16 @@ const resolveStrings = (code) => {
   return (k === "tl" || k === "tagalog" || k === "fil" || k === "filipino")
     ? STRINGS.tl
     : STRINGS.en;
+};
+
+/* Resolves the thumbnail URL from wherever AdminDashboard stored it */
+const resolveThumbnailSrc = (tpl) => {
+  const raw =
+    tpl?.previewMeta?.thumbnailDataUrl ??
+    tpl?.previewMeta?.thumbnailPath ??
+    tpl?.thumbnail ??
+    null;
+  return raw ? normalizeToFileUrl(raw) : null;
 };
 
 /* ---------------------- Main selection screen --------------------- */
@@ -120,7 +131,8 @@ export default function TemplateSelectionScreen({
     id: templateProp?.id ?? "",
     name: templateProp?.name ?? "",
     slots: normalizedSlots,
-    layout: normalizedLayout, // ✅ ADD THIS
+    layout: normalizedLayout,
+    thumbnailSrc: resolveThumbnailSrc(templateProp),
   }));
 
   const totalSlots = Array.isArray(template.slots) ? template.slots.length : 0;
@@ -132,7 +144,8 @@ export default function TemplateSelectionScreen({
         id: templateProp.id ?? "",
         name: templateProp.name ?? "",
         slots: normalizedSlots,
-        layout: normalizedLayout, // ✅ ADD THIS
+        layout: normalizedLayout,
+        thumbnailSrc: resolveThumbnailSrc(templateProp),
       });
       return;
     }
@@ -147,13 +160,15 @@ export default function TemplateSelectionScreen({
           id: t?.id ?? "",
           name: t?.name ?? "",
           slots: slotsFromPreview,
+          layout: t?.previewMeta?.layout ?? "4x6",
+          thumbnailSrc: resolveThumbnailSrc(t),
         });
       } catch (err) {
         console.error("Failed to load template:", err);
-        setTemplate({ id: "", name: "", slots: [], layout: "4x6" });
+        setTemplate({ id: "", name: "", slots: [], layout: "4x6", thumbnailSrc: null });
       }
     })();
-  }, [eventId, templateProp, normalizedSlots, normalizedLayout]);
+  }, [eventId, templateProp]);
 
   /* ---------------- Load appearance + settings from AdminDashboard ---------------- */
   useEffect(() => {
@@ -301,14 +316,19 @@ export default function TemplateSelectionScreen({
     setSelectedIndices((prev) => [...prev, ...autoFill]);
   }, [timeLeft, totalSlots, photos, selectedIndices]);
 
-  // Reset selections when a new session starts
+  // Stable content key so a new array reference from the parent doesn't trigger a reset
+  const photoKey = useMemo(
+    () => (photosProp || []).filter(Boolean).join('|'),
+    [photosProp]
+  );
+
+  // Reset selections when a new session starts (compare by content, not reference)
   useEffect(() => {
     setSelectedIndices([]);
     hasAutoAdvancedRef.current = false;
-    // Reset countdown from settings when props change
     setTimeLeft(effectiveCountdownStart);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [eventId, photosProp, templateProp, effectiveCountdownStart]);
+  }, [eventId, photoKey, templateProp?.id, effectiveCountdownStart]);
 
   useEffect(() => {
     if (timeLeft !== 0) return;
@@ -337,47 +357,65 @@ export default function TemplateSelectionScreen({
   const buttonHoverColor = appearance.buttonHoverColor || "gray";
 
 
+  const { isPortrait, isUnsupported, isPortrait2K } = useLayout();
+
   /* ---------------- Render ---------------- */
+  if (isUnsupported) {
+    return (
+      <div className="w-full h-screen flex flex-col items-center justify-center text-center gap-6" style={{ backgroundColor: appearance.bgColor }}>
+        <p style={{ fontFamily: headerFont, color: brandColor, fontSize: 'clamp(22px, 3vw, 56px)', fontWeight: 'bold' }}>Display Not Supported</p>
+        <p style={{ fontFamily: uiFont, color: bodyColor, fontSize: 'clamp(14px, 1.8vw, 34px)' }}>Minimum resolution: 1080 × 1920 (Full HD portrait)</p>
+      </div>
+    );
+  }
+
   return (
     <div
-      className="w-full h-screen text-black overflow-hidden grid grid-cols-[.8fr_.8fr] py-[50px]"
+      className={`w-full h-screen text-black overflow-hidden ${isPortrait ? "flex flex-col" : "grid grid-cols-[.8fr_.8fr] py-[50px]"}`}
       style={{ backgroundColor: appearance.bgColor || "#ffffff", color: bodyColor, fontFamily: uiFont }}
     >
 
-      {/* Header */}
-      <div className="absolute top-6 left-6 z-20">
-        {logoPath ? (
-          <img src={logoPath} alt="logo" className="max-w-[300px] sm:max-w-[300px] md:max-w-[400px]" />
-        ) : (
-          <>
-            <h1 className="text-5xl font-bold" style={{ fontFamily: headerFont, color: brandColor }}>
-              {brandName}
-            </h1>
-            {brandSlogan && (
-              <p className="text-lg" style={{ color: bodyColor }}>
-                {brandSlogan}
-              </p>
-            )}
-          </>
-        )}
-      </div>
-
-      <div className="absolute top-6 left-1/2 transform -translate-x-1/2 z-30">
-        <div
-          className="px-8 py-3 rounded-full text-2xl font-bold shadow-sm"
-          style={{
-            fontFamily: uiFont,
-            backgroundColor: primaryColor,
-            color: buttonFontColor,
-          }}
-          aria-live="polite"
-        >
-          {Math.max(0, timeLeft)}s
+      {/* Portrait: inline header row (Row 1) */}
+      {isPortrait && (
+        <div className="shrink-0 flex items-center justify-between" style={{ padding: '2vh 4vw' }}>
+          {logoPath
+            ? <img src={logoPath} alt="logo" style={{ maxHeight: '6vh' }} className="w-auto object-contain" />
+            : <span className="font-bold" style={{ fontFamily: headerFont, color: brandColor, fontSize: 'clamp(18px, 2.5vw, 46px)' }}>{brandName}</span>
+          }
+          <div className="px-5 py-2 rounded-full font-bold shadow-sm" style={{ backgroundColor: primaryColor, color: buttonFontColor, fontFamily: uiFont, fontSize: 'clamp(16px, 2vw, 38px)' }} aria-live="polite">
+            {Math.max(0, timeLeft)}s
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* LEFT: photos */}
-      <div className="col-span-1 overflow-y-auto pt-32 px-20 light-scroll">
+      {/* Landscape: absolute header + timer */}
+      {!isPortrait && (<>
+        <div className="absolute top-6 left-6 z-20">
+          {logoPath ? (
+            <img src={logoPath} alt="logo" className="max-w-[300px] sm:max-w-[300px] md:max-w-[400px]" />
+          ) : (
+            <>
+              <h1 className="font-bold" style={{ fontFamily: headerFont, color: brandColor, fontSize: 'clamp(22px, 3.5vw, 56px)' }}>{brandName}</h1>
+              {brandSlogan && <p style={{ color: bodyColor, fontSize: 'clamp(12px, 1.4vw, 22px)' }}>{brandSlogan}</p>}
+            </>
+          )}
+        </div>
+        <div className="absolute top-6 left-1/2 transform -translate-x-1/2 z-30">
+          <div className="rounded-full font-bold shadow-sm" style={{ fontFamily: uiFont, backgroundColor: primaryColor, color: buttonFontColor, fontSize: 'clamp(14px, 1.8vw, 26px)', padding: 'clamp(6px, 0.8vh, 12px) clamp(14px, 1.8vw, 28px)' }} aria-live="polite">
+            {Math.max(0, timeLeft)}s
+          </div>
+        </div>
+      </>)}
+
+      {/* LEFT: photos — portrait: Row 3 (h-[45vh] shrink-0, order 2) */}
+      <div
+        className={isPortrait ? "shrink-0 flex flex-col" : "col-span-1 h-full min-h-0 flex flex-col"}
+        style={isPortrait ? { height: '45vh', order: 2 } : undefined}
+      >
+        <div
+          className={`flex-1 min-h-0 overflow-y-auto light-scroll ${isPortrait ? "" : "pt-32 px-20"}`}
+          style={isPortrait ? { padding: '2vh 4vw 1vh' } : undefined}
+        >
         <div className="grid grid-cols-2 gap-4">
       
           {photos.map((src, i) => {
@@ -407,11 +445,16 @@ export default function TemplateSelectionScreen({
           })}
         </div>
 
-        {/* Footer actions */}
-        <div className="flex items-center justify-between mt-6">
+        </div>
+
+        {/* Footer actions — pinned at bottom */}
+        <div
+          className={`shrink-0 flex items-center justify-between ${isPortrait ? "" : "px-20 py-4"}`}
+          style={isPortrait ? { padding: '1vh 4vw 2vh' } : undefined}
+        >
           <span
-            className="flex items-center gap-2 px-10 py-4 rounded-full text-2xl font-bold shadow-lg"
-            style={{ backgroundColor: primaryColor, color: "#fff", fontFamily: buttonFont }}
+            className="flex items-center gap-2 px-10 py-4 rounded-full font-bold shadow-lg"
+            style={{ backgroundColor: primaryColor, color: "#fff", fontFamily: buttonFont, fontSize: isPortrait ? 'clamp(18px, 2.5vw, 46px)' : '1.5rem' }}
           >
             {T.photosCount} {selectedIndices.length}/{totalSlots}
           </span>
@@ -419,8 +462,8 @@ export default function TemplateSelectionScreen({
             {onCancel && (
               <button
                 onClick={onCancel}
-                className="px-5 py-2 rounded-full text-lg font-semibold bg-gray-200 hover:bg-gray-300 transition"
-                style={{ fontFamily: uiFont }}
+                className="px-5 py-2 rounded-full font-semibold bg-gray-200 hover:bg-gray-300 transition"
+                style={{ fontFamily: uiFont, fontSize: isPortrait ? 'clamp(14px, 1.8vw, 34px)' : '1.125rem' }}
               >
                 {T.back}
               </button>
@@ -428,7 +471,7 @@ export default function TemplateSelectionScreen({
             <button
               onClick={onSave}
               disabled={selectedIndices.length < totalSlots || selectedIndices.length === 0}
-              className={`flex items-center gap-2 px-10 py-4 rounded-full text-2xl font-bold shadow-lg transition
+              className={`flex items-center gap-2 px-10 py-4 rounded-full font-bold shadow-lg transition
     ${selectedIndices.length >= totalSlots && totalSlots > 0
                   ? "cursor-pointer"
                   : "bg-gray-300 text-gray-500 cursor-not-allowed"
@@ -436,6 +479,7 @@ export default function TemplateSelectionScreen({
   `}
               style={{
                 fontFamily: buttonFont,
+                fontSize: isPortrait ? 'clamp(18px, 2.5vw, 46px)' : '1.5rem',
                 backgroundColor:
                   selectedIndices.length >= totalSlots && totalSlots > 0
                     ? primaryColor
@@ -460,54 +504,60 @@ export default function TemplateSelectionScreen({
             >
               {T.next}
             </button>
-
           </div>
         </div>
       </div>
 
-      {/* RIGHT: template preview (absolute layout from AdminDashboard slots) */}
-      <div className="col-span-1 h-full pt-32 p-20">
+      {/* RIGHT: template preview — portrait: Row 2 (flex-1 min-h-0, order 1) */}
+      <div
+        className={isPortrait
+          ? "flex-1 min-h-0 overflow-y-auto light-scroll"
+          : "col-span-1 h-full overflow-y-auto light-scroll px-10 py-32"
+        }
+        style={isPortrait ? { padding: '1vh 4vw', order: 1 } : undefined}
+      >
 
         {(() => {
           const layoutKey = normalizedLayout; // "4x6" | "2x6" | "6x4" | "6x2"
 
-          // Aspect ratio classes per layout
-          const aspectMap = {
-            "4x6": "aspect-[4/6]",
-            "2x6": "aspect-[2/6]",
-            "6x4": "aspect-[6/4]",
-            "6x2": "aspect-[6/2]",
-          };
-          const aspectClass = aspectMap[layoutKey] ?? aspectMap["4x6"];
-
-          // Strip types duplicate: 2x6 (side-by-side) and 6x2 (stacked one above the other)
           const isStrip = layoutKey === "2x6" || layoutKey === "6x2";
-          const isTall = layoutKey === "4x6" || layoutKey === "2x6";
 
-          // Width constraints per layout to keep a sensible preview size
+          // aspectRatio inline style — mirrors FrameFilterScreen which is confirmed working
+          const aspectStyle = {
+            aspectRatio:
+              layoutKey === "2x6" ? "2 / 6" :
+              layoutKey === "6x4" ? "6 / 4" :
+              layoutKey === "6x2" ? "6 / 2" :
+              "4 / 6",
+          };
+
           const boxClass = (() => {
             switch (layoutKey) {
-              case "2x6": // tall strip
-                return "w-full max-w-[230px]";
-              case "6x2": // wide strip
-                return "w-full max-w-[720px]";
-              case "6x4": // landscape postcard
-                return "w-full max-w-[720px]";
-              default: // 4x6 portrait postcard
-                return "w-full max-w-[460px]";
+              case "2x6": return "w-full max-w-[230px]";
+              case "6x2": return "w-full max-w-[620px]";
+              case "6x4": return "w-full max-w-[620px]";
+              default:    return "w-full max-w-[460px]";
             }
           })();
 
-          // One function that renders the WYSIWYG canvas using normalized slots
+          // WYSIWYG slot canvas — same pattern as FrameFilterScreen
           const Canvas = (
-            <div className="relative w-full h-full">
-              {template.slots.map((slot) => {
+            <div className="relative w-full h-full bg-white">
+              {template.slots.length === 0 && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 p-4 text-center bg-gray-50">
+                  <div className="text-4xl opacity-20">🖼️</div>
+                  <div className="text-sm text-gray-500 font-medium">Template preview</div>
+                  <div className="text-xs text-gray-400">No slot layout saved</div>
+                </div>
+              )}
+              {template.slots.map((slot, idx) => {
                 const photoIndex = slotAssignments[slot.id];
                 const src = Number.isFinite(photoIndex) ? photos[photoIndex] : null;
+                const slotNum = slot.slotNumber ?? idx + 1;
                 return (
                   <div
-                    key={slot.id}
-                    className="absolute border border-white/30 overflow-hidden"
+                    key={slot.id ?? idx}
+                    className="absolute overflow-hidden"
                     style={{
                       left: `${slot.x * 100}%`,
                       top: `${slot.y * 100}%`,
@@ -520,8 +570,13 @@ export default function TemplateSelectionScreen({
                     {src ? (
                       <img src={src} className="w-full h-full object-cover" alt="" />
                     ) : (
-                      <div className="w-full h-full flex items-center justify-center text-xs text-gray-300">
-                        {T.slotLabel(slot.slotNumber)}
+                      <div
+                        className="w-full h-full flex items-center justify-center"
+                        style={{ backgroundColor: 'rgba(99,102,241,0.12)', border: '2px dashed rgba(99,102,241,0.5)' }}
+                      >
+                        <span className="text-xs font-bold" style={{ color: 'rgba(99,102,241,0.8)' }}>
+                          {slotNum}
+                        </span>
                       </div>
                     )}
                   </div>
@@ -530,34 +585,34 @@ export default function TemplateSelectionScreen({
             </div>
           );
 
-          // Non-strip layouts: single preview box (4x6, 6x4)
+          // Non-strip layouts — single preview box (4x6, 6x4)
           if (!isStrip) {
             return (
-              <div className="flex items-center justify-center gap-6">
-                <div className={`bg-black shadow-sm ${aspectClass} ${boxClass} relative`}>
+              <div className="flex items-center justify-center">
+                <div
+                  className={`shadow-lg border border-gray-200 relative overflow-hidden ${boxClass}`}
+                  style={aspectStyle}
+                >
                   {Canvas}
                 </div>
               </div>
             );
           }
 
-          // Strip layouts duplicate:
-          // - 2x6 (tall): side-by-side
-          // - 6x2 (wide): stacked vertically
+          // Strip layouts — 2x6 (tall): side-by-side; 6x2 (wide): stacked
           if (layoutKey === "2x6") {
             return (
-              <div className="flex items-start justify-center gap-6">
-                <div className={`bg-black shadow-sm ${aspectClass} ${boxClass} relative`}>{Canvas}</div>
-                <div className={`bg-black shadow-sm ${aspectClass} ${boxClass} relative`}>{Canvas}</div>
+              <div className="flex items-center justify-center gap-6">
+                <div className={`shadow-lg border border-gray-200 relative overflow-hidden ${boxClass}`} style={aspectStyle}>{Canvas}</div>
+                <div className={`shadow-lg border border-gray-200 relative overflow-hidden ${boxClass}`} style={aspectStyle}>{Canvas}</div>
               </div>
             );
           }
 
-          // 6x2: stack one above the other for a natural landscape two-up
           return (
-            <div className="flex flex-col items-center justify-start gap-6">
-              <div className={`bg-black shadow-sm ${aspectClass} ${boxClass} relative`}>{Canvas}</div>
-              <div className={`bg-black shadow-sm ${aspectClass} ${boxClass} relative`}>{Canvas}</div>
+            <div className="flex flex-col items-center justify-center gap-6">
+              <div className={`shadow-lg border border-gray-200 relative overflow-hidden ${boxClass}`} style={aspectStyle}>{Canvas}</div>
+              <div className={`shadow-lg border border-gray-200 relative overflow-hidden ${boxClass}`} style={aspectStyle}>{Canvas}</div>
             </div>
           );
         })()}

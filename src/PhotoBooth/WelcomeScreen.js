@@ -4,12 +4,15 @@ import { motion, AnimatePresence } from "framer-motion";
 import { normalizeToFileUrl } from "../utils/mediaUrl";
 import { loadGoogleFont } from "../utils/fontLoader";
 import { DEFAULT_APPEARANCE } from "../utils/appearance";
+import { useLayout } from "../utils/useLayout";
 
 /**
  * WelcomeScreen
  */
 export default function WelcomeScreen({ eventConfig = {}, event = null, onNext }) {
+  const { isUnsupported } = useLayout();
   const videoRef = useRef(null);
+  const liveCamRef = useRef(null);
   const mountedRef = useRef(true);
 
   const [loading, setLoading] = useState(true);
@@ -23,10 +26,29 @@ export default function WelcomeScreen({ eventConfig = {}, event = null, onNext }
 
   const cfg = event?.config ?? eventConfig ?? {};
   const appearance = event?.appearance ?? {};
+  const backgroundType = appearance?.backgroundType ?? "media";
 
   const rawVideoSrc = appearance?.backgroundMediaPath ?? "";
   const rawLogo = appearance?.logoPath ?? "";
   const rawPoster = appearance?.posterPath ?? "";
+
+  useEffect(() => {
+    if (backgroundType !== "camera") return;
+    let stream = null;
+    (async () => {
+      try {
+        const settings = await window.electron?.invoke?.("store:getSettings", {});
+        const constraints = { video: settings?.selectedCameraId ? { deviceId: { exact: settings.selectedCameraId } } : true, audio: false };
+        stream = await navigator.mediaDevices.getUserMedia(constraints);
+        if (liveCamRef.current) {
+          liveCamRef.current.srcObject = stream;
+        }
+      } catch (e) {
+        console.warn("[WelcomeScreen] live camera background failed:", e?.message);
+      }
+    })();
+    return () => { stream?.getTracks().forEach((t) => t.stop()); };
+  }, [backgroundType]);
 
   const videoSrc = useMemo(() => normalizeToFileUrl(rawVideoSrc), [rawVideoSrc]);
   const logo = useMemo(() => normalizeToFileUrl(rawLogo), [rawLogo]);
@@ -107,13 +129,13 @@ export default function WelcomeScreen({ eventConfig = {}, event = null, onNext }
       ) : (
         <>
           <h1
-            className="text-4xl sm:text-7xl md:text-8xl font-bold leading-tight"
-            style={{ fontFamily: headerFont, color: headerFontColor }}
+            className="font-bold leading-tight"
+            style={{ fontFamily: headerFont, color: headerFontColor, fontSize: 'clamp(28px, 7vw, 100px)' }}
           >
             <span className="italic font-bold">{eventName}</span>
           </h1>
           {tagline && (
-            <p className="mt-4 text-base sm:text-2xl opacity-80" style={{ color: generalFontColor }}>
+            <p className="mt-4 opacity-80" style={{ color: generalFontColor, fontSize: 'clamp(14px, 2.2vw, 32px)' }}>
               {tagline}
             </p>
           )}
@@ -126,16 +148,18 @@ export default function WelcomeScreen({ eventConfig = {}, event = null, onNext }
             e.stopPropagation();
             onNext?.();
           }}
-          className="mt-10 px-6 sm:px-10 py-3 sm:py-4 text-lg sm:text-5xl rounded-full shadow-lg focus:outline-none"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: prefersReducedMotion ? 0 : 0.4 }}
-          aria-label={startButtonText || "Tap to Start"}
+          className="mt-10 rounded-full shadow-lg focus:outline-none"
           style={{
+            padding: 'clamp(16px, 2.5vh, 40px) clamp(48px, 8vw, 100px)',
+            fontSize: 'clamp(20px, 3vh, 48px)',
             backgroundColor: buttonBgColor,
             color: buttonFontColor,
             fontFamily: buttonFont,
           }}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: prefersReducedMotion ? 0 : 0.4 }}
+          aria-label={startButtonText || "Tap to Start"}
           onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = buttonHoverColor)}
           onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = buttonBgColor)}
         >
@@ -145,7 +169,27 @@ export default function WelcomeScreen({ eventConfig = {}, event = null, onNext }
     </motion.div>
   );
 
-  if (!videoSrc) {
+  const liveCameraBackground = backgroundType === "camera" ? (
+    <video
+      ref={liveCamRef}
+      autoPlay
+      muted
+      playsInline
+      className="absolute inset-0 w-full h-full object-cover pointer-events-none -scale-x-100"
+      aria-hidden="true"
+    />
+  ) : null;
+
+  if (isUnsupported) {
+    return (
+      <div className="w-full h-screen flex flex-col items-center justify-center text-center gap-6" style={{ backgroundColor: bgColor }}>
+        <p style={{ fontFamily: headerFont, color: headerFontColor, fontSize: 'clamp(22px, 3vw, 56px)', fontWeight: 'bold' }}>Display Not Supported</p>
+        <p style={{ fontFamily: generalFont, color: generalFontColor, fontSize: 'clamp(14px, 1.8vw, 34px)' }}>Minimum resolution: 1080 × 1920 (Full HD portrait)</p>
+      </div>
+    );
+  }
+
+  if (!videoSrc || backgroundType === "camera") {
     return (
       <div
         className="relative w-full h-screen flex items-center justify-center"
@@ -154,6 +198,8 @@ export default function WelcomeScreen({ eventConfig = {}, event = null, onNext }
         role="button"
         tabIndex={0}
       >
+        {liveCameraBackground}
+        {liveCameraBackground && <div className="absolute inset-0 bg-black/30 pointer-events-none" />}
         {centeredContent}
       </div>
     );
