@@ -12,7 +12,14 @@ function getBridge() {
   return window.electron || window.api || null;
 }
 
-// Pull booth settings from Supabase → electron-store (call on app launch)
+// Pull booth settings from Supabase → electron-store (call on app launch).
+// Merge strategy:
+//   - Events: local always wins (desktop is the authority; Ctrl+R never loses edits).
+//     New events from Supabase (added via web app) are appended to local.
+//   - Templates / Frames / Palettes: Supabase wins when non-empty (web app is the authority).
+//   - Settings / Appearance: Supabase wins when non-empty; the nonEmpty guard
+//     blocks an empty {} in Supabase from wiping valid local state.
+//   - After merging, push local state back so Supabase stays in sync.
 export async function pullSettings() {
   if (!_userId) return null;
 
@@ -33,31 +40,51 @@ export async function pullSettings() {
   if (!store) return data;
 
   const ctx = { userId: _userId };
-  // Only overwrite local if Supabase has non-empty data — {} means the push
-  // hadn't synced yet, so clobbering local would destroy the user's settings.
   const nonEmpty = (v) => v && typeof v === 'object' && Object.keys(v).length > 0;
+  const hasItems = (v) => Array.isArray(v) && v.length > 0;
+
+  // Read all local data in parallel first — local is the source of truth
+  const [localSettings, localAppearance, localEvents, localTemplates, localFrames, localPalettes] =
+    await Promise.all([
+      store.getSettings?.(ctx),
+      store.getAppearance?.(ctx),
+      store.getEvents?.(ctx),
+      store.getTemplates?.(ctx),
+      store.getFrames?.(ctx),
+      store.getPalettes?.(ctx),
+    ]);
+
+  // Settings / Appearance: Supabase wins when non-empty.
+  // The nonEmpty guard blocks empty {} from wiping local (Supabase hadn't been
+  // seeded yet), but real data from the web app is always picked up.
   if (nonEmpty(data.settings)) await store.setSettings?.(data.settings, ctx);
   if (nonEmpty(data.appearance)) await store.setAppearance?.(data.appearance, ctx);
-  if (Array.isArray(data.events) && data.events.length > 0) {
-    // Preserve sessions recorded locally — Supabase never stores booth-run session records.
-    // Only overwrite local when Supabase has events; if Supabase is empty, keep local data
-    // (handles the case where the app was closed before the 2-second push debounce fired).
-    const localEvents = (await store.getEvents?.(ctx)) ?? [];
-    const merged = data.events.map((e) => {
-      const local = localEvents.find((le) => String(le.id) === String(e.id));
-      return local?.sessions?.length ? { ...e, sessions: local.sessions } : e;
-    });
-    // Include local events not yet synced to Supabase (created after last successful push)
-    const unsynced = localEvents.filter(le => !data.events.find(e => String(e.id) === String(le.id)));
-    await store.setEvents?.([...merged, ...unsynced], ctx);
-  }
-  // For arrays: only overwrite local if Supabase has data.
-  // An empty Supabase array means the push hadn't synced yet — don't clobber local.
-  if (Array.isArray(data.templates) && data.templates.length > 0) await store.setTemplates?.(data.templates, ctx);
-  if (Array.isArray(data.frames) && data.frames.length > 0) await store.setFrames?.(data.frames, ctx);
-  if (Array.isArray(data.palettes) && data.palettes.length > 0) await store.setPalettes?.(data.palettes, ctx);
 
-  console.log('[settingsSync] pulled from Supabase');
+  // Events: local always wins — the desktop is the authority for booth events.
+  // Edits saved locally are preserved through a Ctrl+R even if the 2-second
+  // push debounce hadn't fired yet. New events from Supabase (created on the
+  // web app) are added to local, but existing local events are never overwritten.
+  const localArr = Array.isArray(localEvents) ? localEvents : [];
+  if (hasItems(data.events)) {
+    const localById = new Map(localArr.map(le => [String(le.id), le]));
+    const onlyInSupabase = data.events.filter(e => !localById.has(String(e.id)));
+    if (onlyInSupabase.length > 0) {
+      await store.setEvents?.([...localArr, ...onlyInSupabase], ctx);
+    }
+  }
+
+  // Templates / Frames / Palettes: Supabase wins when non-empty.
+  // These are managed from app.studiophotuna.com; updates made there
+  // should always sync down to the desktop.
+  if (hasItems(data.templates)) await store.setTemplates?.(data.templates, ctx);
+  if (hasItems(data.frames)) await store.setFrames?.(data.frames, ctx);
+  if (hasItems(data.palettes)) await store.setPalettes?.(data.palettes, ctx);
+
+  // Upload local → Supabase so the cloud stays in sync with whatever is local.
+  // Uses the 2-second debounce, so it's a no-op if a push is already queued.
+  pushSettings({});
+
+  console.log('[settingsSync] pulled from Supabase (local-first)');
   return data;
 }
 
