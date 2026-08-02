@@ -1772,8 +1772,8 @@ export default function FrameFilterScreen({
             if (isPortrait) {
               switch (layoutKey) {
                 case "2x6": return "h-[35vh] w-auto";
-                case "6x2": return "w-full max-w-[70vw]";
-                case "6x4": return "w-full max-w-[72vw]";
+                case "6x2": return "w-[60vw]";
+                case "6x4": return "w-[60vw]";
                 default:    return "h-[35vh] w-auto";
               }
             }

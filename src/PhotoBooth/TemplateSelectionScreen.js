@@ -441,7 +441,7 @@ export default function TemplateSelectionScreen({
                     className={`relative overflow-hidden rounded-xl shadow-md border-2 transition-transform active:scale-95 ${selected ? "border-black" : "border-gray-200"}`}
                     style={{ fontFamily: uiFont }}
                   >
-                    <img src={src} alt={`Photo ${i + 1}`} className="w-full h-auto object-cover" />
+                    <img src={src} alt={`Photo ${i + 1}`} className="w-full aspect-square object-cover" />
                     {selected && (
                       <div className="absolute top-2 left-2">
                         <span className="text-white text-xs font-bold px-2 py-1 rounded-md" style={{ backgroundColor: primaryColor, fontFamily: buttonFont }}>
@@ -529,8 +529,8 @@ export default function TemplateSelectionScreen({
             if (isPortrait) {
               switch (layoutKey) {
                 case "2x6": return "h-[35vh] w-auto";
-                case "6x2": return "w-full max-w-[70vw]";
-                case "6x4": return "w-full max-w-[72vw]";
+                case "6x2": return "w-[60vw]";
+                case "6x4": return "w-[60vw]";
                 default:    return "h-[35vh] w-auto";
               }
             }
