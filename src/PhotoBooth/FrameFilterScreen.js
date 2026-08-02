@@ -1522,266 +1522,190 @@ export default function FrameFilterScreen({
       {/* ── Body: 2-column (landscape) or reordered stack (portrait) ── */}
       <div className={`flex-1 min-h-0 ${isPortrait ? "flex flex-col" : "grid grid-cols-[.8fr_.8fr] gap-8 pb-[50px]"}`}>
 
-      {/* Controls column — portrait: Row 3 (h-[45vh] shrink-0), landscape: left column */}
+      {/* Controls column — portrait: bottom flex-1, landscape: left column */}
       <div
-        className={isPortrait ? "shrink-0 flex flex-col" : "col-span-1 h-full min-h-0 flex flex-col"}
-        style={isPortrait ? { height: '45vh', order: 2 } : undefined}
+        className={isPortrait ? "flex-1 min-h-0 flex flex-col" : "col-span-1 h-full min-h-0 flex flex-col"}
+        style={isPortrait ? { order: 2 } : undefined}
       >
-        <div
-          className={`flex-1 min-h-0 overflow-y-auto light-scroll ${isPortrait ? "" : "px-16 pt-4 pb-4"}`}
-          style={isPortrait ? { padding: '2vh 4vw 1vh' } : undefined}
-        >
-          {/* Tone */}
-          <div className="mb-10">
-            <div
-              className={`${isPortrait ? "" : "text-5xl"} font-bold mb-4`}
-              style={{ fontFamily: headerFont, color: headerFontColor, ...(isPortrait ? { fontSize: 'clamp(20px, 2.8vw, 52px)' } : {}) }}
-            >
-              {t.tone}
-            </div>
-
-            <div className={`grid gap-3 ${isPortrait ? (isPortrait2K ? "grid-cols-4" : "grid-cols-3") : "grid-cols-2 md:grid-cols-3"}`}>
-              {toneEffectsToShow.map((f) => {
-                const isActive = tone === f.id;
-                const label =
-                  f.label[String(langCode).toLowerCase().startsWith("tl") ? "tl" : "en"];
-
-                return (
-                  <button
-                    key={f.id}
-                    onClick={() => setTone(f.id)}
-                    className="group relative min-h-[70px] rounded-[28px] px-5 py-4 text-left transition-all duration-200"
-                    style={{
-                      fontFamily: buttonFont,
-                      backgroundColor: isActive ? buttonBgColor : "rgba(255,255,255,0.06)",
-                      color: isActive ? buttonFontColor : generalFontColor,
-                      border: `1.5px solid ${isActive ? buttonBgColor : "rgba(255,255,255,0.18)"}`,
-                      boxShadow: isActive
-                        ? "0 12px 30px rgba(0,0,0,0.22)"
-                        : "0 8px 20px rgba(0,0,0,0.12)",
-                    }}
-                    onMouseEnter={(e) => {
-                      if (!isActive) {
-                        e.currentTarget.style.borderColor = buttonBgColor;
-                        e.currentTarget.style.transform = "translateY(-2px)";
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      if (!isActive) {
-                        e.currentTarget.style.borderColor = "rgba(255,255,255,0.18)";
-                        e.currentTarget.style.transform = "translateY(0)";
-                      }
-                    }}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <div className="text-lg font-bold leading-tight">{label}</div>
-                        <div
-                          className="mt-1 text-xs opacity-75"
-                          style={{ color: isActive ? buttonFontColor : generalFontColor }}
-                        >
-                          {f.id === "normal"
-                            ? ""
-                            : f.id === "bw"
-                              ? ""
-                              : f.id === "sepia"
-                                ? ""
-                                : f.id === "vintage"
-                                  ? ""
-                                  : f.id === "warm"
-                                    ? ""
-                                    : ""}
-                        </div>
-                      </div>
-
-                      <div
-                        className="shrink-0 w-4 h-4 rounded-full mt-1"
-                        style={{
-                          backgroundColor: isActive ? buttonFontColor : "transparent",
-                          border: `2px solid ${isActive ? buttonFontColor : "rgba(255,255,255,0.35)"}`,
-                        }}
-                      />
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Frame */}
-          <div className="mb-10">
-            <div
-              className={`${isPortrait ? "" : "text-5xl"} font-bold mb-4`}
-              style={{ fontFamily: headerFont, color: headerFontColor, ...(isPortrait ? { fontSize: 'clamp(20px, 2.8vw, 52px)' } : {}) }}
-            >
-              {t.frame}
-            </div>
-
-            <div className={`grid gap-3 ${isPortrait ? (isPortrait2K ? "grid-cols-4" : "grid-cols-3") : "grid-cols-2 md:grid-cols-3"}`}>
-              {framesToShow.length === 0 ? (
-                <div className="col-span-full rounded-[28px] border border-red-400/30 bg-red-500/10 px-5 py-4 text-sm text-red-200">
-                  No frames are attached to this template yet.
-                </div>
-              ) : (
-                framesToShow.map((f) => {
-                  const isActive = frameId === f.id;
-                  const labelText = f.label
-                    ? f.label[String(langCode).toLowerCase().startsWith("tl") ? "tl" : "en"]
-                    : f?.label?.en ?? "Frame";
-
+        {isPortrait ? (
+          /* ── Portrait: compact horizontal chip rows, no vertical scroll ── */
+          <div className="shrink-0 flex flex-col" style={{ padding: '1vh 4vw 0' }}>
+            {/* Tone chips */}
+            <div className="shrink-0 mb-3">
+              <div className="font-bold mb-2" style={{ fontFamily: headerFont, color: headerFontColor, fontSize: 'clamp(14px, 2vw, 28px)' }}>
+                {t.tone}
+              </div>
+              <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
+                {toneEffectsToShow.map((f) => {
+                  const isActive = tone === f.id;
+                  const label = f.label[String(langCode).toLowerCase().startsWith("tl") ? "tl" : "en"];
                   return (
-                    <button
-                      key={f.id}
-                      type="button"
-                      onClick={() => setFrameId(f.id)}
-                      className="group relative min-h-[70px] rounded-[28px] px-5 py-4 text-left transition-all duration-200"
-                      style={{
-                        fontFamily: buttonFont,
-                        backgroundColor: isActive ? buttonBgColor : "rgba(255,255,255,0.06)",
-                        color: isActive ? buttonFontColor : generalFontColor,
-                        border: `1.5px solid ${isActive ? buttonBgColor : "rgba(255,255,255,0.18)"}`,
-                        boxShadow: isActive
-                          ? "0 12px 30px rgba(0,0,0,0.22)"
-                          : "0 8px 20px rgba(0,0,0,0.12)",
-                      }}
-                      onMouseEnter={(e) => {
-                        if (!isActive) {
-                          e.currentTarget.style.borderColor = buttonBgColor;
-                          e.currentTarget.style.transform = "translateY(-2px)";
-                        }
-                      }}
-                      onMouseLeave={(e) => {
-                        if (!isActive) {
-                          e.currentTarget.style.borderColor = "rgba(255,255,255,0.18)";
-                          e.currentTarget.style.transform = "translateY(0)";
-                        }
-                      }}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <div className="text-lg font-bold leading-tight">{labelText}</div>
-
-                        </div>
-
-                        <div
-                          className="shrink-0 w-4 h-4 rounded-full mt-1"
-                          style={{
-                            backgroundColor: isActive ? buttonFontColor : "transparent",
-                            border: `2px solid ${isActive ? buttonFontColor : "rgba(255,255,255,0.35)"}`,
-                          }}
-                        />
-                      </div>
-                    </button>
+                    <button key={f.id} onClick={() => setTone(f.id)}
+                      className="shrink-0 rounded-full px-4 py-2 font-semibold transition-all"
+                      style={{ fontFamily: buttonFont, backgroundColor: isActive ? buttonBgColor : "rgba(255,255,255,0.06)", color: isActive ? buttonFontColor : generalFontColor, border: `1.5px solid ${isActive ? buttonBgColor : "rgba(255,255,255,0.18)"}`, fontSize: 'clamp(12px, 1.8vw, 22px)', whiteSpace: 'nowrap' }}
+                    >{label}</button>
                   );
-                })
-              )}
+                })}
+              </div>
             </div>
-          </div>
-
-          {/* Background Color */}
-          {activeFrame?.useBgColor &&
-            Array.isArray(activeFrame?.bgHexes) &&
-            activeFrame.bgHexes.length > 0 && (
-              <div className="mb-10">
-                <div
-                  className={`${isPortrait ? "" : "text-5xl"} font-bold mb-4`}
-                  style={{ fontFamily: headerFont, color: headerFontColor, ...(isPortrait ? { fontSize: 'clamp(20px, 2.8vw, 52px)' } : {}) }}
-                >
-                  Background Color
-                </div>
-
-                <div className="flex flex-wrap gap-4">
+            {/* Frame chips */}
+            <div className="shrink-0 mb-3">
+              <div className="font-bold mb-2" style={{ fontFamily: headerFont, color: headerFontColor, fontSize: 'clamp(14px, 2vw, 28px)' }}>
+                {t.frame}
+              </div>
+              <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
+                {framesToShow.length === 0 ? (
+                  <div className="text-sm rounded-xl border border-red-400/30 bg-red-500/10 px-4 py-2 text-red-200 shrink-0">No frames attached.</div>
+                ) : (
+                  framesToShow.map((f) => {
+                    const isActive = frameId === f.id;
+                    const labelText = f.label ? f.label[String(langCode).toLowerCase().startsWith("tl") ? "tl" : "en"] : f?.label?.en ?? "Frame";
+                    return (
+                      <button key={f.id} type="button" onClick={() => setFrameId(f.id)}
+                        className="shrink-0 rounded-full px-4 py-2 font-semibold transition-all"
+                        style={{ fontFamily: buttonFont, backgroundColor: isActive ? buttonBgColor : "rgba(255,255,255,0.06)", color: isActive ? buttonFontColor : generalFontColor, border: `1.5px solid ${isActive ? buttonBgColor : "rgba(255,255,255,0.18)"}`, fontSize: 'clamp(12px, 1.8vw, 22px)', whiteSpace: 'nowrap' }}
+                      >{labelText}</button>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+            {/* Background color chips */}
+            {activeFrame?.useBgColor && Array.isArray(activeFrame?.bgHexes) && activeFrame.bgHexes.length > 0 && (
+              <div className="shrink-0 mb-3">
+                <div className="font-bold mb-2" style={{ fontFamily: headerFont, color: headerFontColor, fontSize: 'clamp(14px, 2vw, 28px)' }}>Background</div>
+                <div className="flex gap-3 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
                   {activeFrame.bgHexes.map((hex) => {
                     const isActive = pickedBgHex === hex;
-
                     return (
-                      <button
-                        key={hex}
-                        type="button"
-                        onClick={() => setPickedBgHex(hex)}
-                        title={hex}
-                        className="relative w-16 h-16 rounded-[20px] transition-all duration-200"
-                        style={{
-                          backgroundColor: hex,
-                          border: `3px solid ${isActive ? buttonBgColor : "rgba(255,255,255,0.22)"}`,
-                          boxShadow: isActive
-                            ? `0 0 0 4px ${buttonBgColor}35, 0 12px 28px rgba(0,0,0,0.2)`
-                            : "0 8px 18px rgba(0,0,0,0.12)",
-                          transform: isActive ? "translateY(-2px)" : "translateY(0)",
-                        }}
+                      <button key={hex} type="button" onClick={() => setPickedBgHex(hex)} title={hex}
+                        className="shrink-0 w-10 h-10 rounded-full transition-all flex items-center justify-center"
+                        style={{ backgroundColor: hex, border: `3px solid ${isActive ? buttonBgColor : "rgba(255,255,255,0.22)"}`, transform: isActive ? "scale(1.15)" : "scale(1)" }}
                       >
-                        {isActive && (
-                          <div className="absolute inset-0 flex items-center justify-center text-white text-lg font-bold">
-                            ✓
-                          </div>
-                        )}
+                        {isActive && <span className="text-white text-sm font-bold" style={{ textShadow: '0 1px 2px rgba(0,0,0,0.5)' }}>✓</span>}
                       </button>
                     );
                   })}
                 </div>
               </div>
             )}
-
-          {/* Quantity */}
-          {allowExtraCopies && (
-            <div className="mb-8">
-              <div
-                className="rounded-[30px] px-6 py-5"
-                style={{
-                  backgroundColor: "rgba(255,255,255,0.08)",
-                  border: "1px solid rgba(255,255,255,0.14)",
-                  boxShadow: "0 14px 30px rgba(0,0,0,0.14)",
-                }}
-              >
-                <div className="flex items-center justify-between gap-4">
+            {/* Quantity compact row */}
+            {allowExtraCopies && (
+              <div className="shrink-0 mb-2">
+                <div className="flex items-center justify-between rounded-2xl px-4 py-3"
+                  style={{ backgroundColor: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.14)" }}
+                >
                   <div>
-                    <div className="text-2xl font-bold" style={{ color: headerFontColor }}>
-                      Print quantity
-                    </div>
-                    <div className="text-sm mt-1 opacity-80" style={{ color: generalFontColor }}>
-                      First print is already paid. Additional{" "}
-                      <strong>{formatMoney(unitPrice, currency)}</strong> for each extra copy.
-                    </div>
+                    <div className="font-bold" style={{ color: headerFontColor, fontSize: 'clamp(12px, 1.6vw, 22px)' }}>Print quantity</div>
+                    <div className="text-xs opacity-80" style={{ color: generalFontColor }}>+{formatMoney(unitPrice, currency)} per extra</div>
                   </div>
-
-                  <div
-                    className="flex items-center gap-2 rounded-full px-2 py-2"
-                    style={{
-                      backgroundColor: "#ffffff",
-                      boxShadow: "0 8px 20px rgba(0,0,0,0.12)",
-                    }}
-                  >
-                    <button
-                      onClick={decQty}
-                      className="w-11 h-11 rounded-full text-xl font-bold text-black transition"
-                    >
-                      −
-                    </button>
-                    <div className="min-w-[52px] text-center text-black font-bold text-lg">
-                      {quantity}
-                    </div>
-                    <button
-                      onClick={incQty}
-                      className="w-11 h-11 rounded-full text-xl font-bold text-black transition"
-                    >
-                      +
-                    </button>
+                  <div className="flex items-center gap-2">
+                    <button onClick={decQty} className="w-8 h-8 rounded-full bg-white text-black font-bold text-base flex items-center justify-center">−</button>
+                    <span className="w-8 text-center font-bold" style={{ color: headerFontColor, fontSize: 'clamp(14px, 1.8vw, 24px)' }}>{quantity}</span>
+                    <button onClick={incQty} className="w-8 h-8 rounded-full bg-white text-black font-bold text-base flex items-center justify-center">+</button>
                   </div>
                 </div>
-
-                {quantity > 1 && (
-                  <div className="mt-4 pt-4 border-t border-white/10 flex items-center justify-between text-sm">
-                    <span style={{ color: generalFontColor }}>Additional fee</span>
-                    <span className="font-bold" style={{ color: headerFontColor }}>
-                      {formatMoney(additionalFee, currency)}
-                    </span>
-                  </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          /* ── Landscape: scrollable grid layout ── */
+          <div className="flex-1 min-h-0 overflow-y-auto light-scroll px-16 pt-4 pb-4">
+            {/* Tone */}
+            <div className="mb-10">
+              <div className="text-5xl font-bold mb-4" style={{ fontFamily: headerFont, color: headerFontColor }}>{t.tone}</div>
+              <div className={`grid gap-3 ${isPortrait2K ? "grid-cols-4" : "grid-cols-2 md:grid-cols-3"}`}>
+                {toneEffectsToShow.map((f) => {
+                  const isActive = tone === f.id;
+                  const label = f.label[String(langCode).toLowerCase().startsWith("tl") ? "tl" : "en"];
+                  return (
+                    <button key={f.id} onClick={() => setTone(f.id)}
+                      className="group relative min-h-[70px] rounded-[28px] px-5 py-4 text-left transition-all duration-200"
+                      style={{ fontFamily: buttonFont, backgroundColor: isActive ? buttonBgColor : "rgba(255,255,255,0.06)", color: isActive ? buttonFontColor : generalFontColor, border: `1.5px solid ${isActive ? buttonBgColor : "rgba(255,255,255,0.18)"}`, boxShadow: isActive ? "0 12px 30px rgba(0,0,0,0.22)" : "0 8px 20px rgba(0,0,0,0.12)" }}
+                      onMouseEnter={(e) => { if (!isActive) { e.currentTarget.style.borderColor = buttonBgColor; e.currentTarget.style.transform = "translateY(-2px)"; } }}
+                      onMouseLeave={(e) => { if (!isActive) { e.currentTarget.style.borderColor = "rgba(255,255,255,0.18)"; e.currentTarget.style.transform = "translateY(0)"; } }}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div><div className="text-lg font-bold leading-tight">{label}</div></div>
+                        <div className="shrink-0 w-4 h-4 rounded-full mt-1" style={{ backgroundColor: isActive ? buttonFontColor : "transparent", border: `2px solid ${isActive ? buttonFontColor : "rgba(255,255,255,0.35)"}` }} />
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            {/* Frame */}
+            <div className="mb-10">
+              <div className="text-5xl font-bold mb-4" style={{ fontFamily: headerFont, color: headerFontColor }}>{t.frame}</div>
+              <div className={`grid gap-3 ${isPortrait2K ? "grid-cols-4" : "grid-cols-2 md:grid-cols-3"}`}>
+                {framesToShow.length === 0 ? (
+                  <div className="col-span-full rounded-[28px] border border-red-400/30 bg-red-500/10 px-5 py-4 text-sm text-red-200">No frames are attached to this template yet.</div>
+                ) : (
+                  framesToShow.map((f) => {
+                    const isActive = frameId === f.id;
+                    const labelText = f.label ? f.label[String(langCode).toLowerCase().startsWith("tl") ? "tl" : "en"] : f?.label?.en ?? "Frame";
+                    return (
+                      <button key={f.id} type="button" onClick={() => setFrameId(f.id)}
+                        className="group relative min-h-[70px] rounded-[28px] px-5 py-4 text-left transition-all duration-200"
+                        style={{ fontFamily: buttonFont, backgroundColor: isActive ? buttonBgColor : "rgba(255,255,255,0.06)", color: isActive ? buttonFontColor : generalFontColor, border: `1.5px solid ${isActive ? buttonBgColor : "rgba(255,255,255,0.18)"}`, boxShadow: isActive ? "0 12px 30px rgba(0,0,0,0.22)" : "0 8px 20px rgba(0,0,0,0.12)" }}
+                        onMouseEnter={(e) => { if (!isActive) { e.currentTarget.style.borderColor = buttonBgColor; e.currentTarget.style.transform = "translateY(-2px)"; } }}
+                        onMouseLeave={(e) => { if (!isActive) { e.currentTarget.style.borderColor = "rgba(255,255,255,0.18)"; e.currentTarget.style.transform = "translateY(0)"; } }}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div><div className="text-lg font-bold leading-tight">{labelText}</div></div>
+                          <div className="shrink-0 w-4 h-4 rounded-full mt-1" style={{ backgroundColor: isActive ? buttonFontColor : "transparent", border: `2px solid ${isActive ? buttonFontColor : "rgba(255,255,255,0.35)"}` }} />
+                        </div>
+                      </button>
+                    );
+                  })
                 )}
               </div>
             </div>
-          )}
-
-        </div>
+            {/* Background Color */}
+            {activeFrame?.useBgColor && Array.isArray(activeFrame?.bgHexes) && activeFrame.bgHexes.length > 0 && (
+              <div className="mb-10">
+                <div className="text-5xl font-bold mb-4" style={{ fontFamily: headerFont, color: headerFontColor }}>Background Color</div>
+                <div className="flex flex-wrap gap-4">
+                  {activeFrame.bgHexes.map((hex) => {
+                    const isActive = pickedBgHex === hex;
+                    return (
+                      <button key={hex} type="button" onClick={() => setPickedBgHex(hex)} title={hex}
+                        className="relative w-16 h-16 rounded-[20px] transition-all duration-200"
+                        style={{ backgroundColor: hex, border: `3px solid ${isActive ? buttonBgColor : "rgba(255,255,255,0.22)"}`, boxShadow: isActive ? `0 0 0 4px ${buttonBgColor}35, 0 12px 28px rgba(0,0,0,0.2)` : "0 8px 18px rgba(0,0,0,0.12)", transform: isActive ? "translateY(-2px)" : "translateY(0)" }}
+                      >
+                        {isActive && <div className="absolute inset-0 flex items-center justify-center text-white text-lg font-bold">✓</div>}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+            {/* Quantity */}
+            {allowExtraCopies && (
+              <div className="mb-8">
+                <div className="rounded-[30px] px-6 py-5" style={{ backgroundColor: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.14)", boxShadow: "0 14px 30px rgba(0,0,0,0.14)" }}>
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <div className="text-2xl font-bold" style={{ color: headerFontColor }}>Print quantity</div>
+                      <div className="text-sm mt-1 opacity-80" style={{ color: generalFontColor }}>First print is already paid. Additional <strong>{formatMoney(unitPrice, currency)}</strong> for each extra copy.</div>
+                    </div>
+                    <div className="flex items-center gap-2 rounded-full px-2 py-2" style={{ backgroundColor: "#ffffff", boxShadow: "0 8px 20px rgba(0,0,0,0.12)" }}>
+                      <button onClick={decQty} className="w-11 h-11 rounded-full text-xl font-bold text-black transition">−</button>
+                      <div className="min-w-[52px] text-center text-black font-bold text-lg">{quantity}</div>
+                      <button onClick={incQty} className="w-11 h-11 rounded-full text-xl font-bold text-black transition">+</button>
+                    </div>
+                  </div>
+                  {quantity > 1 && (
+                    <div className="mt-4 pt-4 border-t border-white/10 flex items-center justify-between text-sm">
+                      <span style={{ color: generalFontColor }}>Additional fee</span>
+                      <span className="font-bold" style={{ color: headerFontColor }}>{formatMoney(additionalFee, currency)}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Action — pinned at the bottom of the controls column */}
         <div
@@ -1821,13 +1745,13 @@ export default function FrameFilterScreen({
         </div>
       </div>
 
-      {/* RIGHT: print preview — portrait: Row 2 (flex-1 min-h-0), landscape: right column */}
+      {/* RIGHT: print preview — portrait: top fixed height, landscape: right column */}
       <div
         className={isPortrait
-          ? "flex-1 min-h-0 flex items-center justify-center overflow-hidden"
+          ? "shrink-0 flex items-center justify-center overflow-hidden"
           : "col-span-1 h-full overflow-y-auto px-10 pt-4 pb-16 light-scroll"
         }
-        style={isPortrait ? { padding: '1vh 4vw', order: 1 } : undefined}
+        style={isPortrait ? { padding: '1vh 4vw', order: 1, height: '42vh' } : undefined}
       >
 
         {(() => {
@@ -1845,6 +1769,14 @@ export default function FrameFilterScreen({
 
           // Width constraints per layout — smaller on tablet (iPad) to avoid overflow
           const boxClass = (() => {
+            if (isPortrait) {
+              switch (layoutKey) {
+                case "2x6": return "max-w-[90px]";
+                case "6x2": return "w-full max-w-[320px]";
+                case "6x4": return "w-full max-w-[320px]";
+                default:    return "max-w-[180px]";
+              }
+            }
             if (isTablet) {
               switch (layoutKey) {
                 case "2x6": return "w-full max-w-[150px]";

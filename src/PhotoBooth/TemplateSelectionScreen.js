@@ -422,8 +422,8 @@ export default function TemplateSelectionScreen({
       >
         {/* LEFT column: photo grid + counter + next button */}
         <div
-          className={isPortrait ? "shrink-0 flex flex-col" : "col-span-1 h-full min-h-0 flex flex-col"}
-          style={isPortrait ? { height: '45vh', order: 2 } : undefined}
+          className={isPortrait ? "flex-1 min-h-0 flex flex-col" : "col-span-1 h-full min-h-0 flex flex-col"}
+          style={isPortrait ? { order: 2 } : undefined}
         >
           {/* Photo grid */}
           <div
@@ -510,10 +510,10 @@ export default function TemplateSelectionScreen({
         {/* RIGHT column: template preview */}
         <div
           className={isPortrait
-            ? "flex-1 min-h-0 overflow-y-auto light-scroll"
+            ? "shrink-0 overflow-hidden flex items-center justify-center"
             : "col-span-1 h-full overflow-y-auto light-scroll px-10 pt-4 pb-16"
           }
-          style={isPortrait ? { padding: '1vh 4vw', order: 1 } : undefined}
+          style={isPortrait ? { padding: '1vh 4vw', order: 1, height: '42vh' } : undefined}
         >
         {(() => {
           const layoutKey = normalizedLayout;
@@ -526,6 +526,14 @@ export default function TemplateSelectionScreen({
               "4 / 6",
           };
           const boxClass = (() => {
+            if (isPortrait) {
+              switch (layoutKey) {
+                case "2x6": return "max-w-[90px]";
+                case "6x2": return "w-full max-w-[320px]";
+                case "6x4": return "w-full max-w-[320px]";
+                default:    return "max-w-[180px]";
+              }
+            }
             if (isTablet) {
               switch (layoutKey) {
                 case "2x6": return "w-full max-w-[150px]";
