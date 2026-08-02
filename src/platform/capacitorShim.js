@@ -72,19 +72,6 @@ function stripWindowsCameraId(settings) {
 
 // ── Appearance helpers ────────────────────────────────────────────────────────
 
-// Windows saves logo/background as local file:// or C:\ paths. On iPad those
-// paths don't exist — strip them so the UI degrades gracefully instead of
-// showing a broken image. https:// URLs (Supabase Storage) pass through.
-function sanitizeAppearanceForWeb(app) {
-  if (!app || typeof app !== 'object') return app;
-  const webSafe = (v) => !v || v.startsWith('https://') || v.startsWith('http://') || v.startsWith('data:');
-  return {
-    ...app,
-    logoPath: webSafe(app.logoPath) ? app.logoPath : null,
-    backgroundMediaPath: webSafe(app.backgroundMediaPath) ? app.backgroundMediaPath : null,
-  };
-}
-
 // Upload an appearance asset (logo or background image) to Supabase Storage.
 // Path starts with userId so the UPDATE RLS policy (first folder = auth.uid()) passes.
 async function uploadAppearanceAsset(file, userId, slot) {

@@ -101,6 +101,7 @@ export default function PrintPreviewScreen({
   const [resolvedQrUrl, setResolvedQrUrl] = useState(qrUrl || null);
   const [galleryError, setGalleryError] = useState("");
   const [localSavedPath, setLocalSavedPath] = useState(null);
+  const [printError, setPrintError] = useState(null);
 
   useEffect(() => {
     setResolvedQrUrl(qrUrl || null);
@@ -364,7 +365,7 @@ export default function PrintPreviewScreen({
       if (!target) target = list.find(p => p.isDefault) || list[0] || null;
 
       if (!target) {
-        console.warn("No printers detected by Electron. Is the DNP driver installed?");
+        setPrintError("No printer detected. Check that your printer is on and the driver is installed.");
         return;
       }
       // Persist the resolved name if it changed (keeps Settings in sync)
@@ -394,15 +395,34 @@ export default function PrintPreviewScreen({
       });
 
       if (!res || res.ok === false) {
-        console.error('printPhoto failed:', res?.error ?? 'unknown error');
+        setPrintError(res?.error ?? "Print job failed. Please check your printer and try again.");
         return;
       }
 
       printedRef.current = true;
     } catch (err) {
-      console.error("Failed to send print job:", err);
+      setPrintError(err?.message ?? "An unexpected error occurred while printing.");
     }
   }, [api, composedImage, currentEvent, resolvedLayout, posterSrc, eventId, sessionId]);
+
+  // iPad: share the composed image via the Web Share API (triggers iOS share sheet → AirPrint)
+  const handleSharePrint = useCallback(async () => {
+    const src = composedImage || composedImageUrl;
+    if (!src) return;
+    try {
+      const blob = await fetch(src).then(r => r.blob());
+      const file = new File([blob], 'photuna-print.png', { type: 'image/png' });
+      if (navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ files: [file], title: 'Print Photo' });
+      } else {
+        const url = URL.createObjectURL(blob);
+        const w = window.open(url, '_blank');
+        if (w) setTimeout(() => URL.revokeObjectURL(url), 60000);
+      }
+    } catch (err) {
+      if (err?.name !== 'AbortError') setPrintError('Could not open share sheet. Try again.');
+    }
+  }, [composedImage, composedImageUrl]);
 
   // Send the job as soon as the composed image is present on the Print screen
   useEffect(() => {
@@ -589,6 +609,35 @@ export default function PrintPreviewScreen({
           </span>
           {galleryEnabled && !offlineMode ? i18n.thanksTail : ` ${isTablet ? i18n.tabletSaved : i18n.localSaved}`}
         </p>
+
+        {/* iPad: share sheet button → AirPrint */}
+        {isTablet && (composedImage || composedImageUrl) && (
+          <button
+            onClick={handleSharePrint}
+            className="mt-6 flex items-center gap-2 rounded-full font-semibold shadow-sm"
+            style={{
+              backgroundColor: buttonBgColor,
+              color: buttonFontColor,
+              fontFamily: generalFont,
+              fontSize: 'clamp(14px, 1.6vw, 24px)',
+              padding: 'clamp(8px, 1vh, 14px) clamp(20px, 2.5vw, 40px)',
+            }}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: '1.2em', height: '1.2em' }}>
+              <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
+              <polyline points="16 6 12 2 8 6" />
+              <line x1="12" y1="2" x2="12" y2="15" />
+            </svg>
+            Share / Print
+          </button>
+        )}
+
+        {/* Print error banner (Windows and iPad) */}
+        {printError && (
+          <div className="mt-4 rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-center text-sm text-red-700 max-w-sm">
+            {printError}
+          </div>
+        )}
       </div>
 
       {/* POSTER PREVIEW — portrait: Row 2 (flex-1 min-h-0, order 1); landscape: right side */}
