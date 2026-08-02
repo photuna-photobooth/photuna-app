@@ -60,6 +60,18 @@ async function prefRemove(name, userId) {
   }
 }
 
+// ── Camera helpers ───────────────────────────────────────────────────────────
+
+// Strip Windows-specific camera device IDs from settings so booth screens
+// fall back to facingMode-based constraints (which work on iPad cameras).
+function stripWindowsCameraId(settings) {
+  if (!settings || typeof settings !== 'object') return settings;
+  const s = { ...settings };
+  delete s.selectedCameraId;
+  delete s.selectedCameraDeviceId;
+  return s;
+}
+
 // ── Stubs ────────────────────────────────────────────────────────────────────
 
 const noopUnsub = () => {};
@@ -82,7 +94,10 @@ export const capacitorShim = {
   cleanupEventStorage: noop,
 
   // ── Settings ───────────────────────────────────────────────────────────────
-  getSettings: async (ctx) => prefGet('settings', ctx?.userId, {}),
+  getSettings: async (ctx) => {
+    const s = await prefGet('settings', ctx?.userId, {});
+    return stripWindowsCameraId(s);
+  },
   setSettings: async (settings, ctx) => prefSet('settings', settings, ctx?.userId),
 
   // ── Appearance ─────────────────────────────────────────────────────────────
@@ -301,11 +316,23 @@ export const capacitorShim = {
     url: savedPath ?? relativeKey ?? null,
   }),
 
-  // ── Camera (Phase 2 — will use @capacitor/camera) ─────────────────────────
-  capturePhoto: async () => ({ ok: false, error: 'Camera capture coming in Phase 2' }),
+  // ── Camera ────────────────────────────────────────────────────────────────
+  capturePhoto: async () => ({ ok: false, error: 'Camera capture not supported on iPad' }),
   capturesList: async () => ({ items: [] }),
   getCapturedPhotos: async () => [],
-  listCameras: async () => [],
+  listCameras: async () => {
+    if (!navigator.mediaDevices?.enumerateDevices) return [];
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const videoDevices = devices.filter(d => d.kind === 'videoinput');
+      return videoDevices.map((d, i) => ({
+        id: d.deviceId || `ipad-camera-${i}`,
+        label: d.label || (i === 0 ? 'Back Camera' : i === 1 ? 'Front Camera' : `Camera ${i + 1}`),
+      }));
+    } catch {
+      return [];
+    }
+  },
   getCameraCapabilities: async () => ({}),
 
   // ── Printing (Phase 3) ─────────────────────────────────────────────────────
@@ -399,7 +426,8 @@ export const capacitorShim = {
 
       // Settings via invoke (some screens use the invoke form)
       case 'store:getSettings': {
-        return prefGet('settings', args[0]?.userId, {});
+        const s = await prefGet('settings', args[0]?.userId, {});
+        return stripWindowsCameraId(s);
       }
       case 'store:setSettings': {
         const [settings, ctx] = args;
