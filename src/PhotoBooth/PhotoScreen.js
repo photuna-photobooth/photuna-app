@@ -693,8 +693,7 @@ export default function PhotoScreen({
               autoPlay
               playsInline
               muted
-              className={`absolute inset-0 w-full h-full landscape:object-cover portrait:object-contain ${effectiveMirrorCamera ? "scale-x-[-1]" : ""
-                }`}
+              className={`absolute inset-0 w-full h-full object-cover ${effectiveMirrorCamera ? "scale-x-[-1]" : ""}`}
             />
           </div>
 
