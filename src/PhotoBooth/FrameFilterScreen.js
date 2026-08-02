@@ -1771,10 +1771,10 @@ export default function FrameFilterScreen({
           const boxClass = (() => {
             if (isPortrait) {
               switch (layoutKey) {
-                case "2x6": return "max-w-[90px]";
-                case "6x2": return "w-full max-w-[320px]";
-                case "6x4": return "w-full max-w-[320px]";
-                default:    return "max-w-[180px]";
+                case "2x6": return "h-[35vh] w-auto";
+                case "6x2": return "w-full max-w-[70vw]";
+                case "6x4": return "w-full max-w-[72vw]";
+                default:    return "h-[35vh] w-auto";
               }
             }
             if (isTablet) {

@@ -430,7 +430,7 @@ export default function TemplateSelectionScreen({
             className={`flex-1 min-h-0 overflow-y-auto light-scroll ${isPortrait ? "" : "pt-4 px-20"}`}
             style={isPortrait ? { padding: '2vh 4vw 1vh' } : undefined}
           >
-            <div className="grid grid-cols-2 gap-4">
+            <div className={`grid gap-3 ${isPortrait ? "grid-cols-3" : "grid-cols-2"}`}>
               {photos.map((src, i) => {
                 const selected = selectedIndices.includes(i);
                 const order = selected ? selectedIndices.indexOf(i) + 1 : null;
@@ -528,10 +528,10 @@ export default function TemplateSelectionScreen({
           const boxClass = (() => {
             if (isPortrait) {
               switch (layoutKey) {
-                case "2x6": return "max-w-[90px]";
-                case "6x2": return "w-full max-w-[320px]";
-                case "6x4": return "w-full max-w-[320px]";
-                default:    return "max-w-[180px]";
+                case "2x6": return "h-[35vh] w-auto";
+                case "6x2": return "w-full max-w-[70vw]";
+                case "6x4": return "w-full max-w-[72vw]";
+                default:    return "h-[35vh] w-auto";
               }
             }
             if (isTablet) {
