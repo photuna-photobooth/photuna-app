@@ -335,7 +335,7 @@ export const capacitorShim = {
     try {
       const uid = userId ?? await getUserId() ?? 'anon';
       const url = await uploadAppearanceAsset(file, uid, 'logo');
-      return { ok: true, savedPath: url, fileUrl: url, relativeKey: `appearance/${uid}/logo` };
+      return { ok: true, savedPath: url, fileUrl: url, relativeKey: `${uid}/appearance/logo` };
     } catch (err) {
       return { ok: false, error: err?.message };
     }
@@ -345,7 +345,7 @@ export const capacitorShim = {
       const uid = userId ?? await getUserId() ?? 'anon';
       if (!file.type?.startsWith('image/')) return { ok: false, error: 'Video backgrounds must be set on Windows' };
       const url = await uploadAppearanceAsset(file, uid, 'background');
-      return { ok: true, savedPath: url, fileUrl: url, relativeKey: `appearance/${uid}/background` };
+      return { ok: true, savedPath: url, fileUrl: url, relativeKey: `${uid}/appearance/background` };
     } catch (err) {
       return { ok: false, error: err?.message };
     }
@@ -359,7 +359,10 @@ export const capacitorShim = {
   }),
 
   // ── Camera ────────────────────────────────────────────────────────────────
-  capturePhoto: async () => ({ ok: false, error: 'Camera capture not supported on iPad' }),
+  // capturePhoto is used both as a persistence bridge (passes dataUrl) and as
+  // a hardware trigger (no args). On iPad, camera capture goes through the web
+  // media APIs in PhotoScreen; this only needs to ack data-URL payloads.
+  capturePhoto: async ({ dataUrl } = {}) => ({ ok: true, dataUrl: dataUrl ?? null }),
   capturesList: async () => ({ items: [] }),
   getCapturedPhotos: async () => [],
   listCameras: async () => {
@@ -415,18 +418,21 @@ export const capacitorShim = {
     return { sessionId, token: null, previewUrl: null };
   },
   previewGetUrl: async () => null,
-  // Stills during capture are not streamed to a mobile preview on iPad —
+  // Stills/clips during capture are not streamed to a preview screen on iPad —
   // the gallery is built from the final composed image after the session.
   previewSaveStill: async () => ({ ok: true }),
+  previewSaveSlotClip: async () => ({ ok: true }),
   getPreviewSlotClips: async () => [],
   buildFinalMotion: async () => ({ ok: false }),
 
   // Save the final composed PNG to Supabase Storage so it persists
-  saveFinalPng: async ({ dataUrl, eventId, sessionId } = {}) => {
+  // Accepts both `dataUrl` and `imageData` (FrameFilterScreen uses imageData)
+  saveFinalPng: async ({ dataUrl, imageData, eventId, sessionId } = {}) => {
     try {
-      if (!dataUrl || !eventId) return { ok: false, error: 'Missing dataUrl or eventId' };
+      const src = dataUrl ?? imageData;
+      if (!src || !eventId) return { ok: false, error: 'Missing dataUrl or eventId' };
       const sid = sessionId || `ipad-${Date.now().toString(36)}`;
-      const blob = await fetch(dataUrl).then(r => r.blob());
+      const blob = await fetch(src).then(r => r.blob());
       const path = `${eventId}/${sid}/final.png`;
       const { error } = await supabase.storage
         .from('studiophotuna')
