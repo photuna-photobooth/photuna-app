@@ -45,6 +45,20 @@
   </head>
   <body>
     <noscript>You need to enable JavaScript to run this app.</noscript>
+    <!--
+      On Electron, preload.js sets window.electron via contextBridge before this
+      script runs. On iPad / browser there is no preload, so we install a mutable
+      placeholder object. index.js then calls Object.assign on this same object
+      with the real capacitorShim methods — all module-level code that already
+      cached `const native = window.electron` gains the full API because they
+      hold a reference to this same object (Object.assign mutates in place).
+    -->
+    <script>
+      if (typeof window !== 'undefined' && !window.electron && !window.api) {
+        window.electron = { _capacitorPlaceholder: true };
+        window.api = window.electron;
+      }
+    </script>
     <div id="root"></div>
     <!--
       This HTML file is a template.

@@ -6,20 +6,21 @@ import './index.css';
 import AppRouter from "./AppRouter";
 import { AuthProvider } from "./context/AuthContext";
 import { LicenseProvider } from "./context/LicenseContext";
+import { capacitorShim } from './platform/capacitorShim';
 
 // Attach verifier globally for LicenseContext
 import * as licenseVerifier from './lib/licenseVerifier';
 window.licenseVerifier = licenseVerifier;
 
-// In any non-Electron context (PWA on iPad Safari, Capacitor, plain browser),
-// polyfill window.electron with the bridge shim so all existing screens work
-// without modification. Electron's preload sets window.electron before this
-// module runs, so the check is safe.
-if (typeof window !== 'undefined' && !window.electron && !window.api) {
-  import('./platform/capacitorShim').then(({ capacitorShim }) => {
-    window.electron = capacitorShim;
-    window.api = capacitorShim;
-  });
+// public/index.html installs a mutable placeholder `{}` on window.electron
+// before any bundle runs (only in non-Electron contexts). Object.assign
+// populates that same object so module-level code that captured
+// `const native = window.electron` gains all shim methods — no re-render needed.
+// On Electron, window.electron is a contextBridge proxy without _capacitorPlaceholder,
+// so this block is skipped and the real preload API is used unchanged.
+if (typeof window !== 'undefined' && window.electron?._capacitorPlaceholder) {
+  Object.assign(window.electron, capacitorShim);
+  delete window.electron._capacitorPlaceholder;
 }
 
 
