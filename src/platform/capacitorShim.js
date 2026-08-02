@@ -434,10 +434,30 @@ export const capacitorShim = {
         return prefSet('settings', settings, ctx?.userId);
       }
 
-      // License cache
+      // License — query Supabase directly (mirrors the Electron main-process IPC handler).
+      // RLS policy "Users can view their own license" allows auth.uid() = user_id reads.
       case 'license:read': {
         const userId = args[0];
-        return prefGet(`license:${userId}`, null, null);
+        if (!userId) return null;
+        try {
+          const timeout = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('license:read timed out')), 9000)
+          );
+          const { data, error } = await Promise.race([
+            supabase.from('licenses').select('*').eq('user_id', userId).maybeSingle(),
+            timeout,
+          ]);
+          if (error) {
+            console.warn('[capacitorShim license:read]', error.message);
+            return null;
+          }
+          // null row = confirmed free (no license record). Synthetic flag lets
+          // LicenseContext evict a stale paid-plan cache instead of using it offline.
+          return data ?? { plan: 'free', state: 'active', _synthetic: true };
+        } catch (e) {
+          console.warn('[capacitorShim license:read] failed:', e.message);
+          return null;
+        }
       }
       case 'license:cache-read': {
         const userId = args[0];
