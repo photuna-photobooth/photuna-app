@@ -6,6 +6,7 @@ import {
   CheckCircleIcon,
 } from "@heroicons/react/24/outline";
 import { useLayout } from "../utils/useLayout";
+import { normalizeToFileUrl } from "../utils/mediaUrl";
 
 const DEFAULT_APPEARANCE = {
   boothName: "Studio Photuna",
@@ -432,7 +433,7 @@ export default function SelectRetakeScreen({
           <div className="max-w-[50%]">
             {logoPath ? (
               <img
-                src={logoPath}
+                src={normalizeToFileUrl(logoPath)}
                 alt="logo"
                 style={{ maxHeight: 'clamp(36px, 5vh, 72px)' }}
                 className="w-auto object-contain"
