@@ -359,7 +359,7 @@ export default function TemplateSelectionScreen({
   const buttonHoverColor = appearance.buttonHoverColor || "gray";
 
 
-  const { isPortrait, isUnsupported, isPortrait2K } = useLayout();
+  const { isPortrait, isUnsupported, isPortrait2K, isTablet } = useLayout();
 
   /* ---------------- Render ---------------- */
   if (isUnsupported) {
@@ -526,6 +526,14 @@ export default function TemplateSelectionScreen({
               "4 / 6",
           };
           const boxClass = (() => {
+            if (isTablet) {
+              switch (layoutKey) {
+                case "2x6": return "w-full max-w-[150px]";
+                case "6x2": return "w-full max-w-[360px]";
+                case "6x4": return "w-full max-w-[360px]";
+                default:    return "w-full max-w-[260px]";
+              }
+            }
             switch (layoutKey) {
               case "2x6": return "w-full max-w-[230px]";
               case "6x2": return "w-full max-w-[620px]";

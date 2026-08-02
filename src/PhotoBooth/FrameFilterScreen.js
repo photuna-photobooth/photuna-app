@@ -632,7 +632,7 @@ export default function FrameFilterScreen({
   event = null,
 }) {
   const api = typeof window !== "undefined" ? window.electron ?? window.api ?? null : null;
-  const { isPortrait, isUnsupported, isPortrait2K } = useLayout();
+  const { isPortrait, isUnsupported, isPortrait2K, isTablet } = useLayout();
 
   const [timeLeft, setTimeLeft] = useState(countdownStart);
   // Event resolution
@@ -1843,13 +1843,21 @@ export default function FrameFilterScreen({
 
           const isStrip = layoutKey === "2x6" || layoutKey === "6x2";
 
-          // Width constraints per layout to keep a sensible preview size
+          // Width constraints per layout — smaller on tablet (iPad) to avoid overflow
           const boxClass = (() => {
+            if (isTablet) {
+              switch (layoutKey) {
+                case "2x6": return "w-full max-w-[150px]";
+                case "6x2": return "w-full max-w-[360px]";
+                case "6x4": return "w-full max-w-[360px]";
+                default:    return "w-full max-w-[260px]";
+              }
+            }
             switch (layoutKey) {
-              case "2x6": return "w-full max-w-[230px]"; // tall strip
-              case "6x2": return "w-full max-w-[620px]"; // wide strip
-              case "6x4": return "w-full max-w-[620px]"; // landscape postcard
-              default: return "w-full max-w-[460px]";       // 4x6 portrait
+              case "2x6": return "w-full max-w-[230px]";
+              case "6x2": return "w-full max-w-[620px]";
+              case "6x4": return "w-full max-w-[620px]";
+              default:    return "w-full max-w-[460px]";
             }
           })();
 
