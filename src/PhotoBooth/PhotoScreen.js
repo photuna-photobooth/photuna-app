@@ -103,7 +103,7 @@ export default function PhotoScreen({
   session, // { sessionId, token, previewUrl }
   cameraStreamRef = null,
 }) {
-  const { isPortrait, isUnsupported } = useLayout();
+  const { isPortrait, isUnsupported, isTablet } = useLayout();
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
@@ -316,8 +316,12 @@ export default function PhotoScreen({
   const t = {
     counter: isTagalog ? "Kunan" : "Shots",
     cameraError: isTagalog
-      ? "Hindi ma-access ang camera. Pakisuri ang permiso at koneksyon."
-      : "Unable to access camera. Please check permissions and connection.",
+      ? (isTablet
+          ? "Hindi ma-access ang camera. Pumunta sa Settings > Privacy > Camera para payagan ang browser."
+          : "Hindi ma-access ang camera. Pakisuri ang permiso at koneksyon.")
+      : (isTablet
+          ? "Camera access denied. Go to Settings › Privacy › Camera and allow your browser."
+          : "Unable to access camera. Please check permissions and connection."),
     retry: isTagalog ? "Subukan muli" : "Try Again",
     back: isTagalog ? "← Balik" : "← Back",
   };
