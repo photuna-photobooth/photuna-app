@@ -653,11 +653,19 @@ export default function TemplateScreen({
                                 orientation={layoutKey}
                               />
                             ) : (
-                              <img
-                                src={tpl.thumbSrc}
-                                alt={tpl.name}
-                                className="w-full h-full object-cover border shadow-lg border-gray-300"
-                              />
+                              <>
+                                <img
+                                  src={tpl.thumbSrc}
+                                  alt={tpl.name}
+                                  className="w-full h-full object-cover border shadow-lg border-gray-300"
+                                  onError={(e) => {
+                                    e.currentTarget.style.display = 'none';
+                                    const fb = e.currentTarget.parentElement?.querySelector('[data-thumb-fallback]');
+                                    if (fb) fb.style.display = 'flex';
+                                  }}
+                                />
+                                <div data-thumb-fallback className="w-full h-full" style={{ display: 'none' }}>{tpl.icon}</div>
+                              </>
                             )
                           ) : (
                             <div className="w-full h-full">{tpl.icon}</div>

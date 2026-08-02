@@ -11,6 +11,8 @@ const LOCALES = {
   en: {
     printingTitle1: "We are now",
     printingTitle2: "Printing...",
+    savedTitle1: "Your photos are",
+    savedTitle2: "Ready!",
     thanks: "Thank you for choosing ",
     thanksBold: "Studio Photuna",
     thanksTail:
@@ -19,10 +21,13 @@ const LOCALES = {
     qrFallback: "QR",
     posterFallback: "Poster",
     localSaved: "Your photos are saved locally by the booth operator.",
+    tabletSaved: "Your session has been saved to your account.",
   },
   tl: {
     printingTitle1: "Kasalukuyan kaming",
     printingTitle2: "Nagpi-print...",
+    savedTitle1: "Handa na ang",
+    savedTitle2: "Iyong mga litrato!",
     thanks: "Salamat sa pagpili sa ",
     thanksBold: "Studio Photuna",
     thanksTail:
@@ -31,6 +36,7 @@ const LOCALES = {
     qrFallback: "QR",
     posterFallback: "Poster",
     localSaved: "Naka-save ang mga larawan sa lokal na storage ng booth operator.",
+    tabletSaved: "Na-save ang iyong session sa iyong account.",
   },
 };
 function resolveLocale(code) {
@@ -84,7 +90,7 @@ export default function PrintPreviewScreen({
     typeof window !== "undefined"
       ? window.api || window.electron || null
       : null;
-  const { isPortrait, isUnsupported } = useLayout();
+  const { isPortrait, isUnsupported, isTablet } = useLayout();
 
   /* ---------------------------- Load AdminDashboard state ---------------------------- */
   const [currentEvent, setCurrentEvent] = useState(event ?? null);
@@ -545,10 +551,10 @@ export default function PrintPreviewScreen({
 
         <div className="text-center" style={{ fontFamily: headerFont }}>
           <p style={{ color: headerFontColor, fontSize: isPortrait ? 'clamp(22px, 3vw, 56px)' : 'clamp(32px, 5vw, 80px)' }}>
-            {i18n.printingTitle1}
+            {isTablet ? i18n.savedTitle1 : i18n.printingTitle1}
           </p>
           <p className="italic font-semibold -mt-2" style={{ color: headerFontColor, fontSize: isPortrait ? 'clamp(22px, 3vw, 56px)' : 'clamp(32px, 5vw, 80px)' }}>
-            {i18n.printingTitle2}
+            {isTablet ? i18n.savedTitle2 : i18n.printingTitle2}
           </p>
         </div>
 
@@ -581,7 +587,7 @@ export default function PrintPreviewScreen({
           <span className="font-semibold" style={{ color: headerFontColor }}>
             {boothName ?? i18n.thanksBold}
           </span>
-          {galleryEnabled && !offlineMode ? i18n.thanksTail : ` ${i18n.localSaved}`}
+          {galleryEnabled && !offlineMode ? i18n.thanksTail : ` ${isTablet ? i18n.tabletSaved : i18n.localSaved}`}
         </p>
       </div>
 

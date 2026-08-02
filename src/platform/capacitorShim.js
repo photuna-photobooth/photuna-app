@@ -131,7 +131,14 @@ export const capacitorShim = {
   setAppearance: async (appearance, ctx) => prefSet('appearance', appearance, ctx?.userId ?? await getUserId()),
 
   // ── Templates ──────────────────────────────────────────────────────────────
-  getTemplates: async (ctx) => prefGet('templates', ctx?.userId ?? await getUserId(), []),
+  getTemplates: async (ctx) => {
+    const templates = await prefGet('templates', ctx?.userId ?? await getUserId(), []);
+    if (!Array.isArray(templates)) return templates;
+    // Strip Windows file:// / C:\ thumbnail paths — they don't resolve on iPad;
+    // TemplateScreen falls back to tpl.icon when thumbSrc is null.
+    const webSafe = (v) => !v || v.startsWith('https://') || v.startsWith('http://') || v.startsWith('data:');
+    return templates.map(t => ({ ...t, thumbSrc: webSafe(t?.thumbSrc) ? t.thumbSrc : null }));
+  },
   setTemplates: async (templates, ctx) => prefSet('templates', templates, ctx?.userId ?? await getUserId()),
 
   // ── Frames ─────────────────────────────────────────────────────────────────
@@ -446,6 +453,13 @@ export const capacitorShim = {
   },
   savePrintCopy: async () => ({ ok: true }),
 
+  // eventHelpers.js calls safeElectron.ipcRenderer.invoke("sync-event" / "load-events").
+  // Without this stub the missing property throws TypeError (caught silently but noisy).
+  // Events on iPad persist via saveEventData / Supabase; these channels are no-ops here.
+  ipcRenderer: {
+    invoke: async (channel, ...args) => capacitorShim.invoke(channel, ...args),
+  },
+
   // ── Event subscriptions (no IPC on iPad — return unsubscribe fn) ───────────
   onUpdaterStatus: () => noopUnsub,
   onEventsUpdated: () => noopUnsub,
@@ -558,6 +572,12 @@ export const capacitorShim = {
       // Capabilities check — return empty on iPad
       case 'app:getCapabilities':
         return {};
+
+      // Event file-sync (Electron-only; events persist via Supabase on iPad)
+      case 'sync-event':
+        return { success: true };
+      case 'load-events':
+        return { success: true, events: [] };
 
       default:
         console.warn('[capacitorShim] Unhandled invoke channel:', channel, args);
