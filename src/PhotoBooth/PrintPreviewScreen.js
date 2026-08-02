@@ -405,22 +405,52 @@ export default function PrintPreviewScreen({
     }
   }, [api, composedImage, currentEvent, resolvedLayout, posterSrc, eventId, sessionId]);
 
-  // iPad: share the composed image via the Web Share API (triggers iOS share sheet → AirPrint)
-  const handleSharePrint = useCallback(async () => {
+  // iPad: trigger native AirPrint dialog via window.print() with an injected @media print layout
+  const handleIpadPrint = useCallback(async () => {
     const src = composedImage || composedImageUrl;
     if (!src) return;
+
+    let blobUrl = null;
+    let styleEl = null;
+    let printEl = null;
+
+    const cleanup = () => {
+      window.onafterprint = null;
+      try { styleEl && document.head.removeChild(styleEl); } catch {}
+      try { printEl && document.body.removeChild(printEl); } catch {}
+      if (blobUrl) { URL.revokeObjectURL(blobUrl); blobUrl = null; }
+    };
+
     try {
       const blob = await fetch(src).then(r => r.blob());
-      const file = new File([blob], 'photuna-print.png', { type: 'image/png' });
-      if (navigator.canShare?.({ files: [file] })) {
-        await navigator.share({ files: [file], title: 'Print Photo' });
-      } else {
-        const url = URL.createObjectURL(blob);
-        const w = window.open(url, '_blank');
-        if (w) setTimeout(() => URL.revokeObjectURL(url), 60000);
-      }
+      blobUrl = URL.createObjectURL(blob);
+
+      styleEl = document.createElement('style');
+      styleEl.textContent = `@media print {
+        body > #root { display: none !important; }
+        body > #photuna-print-root { display: flex !important; position: fixed; inset: 0; background: #fff; align-items: center; justify-content: center; }
+        body > #photuna-print-root img { max-width: 100%; max-height: 100%; object-fit: contain; }
+        @page { margin: 0; size: auto; }
+      }`;
+      document.head.appendChild(styleEl);
+
+      printEl = document.createElement('div');
+      printEl.id = 'photuna-print-root';
+      printEl.style.display = 'none';
+      const img = document.createElement('img');
+      img.src = blobUrl;
+      img.onerror = () => { cleanup(); setPrintError('Could not load image for printing.'); };
+      img.onload = () => {
+        window.onafterprint = cleanup;
+        setTimeout(cleanup, 30000);
+        window.print();
+      };
+      printEl.appendChild(img);
+      document.body.appendChild(printEl);
+
     } catch (err) {
-      if (err?.name !== 'AbortError') setPrintError('Could not open share sheet. Try again.');
+      cleanup();
+      if (err?.name !== 'AbortError') setPrintError('Could not open print dialog. Try again.');
     }
   }, [composedImage, composedImageUrl]);
 
@@ -610,25 +640,25 @@ export default function PrintPreviewScreen({
           {galleryEnabled && !offlineMode ? i18n.thanksTail : ` ${isTablet ? i18n.tabletSaved : i18n.localSaved}`}
         </p>
 
-        {/* iPad: share sheet button → AirPrint */}
+        {/* iPad: AirPrint button via window.print() */}
         {isTablet && (composedImage || composedImageUrl) && (
           <button
-            onClick={handleSharePrint}
+            onClick={handleIpadPrint}
             className="mt-6 flex items-center gap-2 rounded-full font-semibold shadow-sm"
             style={{
               backgroundColor: buttonBgColor,
               color: buttonFontColor,
-              fontFamily: generalFont,
+              fontFamily: buttonFont,
               fontSize: 'clamp(14px, 1.6vw, 24px)',
               padding: 'clamp(8px, 1vh, 14px) clamp(20px, 2.5vw, 40px)',
             }}
           >
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: '1.2em', height: '1.2em' }}>
-              <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
-              <polyline points="16 6 12 2 8 6" />
-              <line x1="12" y1="2" x2="12" y2="15" />
+              <polyline points="6 9 6 2 18 2 18 9" />
+              <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
+              <rect x="6" y="14" width="12" height="8" />
             </svg>
-            Share / Print
+            Print
           </button>
         )}
 
