@@ -7109,19 +7109,19 @@ This cannot be undone.`
         {/* Mobile sidebar backdrop */}
         {sidebarOpen && (
           <div
-            className="fixed inset-0 z-30 bg-black/30 backdrop-blur-[2px] lg:hidden"
+            className="fixed inset-0 z-30 bg-black/30 backdrop-blur-[2px] xl:hidden"
             onClick={() => setSidebarOpen(false)}
           />
         )}
 
         {/* --- Left Sidebar --- */}
-        <aside className={`fixed lg:relative h-screen w-[280px] flex-shrink-0 border-r border-slate-200/80 bg-slate-50/80 backdrop-blur-xl flex flex-col shadow-[10px_0_40px_rgba(15,23,42,0.06)] z-40 transition-transform duration-300 ease-in-out ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}>
+        <aside className={`fixed xl:relative h-screen w-[280px] flex-shrink-0 border-r border-slate-200/80 bg-slate-50/80 backdrop-blur-xl flex flex-col shadow-[10px_0_40px_rgba(15,23,42,0.06)] z-40 transition-transform duration-300 ease-in-out ${sidebarOpen ? "translate-x-0" : "-translate-x-full xl:translate-x-0"}`}>
           {/* Account summary */}
           <div className="relative border-b border-slate-200/80 px-4 py-4">
             {/* Close button — mobile only */}
             <button
               type="button"
-              className="absolute right-3 top-3 flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-200 hover:text-slate-600 transition lg:hidden"
+              className="absolute right-3 top-3 flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-200 hover:text-slate-600 transition xl:hidden"
               onClick={() => setSidebarOpen(false)}
             >
               <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -7429,7 +7429,7 @@ This cannot be undone.`
           {/* Hamburger — mobile only, shown when sidebar is closed */}
           <button
             type="button"
-            className="fixed top-3 left-3 z-50 flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white shadow-sm text-slate-600 hover:bg-slate-50 active:scale-95 transition lg:hidden"
+            className="fixed top-3 left-3 z-50 flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white shadow-sm text-slate-600 hover:bg-slate-50 active:scale-95 transition xl:hidden"
             onClick={() => setSidebarOpen(true)}
             aria-label="Open navigation"
           >
@@ -7439,7 +7439,7 @@ This cannot be undone.`
           </button>
 
           <main className="h-full min-h-0 overflow-y-auto">
-            <div className="mx-auto w-full max-w-[1600px] px-4 pt-14 pb-4 sm:px-6 sm:pt-6 sm:pb-6 xl:px-8 2xl:px-10">
+            <div className="mx-auto w-full max-w-[1600px] px-4 pt-14 pb-4 xl:pt-6 xl:pb-6 xl:px-8 2xl:px-10">
 
               {activeMain === "home" && renderHomeDashboard()}
 
