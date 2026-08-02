@@ -15,6 +15,8 @@
 import { Preferences } from '@capacitor/preferences';
 import { supabase } from '../services/supabase';
 import { changePassword } from '../services/licensingApi';
+import { uploadSessionImages } from '../services/uploadSessionImages';
+import { saveGalleryRecord } from '../services/saveGalleryRecord';
 
 const GALLERY_BASE = 'https://studiophotuna-gallery.vercel.app/gallery';
 
@@ -213,8 +215,42 @@ export const capacitorShim = {
     }
   },
 
-  // Gallery create (full session gallery — Phase 2)
-  createOnlineGallery: async () => ({ ok: false, error: 'Gallery upload not yet available on iPad' }),
+  // Gallery create — upload composed image to Supabase Storage + create gallery record
+  createOnlineGallery: async ({ composedImage, composedImageUrl, photos = [], sessionId, eventId } = {}) => {
+    try {
+      const finalSrc = composedImage || composedImageUrl;
+      if (!finalSrc) return { ok: false, error: 'No composed image provided' };
+      if (!eventId) return { ok: false, error: 'Missing eventId' };
+
+      const sid = sessionId || `ipad-${Date.now().toString(36)}`;
+
+      // Convert data URL / remote URL to blob
+      const finalBlob = await fetch(finalSrc).then(r => r.blob());
+
+      // Convert individual photo data URLs to blobs (best-effort, non-fatal)
+      const photoBlobs = (await Promise.allSettled(
+        (photos || []).filter(Boolean).map(p => fetch(p).then(r => r.blob()))
+      )).flatMap(r => r.status === 'fulfilled' ? [r.value] : []);
+
+      // Upload to the shared Supabase Storage bucket
+      const { finalUrl, photoUrls } = await uploadSessionImages({
+        eventId,
+        sessionId: sid,
+        finalBlob,
+        photoBlobs,
+      });
+
+      // Deterministic slug: eventId prefix + session fragment + timestamp
+      const slug = `${String(eventId).replace(/-/g, '').slice(0, 12)}-${String(sid).replace(/-/g, '').slice(0, 8)}-${Date.now().toString(36)}`;
+
+      await saveGalleryRecord({ slug, eventId, sessionId: sid, finalUrl, photoUrls });
+
+      const qrUrl = `https://studiophotuna-gallery.vercel.app/gallery/${slug}`;
+      return { ok: true, slug, qrUrl, finalUrl };
+    } catch (err) {
+      return { ok: false, error: err?.message || 'Gallery upload failed' };
+    }
+  },
 
   // ── Event data ─────────────────────────────────────────────────────────────
   saveEventData: async (data = {}, ctx) => {
@@ -301,15 +337,39 @@ export const capacitorShim = {
   cleanupStorage: async () => ({ ok: true }),
   deleteStoredPhotos: async () => ({ ok: true }),
 
-  // ── Preview server (Windows-only) ──────────────────────────────────────────
-  previewStartServer: async () => ({ ok: false }),
-  previewCreateSession: async () => ({ ok: false }),
+  // ── Preview server — no local Express on iPad; use in-memory session IDs ──
+  previewStartServer: async () => ({ ok: true }),
+  previewCreateSession: async () => {
+    const sessionId = typeof crypto !== 'undefined' && crypto.randomUUID
+      ? crypto.randomUUID()
+      : `ipad-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+    return { sessionId, token: null, previewUrl: null };
+  },
   previewGetUrl: async () => null,
-  previewSaveStill: async () => ({ ok: false }),
+  // Stills during capture are not streamed to a mobile preview on iPad —
+  // the gallery is built from the final composed image after the session.
+  previewSaveStill: async () => ({ ok: true }),
   getPreviewSlotClips: async () => [],
   buildFinalMotion: async () => ({ ok: false }),
-  saveFinalPng: async () => ({ ok: false }),
-  savePrintCopy: async () => ({ ok: false }),
+
+  // Save the final composed PNG to Supabase Storage so it persists
+  saveFinalPng: async ({ dataUrl, eventId, sessionId } = {}) => {
+    try {
+      if (!dataUrl || !eventId) return { ok: false, error: 'Missing dataUrl or eventId' };
+      const sid = sessionId || `ipad-${Date.now().toString(36)}`;
+      const blob = await fetch(dataUrl).then(r => r.blob());
+      const path = `${eventId}/${sid}/final.png`;
+      const { error } = await supabase.storage
+        .from('studiophotuna')
+        .upload(path, blob, { contentType: 'image/png', upsert: true });
+      if (error) return { ok: false, error: error.message };
+      const { data } = supabase.storage.from('studiophotuna').getPublicUrl(path);
+      return { ok: true, fileUrl: data?.publicUrl ?? null };
+    } catch (err) {
+      return { ok: false, error: err?.message };
+    }
+  },
+  savePrintCopy: async () => ({ ok: true }),
 
   // ── Event subscriptions (no IPC on iPad — return unsubscribe fn) ───────────
   onUpdaterStatus: () => noopUnsub,
