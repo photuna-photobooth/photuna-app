@@ -34,7 +34,7 @@ export default function SelectRetakeScreen({
   event = null,
   eventId = "default",
 }) {
-  const { isPortrait, isUnsupported } = useLayout();
+  const { isPortrait, isUnsupported, isTablet } = useLayout();
   const [selectedIndices, setSelectedIndices] = useState([]);
   const [mounted, setMounted] = useState(false);
   const [timeLeft, setTimeLeft] = useState(8);
@@ -524,7 +524,9 @@ export default function SelectRetakeScreen({
                       ? "grid-cols-2"
                       : resolvedPhotos.length === 3
                         ? (isPortrait ? "grid-cols-2" : "grid-cols-3")
-                        : "grid-cols-2 xl:grid-cols-4"
+                        : isTablet
+                          ? "grid-cols-3"
+                          : "grid-cols-2 xl:grid-cols-4"
                   }`}
                 >
                   {resolvedPhotos.map((photo) => (
