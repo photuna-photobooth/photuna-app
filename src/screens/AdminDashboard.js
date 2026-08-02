@@ -7426,17 +7426,19 @@ This cannot be undone.`
 
         {/* --- Main Content --- */}
         <div className="min-h-0 min-w-0 flex-1 bg-transparent">
-          {/* Hamburger — mobile only, shown when sidebar is closed */}
-          <button
-            type="button"
-            className="fixed top-3 left-3 z-50 flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white shadow-sm text-slate-600 hover:bg-slate-50 active:scale-95 transition xl:hidden"
-            onClick={() => setSidebarOpen(true)}
-            aria-label="Open navigation"
-          >
-            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-            </svg>
-          </button>
+          {/* Hamburger — tablet/mobile only, hidden once sidebar is open or on desktop */}
+          {!sidebarOpen && (
+            <button
+              type="button"
+              className="fixed top-3 left-3 z-50 flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white shadow-sm text-slate-600 hover:bg-slate-50 active:scale-95 transition xl:hidden"
+              onClick={() => setSidebarOpen(true)}
+              aria-label="Open navigation"
+            >
+              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            </button>
+          )}
 
           <main className="h-full min-h-0 overflow-y-auto">
             <div className="mx-auto w-full max-w-[1600px] px-4 pt-14 pb-4 xl:pt-6 xl:pb-6 xl:px-8 2xl:px-10">

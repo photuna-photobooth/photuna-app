@@ -88,35 +88,35 @@ export const capacitorShim = {
   },
 
   // ── Events ─────────────────────────────────────────────────────────────────
-  getEvents: async (ctx) => prefGet('events', ctx?.userId, []),
-  setEvents: async (events, ctx) => prefSet('events', events, ctx?.userId),
-  loadEvents: async (ctx) => prefGet('events', ctx?.userId, []),
+  getEvents: async (ctx) => prefGet('events', ctx?.userId ?? await getUserId(), []),
+  setEvents: async (events, ctx) => prefSet('events', events, ctx?.userId ?? await getUserId()),
+  loadEvents: async (ctx) => prefGet('events', ctx?.userId ?? await getUserId(), []),
   cleanupEventStorage: noop,
 
   // ── Settings ───────────────────────────────────────────────────────────────
   getSettings: async (ctx) => {
-    const s = await prefGet('settings', ctx?.userId, {});
+    const s = await prefGet('settings', ctx?.userId ?? await getUserId(), {});
     return stripWindowsCameraId(s);
   },
-  setSettings: async (settings, ctx) => prefSet('settings', settings, ctx?.userId),
+  setSettings: async (settings, ctx) => prefSet('settings', settings, ctx?.userId ?? await getUserId()),
 
   // ── Appearance ─────────────────────────────────────────────────────────────
-  getAppearance: async (ctx) => prefGet('appearance', ctx?.userId, {}),
-  setAppearance: async (appearance, ctx) => prefSet('appearance', appearance, ctx?.userId),
+  getAppearance: async (ctx) => prefGet('appearance', ctx?.userId ?? await getUserId(), {}),
+  setAppearance: async (appearance, ctx) => prefSet('appearance', appearance, ctx?.userId ?? await getUserId()),
 
   // ── Templates ──────────────────────────────────────────────────────────────
-  getTemplates: async (ctx) => prefGet('templates', ctx?.userId, []),
-  setTemplates: async (templates, ctx) => prefSet('templates', templates, ctx?.userId),
+  getTemplates: async (ctx) => prefGet('templates', ctx?.userId ?? await getUserId(), []),
+  setTemplates: async (templates, ctx) => prefSet('templates', templates, ctx?.userId ?? await getUserId()),
 
   // ── Frames ─────────────────────────────────────────────────────────────────
-  getFrames: async (ctx) => prefGet('frames', ctx?.userId, []),
-  setFrames: async (frames, ctx) => prefSet('frames', frames, ctx?.userId),
+  getFrames: async (ctx) => prefGet('frames', ctx?.userId ?? await getUserId(), []),
+  setFrames: async (frames, ctx) => prefSet('frames', frames, ctx?.userId ?? await getUserId()),
 
   // ── Palettes & Tones ───────────────────────────────────────────────────────
-  getPalettes: async (ctx) => prefGet('palettes', ctx?.userId, []),
-  setPalettes: async (palettes, ctx) => prefSet('palettes', palettes, ctx?.userId),
-  getTones: async (ctx) => prefGet('tones', ctx?.userId, []),
-  setTones: async (tones, ctx) => prefSet('tones', tones, ctx?.userId),
+  getPalettes: async (ctx) => prefGet('palettes', ctx?.userId ?? await getUserId(), []),
+  setPalettes: async (palettes, ctx) => prefSet('palettes', palettes, ctx?.userId ?? await getUserId()),
+  getTones: async (ctx) => prefGet('tones', ctx?.userId ?? await getUserId(), []),
+  setTones: async (tones, ctx) => prefSet('tones', tones, ctx?.userId ?? await getUserId()),
 
   // ── Navigation state ────────────────────────────────────────────────────────
   getCurrentEventId: () => prefGet('currentEventId', null, null),
