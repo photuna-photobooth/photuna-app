@@ -62,14 +62,40 @@ async function prefRemove(name, userId) {
 
 // ── Camera helpers ───────────────────────────────────────────────────────────
 
-// Strip Windows-specific camera device IDs from settings so booth screens
-// fall back to facingMode-based constraints (which work on iPad cameras).
 function stripWindowsCameraId(settings) {
   if (!settings || typeof settings !== 'object') return settings;
   const s = { ...settings };
   delete s.selectedCameraId;
   delete s.selectedCameraDeviceId;
   return s;
+}
+
+// ── Appearance helpers ────────────────────────────────────────────────────────
+
+// Windows saves logo/background as local file:// or C:\ paths. On iPad those
+// paths don't exist — strip them so the UI degrades gracefully instead of
+// showing a broken image. https:// URLs (Supabase Storage) pass through.
+function sanitizeAppearanceForWeb(app) {
+  if (!app || typeof app !== 'object') return app;
+  const webSafe = (v) => !v || v.startsWith('https://') || v.startsWith('http://') || v.startsWith('data:');
+  return {
+    ...app,
+    logoPath: webSafe(app.logoPath) ? app.logoPath : null,
+    backgroundMediaPath: webSafe(app.backgroundMediaPath) ? app.backgroundMediaPath : null,
+  };
+}
+
+// Upload an appearance asset (logo or background image) to Supabase Storage
+// under appearance/{userId}/{slot}.{ext} and return its public URL.
+async function uploadAppearanceAsset(file, userId, slot) {
+  const ext = (file.name || '').split('.').pop() || 'png';
+  const path = `appearance/${userId}/${slot}.${ext}`;
+  const { error } = await supabase.storage
+    .from('studiophotuna')
+    .upload(path, file, { contentType: file.type || 'image/png', upsert: true });
+  if (error) throw new Error(error.message);
+  const { data } = supabase.storage.from('studiophotuna').getPublicUrl(path);
+  return data?.publicUrl ?? null;
 }
 
 // ── Stubs ────────────────────────────────────────────────────────────────────
@@ -88,9 +114,23 @@ export const capacitorShim = {
   },
 
   // ── Events ─────────────────────────────────────────────────────────────────
-  getEvents: async (ctx) => prefGet('events', ctx?.userId ?? await getUserId(), []),
+  getEvents: async (ctx) => {
+    const userId = ctx?.userId ?? await getUserId();
+    const events = await prefGet('events', userId, []);
+    if (!Array.isArray(events)) return events;
+    return events.map((ev) =>
+      ev?.appearance ? { ...ev, appearance: sanitizeAppearanceForWeb(ev.appearance) } : ev
+    );
+  },
   setEvents: async (events, ctx) => prefSet('events', events, ctx?.userId ?? await getUserId()),
-  loadEvents: async (ctx) => prefGet('events', ctx?.userId ?? await getUserId(), []),
+  loadEvents: async (ctx) => {
+    const userId = ctx?.userId ?? await getUserId();
+    const events = await prefGet('events', userId, []);
+    if (!Array.isArray(events)) return events;
+    return events.map((ev) =>
+      ev?.appearance ? { ...ev, appearance: sanitizeAppearanceForWeb(ev.appearance) } : ev
+    );
+  },
   cleanupEventStorage: noop,
 
   // ── Settings ───────────────────────────────────────────────────────────────
@@ -101,7 +141,11 @@ export const capacitorShim = {
   setSettings: async (settings, ctx) => prefSet('settings', settings, ctx?.userId ?? await getUserId()),
 
   // ── Appearance ─────────────────────────────────────────────────────────────
-  getAppearance: async (ctx) => prefGet('appearance', ctx?.userId ?? await getUserId(), {}),
+  getAppearance: async (ctx) => {
+    const userId = ctx?.userId ?? await getUserId();
+    const app = await prefGet('appearance', userId, {});
+    return sanitizeAppearanceForWeb(app);
+  },
   setAppearance: async (appearance, ctx) => prefSet('appearance', appearance, ctx?.userId ?? await getUserId()),
 
   // ── Templates ──────────────────────────────────────────────────────────────
@@ -305,9 +349,25 @@ export const capacitorShim = {
   },
 
   // ── Appearance assets ──────────────────────────────────────────────────────
-  // File-picker operations are Windows-only; on iPad assets come from Supabase URLs
-  saveAppearanceLogoFromFile: async () => ({ ok: false, error: 'Use URL-based assets on iPad' }),
-  saveAppearanceBackgroundFromFile: async () => ({ ok: false, error: 'Use URL-based assets on iPad' }),
+  saveAppearanceLogoFromFile: async (file, eventId, userId) => {
+    try {
+      const uid = userId ?? await getUserId() ?? 'anon';
+      const url = await uploadAppearanceAsset(file, uid, 'logo');
+      return { ok: true, savedPath: url, fileUrl: url, relativeKey: `appearance/${uid}/logo` };
+    } catch (err) {
+      return { ok: false, error: err?.message };
+    }
+  },
+  saveAppearanceBackgroundFromFile: async (file, eventId, userId) => {
+    try {
+      const uid = userId ?? await getUserId() ?? 'anon';
+      if (!file.type?.startsWith('image/')) return { ok: false, error: 'Video backgrounds must be set on Windows' };
+      const url = await uploadAppearanceAsset(file, uid, 'background');
+      return { ok: true, savedPath: url, fileUrl: url, relativeKey: `appearance/${uid}/background` };
+    } catch (err) {
+      return { ok: false, error: err?.message };
+    }
+  },
   saveAppearanceBackgroundFromDataUrl: async () => ({ ok: false, error: 'Use URL-based assets on iPad' }),
   saveTemplateThumbnail: async () => ({ ok: false, savedPath: null }),
   deleteAppearanceAsset: async () => ({ ok: true }),

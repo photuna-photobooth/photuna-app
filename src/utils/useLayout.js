@@ -7,10 +7,9 @@ function measure() {
   const short = Math.min(w, h);
 
   // Portrait resolution support:
-  //   Min: 1080px wide (1080×1920 FHD portrait)
-  //   Max: 1920px wide (1920×2880 2K portrait)
-  // Screens below 1080px wide in portrait show an unsupported notice.
-  const isUnsupported = isPortrait && short < 1080;
+  //   Min: 1080px wide (1080×1920 FHD portrait) for dedicated kiosk displays
+  //   Tablets (iPad) in portrait are narrower but are valid — don't block them.
+  const isUnsupported = isPortrait && short < 1080 && w < 768;
 
   // 2K tier: QHD (1440×2560) and 2K (1920×2880) — larger grids / fonts.
   const isPortrait2K = isPortrait && short >= 1440;

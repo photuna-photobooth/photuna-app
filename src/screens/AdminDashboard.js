@@ -9801,8 +9801,18 @@ This cannot be undone.`
                                 setLogoPath({ url: tempUrl, name: file.name, previewUrl: tempUrl });
                                 try {
                                   const res = (await native?.saveAppearanceLogoFromFile?.(file, currentEvent.id, identity.userId)) ?? {};
-                                  const finalUrl = res?.fileUrl ?? tempUrl;
-                                  setLogoPath({ url: finalUrl, name: file.name, previewUrl: finalUrl });
+                                  const localUrl = res?.fileUrl ?? tempUrl;
+                                  // Upload to Supabase Storage so iPad can access the logo via HTTPS
+                                  let httpsUrl = null;
+                                  try {
+                                    const uid = identity?.userId ?? 'anon';
+                                    const ext = (file.name || '').split('.').pop() || 'png';
+                                    const storagePath = `appearance/${uid}/logo.${ext}`;
+                                    await supabase.storage.from('studiophotuna').upload(storagePath, file, { contentType: file.type || 'image/png', upsert: true });
+                                    httpsUrl = supabase.storage.from('studiophotuna').getPublicUrl(storagePath).data?.publicUrl ?? null;
+                                  } catch (_) {}
+                                  const finalUrl = httpsUrl ?? localUrl;
+                                  setLogoPath({ url: finalUrl, name: file.name, previewUrl: localUrl });
                                   showToast('Logo saved');
                                 } catch (err) {
                                   console.error(err);
@@ -9940,13 +9950,25 @@ This cannot be undone.`
                                     return;
                                   }
 
-                                  const finalUrl = res.appUrl ?? res.fileUrl;
+                                  const localUrl = res.appUrl ?? res.fileUrl;
+                                  // Upload images to Supabase Storage for cross-device (iPad) access
+                                  let httpsUrl = null;
+                                  if (file.type?.startsWith('image/')) {
+                                    try {
+                                      const uid = identity?.userId ?? 'anon';
+                                      const ext = (file.name || '').split('.').pop() || 'png';
+                                      const storagePath = `appearance/${uid}/background.${ext}`;
+                                      await supabase.storage.from('studiophotuna').upload(storagePath, file, { contentType: file.type, upsert: true });
+                                      httpsUrl = supabase.storage.from('studiophotuna').getPublicUrl(storagePath).data?.publicUrl ?? null;
+                                    } catch (_) {}
+                                  }
+                                  const finalUrl = httpsUrl ?? localUrl;
 
                                   setBackgroundMediaPath({
                                     url: finalUrl,
                                     path: res.savedPath,
                                     name: file.name,
-                                    previewUrl: finalUrl,
+                                    previewUrl: localUrl,
                                     mime: file.type,
                                   });
 

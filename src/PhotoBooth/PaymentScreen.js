@@ -2,25 +2,12 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { useLayout } from "../utils/useLayout";
+import { normalizeToFileUrl } from "../utils/mediaUrl";
 
 /* ------------------------------- Helpers ------------------------------- */
 function getBridge() {
   if (typeof window === "undefined") return null;
   return window.api ?? window.electron ?? null;
-}
-
-function normalizeToFileUrl(raw) {
-  if (!raw) return raw;
-  if (typeof raw === "string" && raw.startsWith("data:")) return raw;
-
-  let p = String(raw).replace(/\\/g, "/");
-  if (p.startsWith("file:")) {
-    p = "file:///" + p.replace(/^file:\/+/, "").replace(/^\/+/, "");
-    return encodeURI(p);
-  }
-  if (p.startsWith("/")) return encodeURI("file://" + p);
-  if (/^[A-Za-z]:\//.test(p)) return encodeURI("file:///" + p);
-  return encodeURI("file:///" + p.replace(/^\/+/, ""));
 }
 
 function loadGoogleFont(fontName) {
