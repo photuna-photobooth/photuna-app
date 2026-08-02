@@ -9801,18 +9801,23 @@ This cannot be undone.`
                                 setLogoPath({ url: tempUrl, name: file.name, previewUrl: tempUrl });
                                 try {
                                   const res = (await native?.saveAppearanceLogoFromFile?.(file, currentEvent.id, identity.userId)) ?? {};
-                                  const localUrl = res?.fileUrl ?? tempUrl;
-                                  // Upload to Supabase Storage so iPad can access the logo via HTTPS
-                                  let httpsUrl = null;
-                                  try {
-                                    const uid = identity?.userId ?? 'anon';
-                                    const ext = (file.name || '').split('.').pop() || 'png';
-                                    const storagePath = `appearance/${uid}/logo.${ext}`;
-                                    await supabase.storage.from('studiophotuna').upload(storagePath, file, { contentType: file.type || 'image/png', upsert: true });
-                                    httpsUrl = supabase.storage.from('studiophotuna').getPublicUrl(storagePath).data?.publicUrl ?? null;
-                                  } catch (_) {}
-                                  const finalUrl = httpsUrl ?? localUrl;
-                                  setLogoPath({ url: finalUrl, name: file.name, previewUrl: localUrl });
+                                  // fileUrl is an HTTPS URL (shim/iPad) or a local file:// path (Windows Electron)
+                                  const localUrl = res?.fileUrl || null;
+                                  // Upload to Supabase Storage for cross-device HTTPS access
+                                  let httpsUrl = localUrl?.startsWith('https://') ? localUrl : null;
+                                  if (!httpsUrl) {
+                                    try {
+                                      const uid = identity?.userId ?? 'anon';
+                                      const ext = (file.name || '').split('.').pop() || 'png';
+                                      const storagePath = `${uid}/appearance/logo.${ext}`;
+                                      await supabase.storage.from('studiophotuna').upload(storagePath, file, { contentType: file.type || 'image/png', upsert: true });
+                                      httpsUrl = supabase.storage.from('studiophotuna').getPublicUrl(storagePath).data?.publicUrl ?? null;
+                                    } catch (_) {}
+                                  }
+                                  // savedUrl is what gets persisted; previewUrl is local rendering
+                                  const savedUrl = httpsUrl ?? localUrl;
+                                  if (!savedUrl) { showToast('Failed to upload logo'); return; }
+                                  setLogoPath({ url: savedUrl, name: file.name, previewUrl: localUrl ?? savedUrl });
                                   showToast('Logo saved');
                                 } catch (err) {
                                   console.error(err);
@@ -9945,30 +9950,26 @@ This cannot be undone.`
                                       identity.userId
                                     )) ?? {};
 
-                                  if (!res?.fileUrl) {
-                                    showToast('Failed to save background');
-                                    return;
-                                  }
-
-                                  const localUrl = res.appUrl ?? res.fileUrl;
-                                  // Upload images to Supabase Storage for cross-device (iPad) access
-                                  let httpsUrl = null;
-                                  if (file.type?.startsWith('image/')) {
+                                  const localUrl = res?.fileUrl || null;
+                                  // Upload images to Supabase Storage for cross-device (iPad) HTTPS access
+                                  let httpsUrl = localUrl?.startsWith('https://') ? localUrl : null;
+                                  if (!httpsUrl && file.type?.startsWith('image/')) {
                                     try {
                                       const uid = identity?.userId ?? 'anon';
                                       const ext = (file.name || '').split('.').pop() || 'png';
-                                      const storagePath = `appearance/${uid}/background.${ext}`;
+                                      const storagePath = `${uid}/appearance/background.${ext}`;
                                       await supabase.storage.from('studiophotuna').upload(storagePath, file, { contentType: file.type, upsert: true });
                                       httpsUrl = supabase.storage.from('studiophotuna').getPublicUrl(storagePath).data?.publicUrl ?? null;
                                     } catch (_) {}
                                   }
-                                  const finalUrl = httpsUrl ?? localUrl;
+                                  const savedUrl = httpsUrl ?? localUrl;
+                                  if (!savedUrl) { showToast('Failed to upload background'); return; }
 
                                   setBackgroundMediaPath({
-                                    url: finalUrl,
+                                    url: savedUrl,
                                     path: res.savedPath,
                                     name: file.name,
-                                    previewUrl: localUrl,
+                                    previewUrl: localUrl ?? savedUrl,
                                     mime: file.type,
                                   });
 

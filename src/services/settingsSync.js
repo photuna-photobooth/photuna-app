@@ -58,13 +58,30 @@ export async function pullSettings() {
       store.getPalettes?.(ctx),
     ]);
 
-  // Settings / Appearance: local always wins.
-  // Only seed from Supabase when there is no local data (fresh install).
+  // Settings: local always wins.
   if (!nonEmpty(localSettings) && nonEmpty(data.settings)) {
     await store.setSettings?.(data.settings, ctx);
   }
-  if (!nonEmpty(localAppearance) && nonEmpty(data.appearance)) {
-    await store.setAppearance?.(data.appearance, ctx);
+
+  // Appearance: merge so that HTTPS URLs from Supabase win over local file:// paths.
+  // This lets cross-device logo/background uploads (stored as Supabase Storage URLs)
+  // propagate to other devices that may have stale local file paths.
+  if (nonEmpty(data.appearance)) {
+    const isWebSafe = (v) => !v || v.startsWith('https://') || v.startsWith('http://') || v.startsWith('data:');
+    if (!nonEmpty(localAppearance)) {
+      // Fresh install — seed entirely from Supabase
+      await store.setAppearance?.(data.appearance, ctx);
+    } else {
+      // Merge: keep local values except prefer Supabase HTTPS URLs for logo/background
+      const merged = { ...localAppearance };
+      if (!isWebSafe(localAppearance.logoPath) && isWebSafe(data.appearance.logoPath) && data.appearance.logoPath) {
+        merged.logoPath = data.appearance.logoPath;
+      }
+      if (!isWebSafe(localAppearance.backgroundMediaPath) && isWebSafe(data.appearance.backgroundMediaPath) && data.appearance.backgroundMediaPath) {
+        merged.backgroundMediaPath = data.appearance.backgroundMediaPath;
+      }
+      await store.setAppearance?.(merged, ctx);
+    }
   }
 
   // Events: local always wins — the desktop is the authority for booth events.

@@ -85,11 +85,11 @@ function sanitizeAppearanceForWeb(app) {
   };
 }
 
-// Upload an appearance asset (logo or background image) to Supabase Storage
-// under appearance/{userId}/{slot}.{ext} and return its public URL.
+// Upload an appearance asset (logo or background image) to Supabase Storage.
+// Path starts with userId so the UPDATE RLS policy (first folder = auth.uid()) passes.
 async function uploadAppearanceAsset(file, userId, slot) {
   const ext = (file.name || '').split('.').pop() || 'png';
-  const path = `appearance/${userId}/${slot}.${ext}`;
+  const path = `${userId}/appearance/${slot}.${ext}`;
   const { error } = await supabase.storage
     .from('studiophotuna')
     .upload(path, file, { contentType: file.type || 'image/png', upsert: true });
@@ -114,23 +114,9 @@ export const capacitorShim = {
   },
 
   // ── Events ─────────────────────────────────────────────────────────────────
-  getEvents: async (ctx) => {
-    const userId = ctx?.userId ?? await getUserId();
-    const events = await prefGet('events', userId, []);
-    if (!Array.isArray(events)) return events;
-    return events.map((ev) =>
-      ev?.appearance ? { ...ev, appearance: sanitizeAppearanceForWeb(ev.appearance) } : ev
-    );
-  },
+  getEvents: async (ctx) => prefGet('events', ctx?.userId ?? await getUserId(), []),
   setEvents: async (events, ctx) => prefSet('events', events, ctx?.userId ?? await getUserId()),
-  loadEvents: async (ctx) => {
-    const userId = ctx?.userId ?? await getUserId();
-    const events = await prefGet('events', userId, []);
-    if (!Array.isArray(events)) return events;
-    return events.map((ev) =>
-      ev?.appearance ? { ...ev, appearance: sanitizeAppearanceForWeb(ev.appearance) } : ev
-    );
-  },
+  loadEvents: async (ctx) => prefGet('events', ctx?.userId ?? await getUserId(), []),
   cleanupEventStorage: noop,
 
   // ── Settings ───────────────────────────────────────────────────────────────
@@ -141,11 +127,7 @@ export const capacitorShim = {
   setSettings: async (settings, ctx) => prefSet('settings', settings, ctx?.userId ?? await getUserId()),
 
   // ── Appearance ─────────────────────────────────────────────────────────────
-  getAppearance: async (ctx) => {
-    const userId = ctx?.userId ?? await getUserId();
-    const app = await prefGet('appearance', userId, {});
-    return sanitizeAppearanceForWeb(app);
-  },
+  getAppearance: async (ctx) => prefGet('appearance', ctx?.userId ?? await getUserId(), {}),
   setAppearance: async (appearance, ctx) => prefSet('appearance', appearance, ctx?.userId ?? await getUserId()),
 
   // ── Templates ──────────────────────────────────────────────────────────────
