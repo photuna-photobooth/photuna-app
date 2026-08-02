@@ -383,15 +383,42 @@ export const capacitorShim = {
   setDnpCutMode: noop,
   detectCardTerminal: async () => ({ found: false }),
 
-  // ── Payments (Windows booth handles transactions; admin views on iPad) ──────
-  finalizeCashPayment: async () => ({ ok: false, error: 'Payments run on Windows booth' }),
-  startQrPayment: async () => ({ ok: false }),
-  startPayPalPayment: async () => ({ ok: false }),
-  startCardPayment: async () => ({ ok: false }),
-  startGatewayPayment: async () => ({ ok: false }),
+  // ── Payments ────────────────────────────────────────────────────────────────
+  // Hardware-dependent flows (card terminal, cash drawer) are Windows-only.
+  // QR gateway payments could work on iPad but require Phase 3 provider wiring.
+  // recordPayment IS implemented: it updates local event analytics so cash
+  // sessions are counted even without a physical payment terminal.
+  finalizeCashPayment: async () => ({ ok: true }),
+  startQrPayment: async () => ({ ok: false, error: 'QR payment requires a Windows booth with a payment provider configured.' }),
+  startPayPalPayment: async () => ({ ok: false, error: 'PayPal payment requires a Windows booth.' }),
+  startCardPayment: async () => ({ ok: false, error: 'Card payment requires a Windows booth with a card terminal.' }),
+  startGatewayPayment: async () => ({ ok: false, error: 'QR gateway payment requires a Windows booth with PayMongo or Xendit configured.' }),
   chargeAdditionalPayment: async () => ({ ok: false }),
-  recordPayment: async () => ({ ok: false }),
-  cancelPayment: async () => ({ ok: false }),
+  cancelPayment: async () => ({ ok: true }),
+
+  recordPayment: async (paymentRecord = {}) => {
+    try {
+      const userId = await getUserId();
+      const events = await prefGet('events', userId, []);
+      if (!Array.isArray(events) || !paymentRecord.eventId) return { ok: true };
+      const updated = events.map(e => {
+        if (String(e.id) !== String(paymentRecord.eventId)) return e;
+        const analytics = { ...(e.analytics || {}) };
+        const amt = Number(paymentRecord.amount) || 0;
+        analytics.sessionsToday = (analytics.sessionsToday || 0) + 1;
+        analytics.revenueToday = (analytics.revenueToday || 0) + amt;
+        if (typeof analytics.sessionsWeekly === 'number') analytics.sessionsWeekly += 1;
+        if (typeof analytics.revenueWeekly === 'number') analytics.revenueWeekly += amt;
+        if (typeof analytics.sessionsMonthly === 'number') analytics.sessionsMonthly += 1;
+        if (typeof analytics.revenueMonthly === 'number') analytics.revenueMonthly += amt;
+        return { ...e, analytics, lastPayment: paymentRecord };
+      });
+      await prefSet('events', updated, userId);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err?.message };
+    }
+  },
 
   // ── App control ────────────────────────────────────────────────────────────
   restartApp: async () => { window.location.reload(); },

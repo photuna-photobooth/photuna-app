@@ -1856,8 +1856,9 @@ This cannot be undone.`
       if (!normalized.length) {
         setSelectedPrinter("");
         setPrinterOnline(false);
-        setPrinterStatusText("No printers detected");
-        showToast("No printers found");
+        const isIpad = !!window.electron?._capacitorPlaceholder;
+        setPrinterStatusText(isIpad ? "Printing not available on iPad — use a Windows booth" : "No printers detected");
+        if (!isIpad) showToast("No printers found");
         return;
       }
 
