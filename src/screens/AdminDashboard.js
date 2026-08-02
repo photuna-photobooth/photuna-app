@@ -587,6 +587,9 @@ export default function AdminDashboard({ onLogout, onStartPhotobooth, jumpToUpda
     }
   }
 
+  // === SIDEBAR RESPONSIVE STATE ==============================
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
   // === CAMERA STATE ==========================================
   // (was lower in the file; move it up to the other useState blocks)
   const [cameraList, setCameraList] = useState([]);
@@ -7103,13 +7106,31 @@ This cannot be undone.`
       <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" />
       {/* ===== Shell: Sidebar + Main ===== */}
       <div className="flex h-screen bg-[radial-gradient(circle_at_top,_rgba(37,99,235,0.06),_transparent_32%),linear-gradient(180deg,_#f8faff_0%,_#f1f5f9_100%)]">
+        {/* Mobile sidebar backdrop */}
+        {sidebarOpen && (
+          <div
+            className="fixed inset-0 z-30 bg-black/30 backdrop-blur-[2px] lg:hidden"
+            onClick={() => setSidebarOpen(false)}
+          />
+        )}
+
         {/* --- Left Sidebar --- */}
-        <aside className="h-screen w-[280px] flex-shrink-0 border-r border-slate-200/80 bg-slate-50/80 backdrop-blur-xl flex flex-col shadow-[10px_0_40px_rgba(15,23,42,0.06)]">
+        <aside className={`fixed lg:relative h-screen w-[280px] flex-shrink-0 border-r border-slate-200/80 bg-slate-50/80 backdrop-blur-xl flex flex-col shadow-[10px_0_40px_rgba(15,23,42,0.06)] z-40 transition-transform duration-300 ease-in-out ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}>
           {/* Account summary */}
-          <div className="border-b border-slate-200/80 px-4 py-4">
+          <div className="relative border-b border-slate-200/80 px-4 py-4">
+            {/* Close button — mobile only */}
             <button
               type="button"
-              onClick={() => setActiveMain("account")}
+              className="absolute right-3 top-3 flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-200 hover:text-slate-600 transition lg:hidden"
+              onClick={() => setSidebarOpen(false)}
+            >
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              onClick={() => { setActiveMain("account"); setSidebarOpen(false); }}
               className="group w-full flex items-center gap-3 rounded-xl px-2 py-2 transition hover:bg-slate-100/70 active:scale-[0.99]"
             >
               <div className="h-10 w-10 flex-shrink-0 overflow-hidden rounded-xl bg-slate-200">
@@ -7156,8 +7177,8 @@ This cannot be undone.`
             </button>
           </div>
 
-          {/* Main nav */}
-          <div className="flex-1 overflow-y-auto px-4 py-4">
+          {/* Main nav — clicking any nav item also closes the mobile sidebar */}
+          <div className="flex-1 overflow-y-auto px-4 py-4" onClick={() => setSidebarOpen(false)}>
             <div className="space-y-5">
               <div>
                 <div className="mb-2 px-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
@@ -7405,8 +7426,20 @@ This cannot be undone.`
 
         {/* --- Main Content --- */}
         <div className="min-h-0 min-w-0 flex-1 bg-transparent">
+          {/* Hamburger — mobile only, shown when sidebar is closed */}
+          <button
+            type="button"
+            className="fixed top-3 left-3 z-50 flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white shadow-sm text-slate-600 hover:bg-slate-50 active:scale-95 transition lg:hidden"
+            onClick={() => setSidebarOpen(true)}
+            aria-label="Open navigation"
+          >
+            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          </button>
+
           <main className="h-full min-h-0 overflow-y-auto">
-            <div className="mx-auto w-full max-w-[1600px] px-6 py-6 xl:px-8 2xl:px-10">
+            <div className="mx-auto w-full max-w-[1600px] px-4 pt-14 pb-4 sm:px-6 sm:pt-6 sm:pb-6 xl:px-8 2xl:px-10">
 
               {activeMain === "home" && renderHomeDashboard()}
 
