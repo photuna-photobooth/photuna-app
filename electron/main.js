@@ -1696,28 +1696,38 @@ ipcMain.handle("print-photo", async (event, {
     console.log("Use printer defaults:", !!usePrinterDefaults);
     console.log("PNG path:", samplePath);
 
-    // after nativeResult is returned but before the return statement:
     const win = BrowserWindow.fromWebContents(event.sender);
     let progress = 0;
+    // Simulate progress up to 90%; the final 100% fires only on confirmed success.
+    // Capped so the bar never auto-completes before the helper finishes, and so a
+    // failed job doesn't leave the bar at 100%.
     const interval = setInterval(() => {
-      progress = Math.min(1, progress + 0.1);
+      progress = Math.min(0.9, progress + 0.1);
       win.webContents.send('print-progress', progress);
-      if (progress >= 1) clearInterval(interval);
     }, 1000);
 
-    const nativeResult = await runNativePrintHelper({
-      filePath: samplePath,
-      printer: resolvedPrinter,
-      layout: normalizedLayout,
-      paperSize: paperSize,
-      copies,
-      colorMode,
-      quality,
-      orientation,
-      duplexMode,
-      dpi,
-      usePrinterDefaults,
-    });
+    let nativeResult;
+    try {
+      nativeResult = await runNativePrintHelper({
+        filePath: samplePath,
+        printer: resolvedPrinter,
+        layout: normalizedLayout,
+        paperSize: paperSize,
+        copies,
+        colorMode,
+        quality,
+        orientation,
+        duplexMode,
+        dpi,
+        usePrinterDefaults,
+      });
+    } catch (helperErr) {
+      clearInterval(interval);
+      throw helperErr;
+    }
+
+    clearInterval(interval);
+    win.webContents.send('print-progress', 1);
 
     console.log("Native helper result:", nativeResult);
 
