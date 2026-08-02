@@ -76,10 +76,9 @@ const AUTH_SERVICE_NAME = "StudioPhotunaAuth";
 const AUTH_LAST_USERNAME_KEY = "auth.lastUsername";
 
 const PAYMONGO_SERVICE = "StudioPhotunaPayMongo";
-const { PayMongoService, PaymentPollManager, generateQrDataUrl, isTestMode } = require("./services/paymentService");
+const { PayMongoService, PaymentPollManager, GenericPollManager, XenditService, PayPalService, generateQrDataUrl, isTestMode } = require("./services/paymentService");
 
 const cors = require("cors");
-const Stripe = require("stripe");
 const jwt = require("jsonwebtoken");
 const { createClient } = require("@supabase/supabase-js");
 
@@ -89,18 +88,6 @@ const FINAL_MOTION_DURATION_SECONDS = 5;
 function getPrivateConfigValue(key) {
   const value = process.env[key] ?? "";
   return typeof value === "string" ? value.trim() : value;
-}
-
-let stripeClient = null;
-let stripeClientKey = null;
-function getStripeClient() {
-  const secretKey = getPrivateConfigValue("STRIPE_SECRET_KEY");
-  if (!secretKey) return null;
-  if (!stripeClient || stripeClientKey !== secretKey) {
-    stripeClient = new Stripe(secretKey);
-    stripeClientKey = secretKey;
-  }
-  return stripeClient;
 }
 
 let supabaseAdmin = null;
@@ -1773,6 +1760,88 @@ ipcMain.handle("gallery:create", async (_event, payload) => {
   }
 });
 
+ipcMain.handle("gallery:get-event-sessions", async (_event, { eventId, userId } = {}) => {
+  try {
+    if (!eventId) return { ok: false, sessions: [], error: "eventId required" };
+    const admin = getSupabaseAdmin();
+    let query = admin
+      .from("galleries")
+      .select("slug, session_id, final_url, final_video_url, expires_at, created_at")
+      .eq("event_id", eventId)
+      .order("created_at", { ascending: false });
+    if (userId) query = query.eq("owner_user_id", userId);
+    const { data, error } = await query;
+    if (error) return { ok: false, sessions: [], error: error.message };
+    const galleryBaseUrl = "https://studiophotuna-gallery.vercel.app/gallery";
+    return {
+      ok: true,
+      sessions: (data || []).map((row) => ({
+        slug: row.slug,
+        sessionId: row.session_id,
+        qrUrl: `${galleryBaseUrl}/${row.slug}`,
+        finalUrl: row.final_url,
+        expiresAt: row.expires_at,
+        createdAt: row.created_at,
+      })),
+    };
+  } catch (err) {
+    return { ok: false, sessions: [], error: err?.message || "Failed to fetch galleries" };
+  }
+});
+
+// Create (or retrieve) a pre-session event-level gallery QR — no photos needed.
+// Allows the admin to show clients a QR code before any sessions start.
+ipcMain.handle("gallery:create-event-qr", async (_event, { eventId, userId } = {}) => {
+  try {
+    if (!eventId) return { ok: false, error: "eventId required" };
+    const admin = getSupabaseAdmin();
+    const galleryBaseUrl = "https://studiophotuna-gallery.vercel.app/gallery";
+
+    // Re-use an existing event-level entry if one already exists
+    const { data: existing } = await admin
+      .from("galleries")
+      .select("slug, expires_at")
+      .eq("event_id", eventId)
+      .is("session_id", null)
+      .maybeSingle();
+
+    if (existing?.slug) {
+      return {
+        ok: true,
+        slug: existing.slug,
+        qrUrl: `${galleryBaseUrl}/${existing.slug}`,
+        expiresAt: existing.expires_at,
+        isNew: false,
+      };
+    }
+
+    // Build a stable slug from the event id so it can be shared before any session
+    const slug = `evt-${String(eventId).replace(/-/g, "").slice(0, 12)}-${Date.now().toString(36)}`;
+    const expiresAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(); // 90 days
+
+    const { error } = await admin.from("galleries").insert({
+      slug,
+      event_id: eventId,
+      session_id: null,
+      owner_user_id: userId || null,
+      final_url: null,
+      expires_at: expiresAt,
+    });
+
+    if (error) return { ok: false, error: error.message };
+
+    return {
+      ok: true,
+      slug,
+      qrUrl: `${galleryBaseUrl}/${slug}`,
+      expiresAt,
+      isNew: true,
+    };
+  } catch (err) {
+    return { ok: false, error: err?.message || "Failed to create event gallery QR" };
+  }
+});
+
 ipcMain.handle("get-printers", (event) => {
   const win = BrowserWindow.fromWebContents(event.sender);
   return win.webContents.getPrintersAsync();
@@ -2519,124 +2588,6 @@ function startBillingApiServer() {
     credentials: true,
   }));
 
-  // Stripe webhook needs raw body before express.json()
-  apiApp.post(
-    "/billing/webhook",
-    express.raw({ type: "application/json" }),
-    async (req, res) => {
-      try {
-        const stripe = getStripeClient();
-        if (!stripe) {
-          return res.status(500).json({ error: "Stripe is not configured" });
-        }
-
-        const sig = req.headers["stripe-signature"];
-
-        let event;
-        try {
-          event = stripe.webhooks.constructEvent(
-            req.body,
-            sig,
-            getPrivateConfigValue("STRIPE_WEBHOOK_SECRET")
-          );
-        } catch (err) {
-          console.error("Stripe webhook signature failed:", err.message);
-          return res.status(400).send(`Webhook Error: ${err.message}`);
-        }
-
-        const obj = event.data.object;
-
-        if (event.type === "checkout.session.completed") {
-          const userId = obj.metadata?.userId;
-          const plan = obj.metadata?.plan;
-          const addon = obj.metadata?.addon;
-
-          if (userId && addon === "gallery") {
-            await setGalleryAddonEntitlement(userId, true, {
-              stripe_customer_id: obj.customer || null,
-              stripe_gallery_subscription_id: obj.subscription || null,
-            });
-          }
-
-          if (userId && plan) {
-            await upsertLicense(userId, plan, "active", {
-              stripe_customer_id: obj.customer || null,
-              stripe_subscription_id: obj.subscription || null,
-            });
-          }
-        }
-
-        if (
-          event.type === "customer.subscription.deleted" ||
-          event.type === "customer.subscription.paused"
-        ) {
-          const subscription = obj;
-          const userId = subscription.metadata?.userId;
-          const addon = subscription.metadata?.addon;
-
-          if (userId && addon === "gallery") {
-            await setGalleryAddonEntitlement(userId, false, {
-              stripe_gallery_subscription_id: subscription.id || null,
-            });
-            return res.json({ received: true });
-          }
-
-          if (userId) {
-            await upsertLicense(userId, "free", "canceled", {
-              stripe_subscription_id: subscription.id || null,
-            });
-          }
-        }
-
-        if (
-          event.type === "customer.subscription.updated" ||
-          event.type === "invoice.payment_succeeded"
-        ) {
-          const subscriptionId =
-            obj.subscription ||
-            obj.id;
-
-          if (subscriptionId && stripe) {
-            const subscription =
-              event.type === "invoice.payment_succeeded"
-                ? await stripe.subscriptions.retrieve(subscriptionId)
-                : obj;
-
-            const userId = subscription.metadata?.userId;
-            const plan = subscription.metadata?.plan;
-            const addon = subscription.metadata?.addon;
-
-            if (userId && addon === "gallery") {
-              const galleryActive = ["active", "trialing"].includes(subscription.status);
-              await setGalleryAddonEntitlement(userId, galleryActive, {
-                stripe_customer_id: subscription.customer || null,
-                stripe_gallery_subscription_id: subscription.id || null,
-              });
-              return res.json({ received: true });
-            }
-
-            if (userId && plan) {
-              const periodEnd = subscription.current_period_end
-                ? new Date(subscription.current_period_end * 1000).toISOString()
-                : undefined;
-
-              await upsertLicense(userId, plan, subscription.status || "active", {
-                expires_at: periodEnd,
-                stripe_customer_id: subscription.customer || null,
-                stripe_subscription_id: subscription.id || null,
-              });
-            }
-          }
-        }
-
-        return res.json({ received: true });
-      } catch (err) {
-        console.error("billing webhook failed:", err);
-        return res.status(500).json({ error: err.message || "Webhook failed" });
-      }
-    }
-  );
-
   // Upload avatar to Supabase Storage and return the public URL.
   apiApp.post("/me/avatar", express.raw({ type: /^image\//, limit: "5mb" }), requireSupabaseUser, async (req, res) => {
     try {
@@ -2687,367 +2638,6 @@ function startBillingApiServer() {
 
   apiApp.get("/health", (_req, res) => {
     res.json({ ok: true, service: "Studio Photuna Billing API" });
-  });
-
-  // Landing page for Stripe redirect — success_url / cancel_url point here
-  apiApp.get("/", (req, res) => {
-    const billing = req.query.billing;
-    const isSuccess = billing === "success";
-    const isCancelled = billing === "cancelled" || billing === "cancel";
-
-    const title = isSuccess ? "Payment Successful" : isCancelled ? "Payment Cancelled" : "Studio Photuna";
-    const heading = isSuccess ? "Payment confirmed!" : isCancelled ? "Payment cancelled" : "Studio Photuna";
-    const body = isSuccess
-      ? "Your subscription is now active. You can close this tab and return to Studio Photuna."
-      : isCancelled
-        ? "No charge was made. You can close this tab and return to Studio Photuna."
-        : "Return to Studio Photuna.";
-    const color = isSuccess ? "#4f46e5" : isCancelled ? "#6b7280" : "#4f46e5";
-
-    res.setHeader("Content-Type", "text/html");
-    res.send(`<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>${title} — Studio Photuna</title>
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f8fafc; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
-    .card { background: #fff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 40px 48px; text-align: center; max-width: 420px; width: 100%; box-shadow: 0 4px 24px rgba(0,0,0,.07); }
-    .icon { font-size: 48px; margin-bottom: 16px; }
-    h1 { font-size: 22px; font-weight: 700; color: #0f172a; margin-bottom: 12px; }
-    p { font-size: 15px; color: #64748b; line-height: 1.6; }
-    .badge { display: inline-block; margin-top: 24px; padding: 6px 16px; border-radius: 999px; font-size: 13px; font-weight: 600; background: ${color}1a; color: ${color}; }
-  </style>
-</head>
-<body>
-  <div class="card">
-    <div class="icon">${isSuccess ? "✅" : isCancelled ? "↩️" : "🎞️"}</div>
-    <h1>${heading}</h1>
-    <p>${body}</p>
-    <div class="badge">Studio Photuna</div>
-  </div>
-</body>
-</html>`);
-  });
-
-  apiApp.get("/billing/prices", (_req, res) => {
-    res.json({
-      currency: "PHP",
-      monthly: {
-        id: getPrivateConfigValue("STRIPE_PRICE_MONTHLY"),
-        display: getPrivateConfigValue("DISPLAY_PRICE_MONTHLY_PHP") || "₱1,800 / mo",
-        amount: Number(getPrivateConfigValue("DISPLAY_PRICE_MONTHLY_AMOUNT") || 1800),
-      },
-      yearly: {
-        id: getPrivateConfigValue("STRIPE_PRICE_YEARLY"),
-        display: getPrivateConfigValue("DISPLAY_PRICE_YEARLY_PHP") || "₱11,400 / yr",
-        amount: Number(getPrivateConfigValue("DISPLAY_PRICE_YEARLY_AMOUNT") || 11400),
-        annual: getPrivateConfigValue("DISPLAY_PRICE_YEARLY_ANNUAL_PHP") || "₱11,400",
-        monthlyEquivalent: getPrivateConfigValue("DISPLAY_PRICE_YEARLY_MONTHLY_PHP") || "₱950/mo",
-      },
-      galleryAddon: {
-        id: getPrivateConfigValue("STRIPE_PRICE_GALLERY_ADDON_MONTHLY"),
-        display: getPrivateConfigValue("DISPLAY_PRICE_GALLERY_ADDON_PHP") || "₱499 / mo",
-        amount: Number(getPrivateConfigValue("DISPLAY_PRICE_GALLERY_ADDON_AMOUNT") || 499),
-        configured: Boolean(getPrivateConfigValue("STRIPE_PRICE_GALLERY_ADDON_MONTHLY")),
-      },
-    });
-  });
-
-  apiApp.post("/billing/create-checkout-session", requireSupabaseUser, async (req, res) => {
-    try {
-      const stripe = getStripeClient();
-      if (!stripe) {
-        return res.status(500).json({ error: "Stripe secret key is missing" });
-      }
-
-      const userId = req.supabaseUser.id;
-      const email = req.supabaseUser.email;
-      const { plan } = req.body || {};
-
-      const price =
-        plan === "monthly"
-          ? getPrivateConfigValue("STRIPE_PRICE_MONTHLY")
-          : plan === "yearly"
-            ? getPrivateConfigValue("STRIPE_PRICE_YEARLY")
-            : null;
-
-      if (!price) {
-        return res.status(400).json({ error: "Invalid plan" });
-      }
-
-      const session = await stripe.checkout.sessions.create({
-        mode: "subscription",
-        customer_email: email,
-        line_items: [{ price, quantity: 1 }],
-        success_url: getPrivateConfigValue("STRIPE_SUCCESS_URL") || "https://app.studiophotuna.com?billing=success",
-        cancel_url: getPrivateConfigValue("STRIPE_CANCEL_URL") || "https://app.studiophotuna.com?billing=cancelled",
-        metadata: {
-          userId,
-          plan,
-        },
-        subscription_data: {
-          metadata: {
-            userId,
-            plan,
-          },
-        },
-      });
-
-      return res.json({ url: session.url });
-    } catch (err) {
-      console.error("create-checkout-session failed:", err);
-      return res.status(500).json({ error: err.message || "Checkout failed" });
-    }
-  });
-
-  apiApp.post("/billing/create-gallery-addon-session", requireSupabaseUser, async (req, res) => {
-    try {
-      const stripe = getStripeClient();
-      if (!stripe) {
-        return res.status(500).json({ error: "Stripe secret key is missing" });
-      }
-
-      const price = getPrivateConfigValue("STRIPE_PRICE_GALLERY_ADDON_MONTHLY");
-      if (!price) {
-        return res.status(400).json({ error: "Gallery add-on Stripe price is missing" });
-      }
-
-      const userId = req.supabaseUser.id;
-      const email = req.supabaseUser.email;
-
-      const session = await stripe.checkout.sessions.create({
-        mode: "subscription",
-        customer_email: email,
-        line_items: [{ price, quantity: 1 }],
-        success_url: getPrivateConfigValue("STRIPE_SUCCESS_URL") || "https://app.studiophotuna.com?billing=success",
-        cancel_url: getPrivateConfigValue("STRIPE_CANCEL_URL") || "https://app.studiophotuna.com?billing=cancelled",
-        metadata: {
-          userId,
-          addon: "gallery",
-        },
-        subscription_data: {
-          metadata: {
-            userId,
-            addon: "gallery",
-          },
-        },
-      });
-
-      return res.json({ url: session.url });
-    } catch (err) {
-      console.error("create-gallery-addon-session failed:", err);
-      return res.status(500).json({ error: err.message || "Gallery add-on checkout failed" });
-    }
-  });
-
-  apiApp.get("/billing/subscription", requireSupabaseUser, async (req, res) => {
-    try {
-      const userId = req.supabaseUser.id;
-
-      const { data, error } = await getSupabaseAdmin().from("licenses")
-        .select("*")
-        .eq("user_id", userId)
-        .maybeSingle();
-
-      if (error) {
-        return res.status(500).json({ error: error.message });
-      }
-
-      return res.json({
-        plan: data?.plan || "free",
-        state: data?.state || "active",
-        expiresAt: data?.expires_at || null,
-        stripeCustomerId: data?.stripe_customer_id || null,
-        stripeSubscriptionId: data?.stripe_subscription_id || null,
-        entitlements: mapLicenseEntitlements(data || {}),
-      });
-    } catch (err) {
-      console.error("billing/subscription failed:", err);
-      return res.status(500).json({ error: err.message || "Subscription failed" });
-    }
-  });
-
-  apiApp.post("/billing/customer-portal", requireSupabaseUser, async (req, res) => {
-    try {
-      const stripe = getStripeClient();
-      if (!stripe) {
-        return res.status(500).json({ error: "Stripe secret key is missing" });
-      }
-
-      const userId = req.supabaseUser.id;
-
-      const { data, error } = await getSupabaseAdmin().from("licenses")
-        .select("stripe_customer_id")
-        .eq("user_id", userId)
-        .maybeSingle();
-
-      if (error) {
-        return res.status(500).json({ error: error.message });
-      }
-
-      if (!data?.stripe_customer_id) {
-        return res.status(400).json({ error: "No Stripe customer found yet" });
-      }
-
-      const portal = await stripe.billingPortal.sessions.create({
-        customer: data.stripe_customer_id,
-        return_url: "https://app.studiophotuna.com?billing=portal-return",
-      });
-
-      return res.json({ url: portal.url });
-    } catch (err) {
-      console.error("customer-portal failed:", err);
-      return res.status(500).json({ error: err.message || "Customer portal failed" });
-    }
-  });
-
-  // Called after Stripe checkout redirects back. Reads the live Stripe subscription
-  // and writes the confirmed plan to Supabase — does not rely on webhooks.
-  apiApp.post("/billing/sync", requireSupabaseUser, async (req, res) => {
-    try {
-      const stripe = getStripeClient();
-      if (!stripe) return res.status(501).json({ error: "stripe_not_configured" });
-
-      const userId = req.supabaseUser.id;
-      const email = req.supabaseUser.email;
-
-      // Look up Stripe customer by stored ID or fall back to email lookup
-      let customerId = null;
-      try {
-        const { data: licRow } = await getSupabaseAdmin().from("licenses").select("stripe_customer_id").eq("user_id", userId).maybeSingle();
-        customerId = licRow?.stripe_customer_id || null;
-      } catch (_) { /* no row yet, will fall back to email lookup */ }
-
-      if (!customerId) {
-        try {
-          const customers = await stripe.customers.list({ email, limit: 1 });
-          customerId = customers.data[0]?.id ?? null;
-        } catch (e) {
-          console.warn("[billing/sync] Stripe customer lookup failed:", e.message);
-        }
-      }
-
-      if (!customerId) return res.json({ synced: false, reason: "no_stripe_customer" });
-
-      // Retry up to 3 times (2 s apart) in case Stripe hasn't activated the
-      // subscription yet by the time the user switches back to the app.
-      let sub = null;
-      let gallerySub = null;
-      for (let attempt = 0; attempt <= 3 && !sub; attempt++) {
-        if (attempt > 0) await new Promise(r => setTimeout(r, 2000));
-        const [activeSubs, trialingSubs] = await Promise.all([
-          stripe.subscriptions.list({ customer: customerId, status: "active", limit: 10 }),
-          stripe.subscriptions.list({ customer: customerId, status: "trialing", limit: 10 }),
-        ]);
-        const allSubs = [...activeSubs.data, ...trialingSubs.data];
-        gallerySub = allSubs.find((item) => item.metadata?.addon === "gallery") || gallerySub;
-        sub = allSubs.find((item) => item.metadata?.addon !== "gallery") || null;
-        if (!sub && attempt > 0) console.log(`[billing/sync] retry ${attempt}: no active sub yet`);
-      }
-
-      if (gallerySub) {
-        await setGalleryAddonEntitlement(userId, true, {
-          stripe_customer_id: customerId,
-          stripe_gallery_subscription_id: gallerySub.id,
-        });
-      }
-
-      if (!sub) {
-        return res.json({
-          synced: Boolean(gallerySub),
-          reason: gallerySub ? "gallery_addon_synced" : "no_active_subscription",
-        });
-      }
-
-      const interval = sub.items?.data?.[0]?.price?.recurring?.interval;
-      const plan = interval === "year" ? "yearly" : "monthly";
-      const state = sub.status === "trialing" ? "trialing" : "active";
-      const expiresAt = sub.current_period_end
-        ? new Date(sub.current_period_end * 1000).toISOString()
-        : null;
-
-      // Write confirmed plan to Supabase (with 9 s timeout so it can't hang forever)
-      let sbOk = false;
-      let sbError = null;
-      try {
-        const sbTimeout = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error("Supabase write timed out")), 9000)
-        );
-        const { error } = await Promise.race([
-          getSupabaseAdmin().from("licenses").upsert(
-            {
-              user_id: userId,
-              plan,
-              state,
-              expires_at: expiresAt,
-              stripe_subscription_id: sub.id,
-              ...mapPlanToLicense(plan, state),
-              ...(gallerySub ? { stripe_gallery_subscription_id: gallerySub.id } : {}),
-              updated_at: new Date().toISOString(),
-            },
-            { onConflict: "user_id" }
-          ),
-          sbTimeout,
-        ]);
-        if (error) {
-          console.error("[billing/sync] Supabase upsert failed:", error.message, "code:", error.code);
-          sbError = error.message;
-        } else {
-          sbOk = true;
-          // Sync profile: plan + stripe_customer_id (best-effort, fire-and-forget)
-          getSupabaseAdmin().from("profiles")
-            .update({ subscription_plan: plan, stripe_customer_id: customerId })
-            .eq("id", userId)
-            .then(() => { })
-            .catch((e) => console.warn("[billing/sync] profile sync failed:", e.message));
-        }
-      } catch (e) {
-        console.error("[billing/sync] Supabase write exception:", e.message);
-        sbError = e.message;
-      }
-
-      // Build and sign a fresh license JWT
-      const rawPrivateKey = getPrivateConfigValue("LICENSE_PRIVATE_KEY") || "";
-      const privateKey = rawPrivateKey.includes("\\n") ? rawPrivateKey.replace(/\\n/g, "\n") : rawPrivateKey;
-      const rawPublicKey = getPrivateConfigValue("LICENSE_PUBLIC_KEY") || "";
-      const publicKey = rawPublicKey.includes("\\n") ? rawPublicKey.replace(/\\n/g, "\n") : rawPublicKey;
-      const mapped = mapPlanToLicense(plan, state);
-      const expSeconds = sub.current_period_end
-        ? Math.min(sub.current_period_end, Math.floor(Date.now() / 1000) + 7 * 24 * 3600)
-        : Math.floor(Date.now() / 1000) + 7 * 24 * 3600;
-      const entitlements = mapLicenseEntitlements(mapped);
-      entitlements.galleryTier = gallerySub ? "plus" : "free";
-      entitlements.galleryAddon = Boolean(gallerySub);
-      entitlements.galleryEnabled = Boolean(gallerySub);
-
-      let signedLicense = null;
-      try {
-        if (privateKey) {
-          signedLicense = require("jsonwebtoken").sign(
-            { iss: "StudioPhotuna-Licensing", typ: "license", sub: userId, plan, state, entitlements, exp: expSeconds },
-            privateKey,
-            { algorithm: "RS256" }
-          );
-        }
-      } catch (signErr) {
-        console.error("[billing/sync] JWT signing failed:", signErr.message);
-      }
-
-      return res.json({
-        synced: true,
-        synced_supabase: sbOk,
-        supabase_error: sbOk ? undefined : sbError,
-        license: { plan, state, expiresAt: sub.current_period_end || 0, entitlements },
-        signedLicense,
-        publicKey: publicKey || null,
-      });
-    } catch (err) {
-      console.error("[billing/sync] error:", err);
-      return res.status(500).json({ error: err.message || "billing_sync_failed" });
-    }
   });
 
   apiApp.get("/license/status", requireSupabaseUser, async (req, res) => {
@@ -3176,6 +2766,11 @@ function startBillingApiServer() {
           plan: "trial",
           state: "trialing",
           expires_at: expiresAt,
+          // Must match expires_at so the lock_expires_at_to_period_end trigger
+          // (migration 010) sees a future date and doesn't revert plan/state back
+          // to free/expired. Without this, users who had a prior paid subscription
+          // with a past current_period_end would only see trial_redeemed updated.
+          current_period_end: expiresAt,
           trial_redeemed: true,
           max_events: 3,
           templates: 5,
@@ -3397,34 +2992,6 @@ function startBillingApiServer() {
     }
   });
 
-  apiApp.post("/billing/cancel-subscription", requireSupabaseUser, async (req, res) => {
-    try {
-      const stripe = getStripeClient();
-      if (!stripe) return res.status(500).json({ error: "Stripe not configured" });
-
-      const userId = req.supabaseUser.id;
-      const { atPeriodEnd = true } = req.body || {};
-
-      const { data: license } = await getSupabaseAdmin().from("licenses")
-        .select("stripe_subscription_id")
-        .eq("user_id", userId)
-        .maybeSingle();
-
-      if (!license?.stripe_subscription_id) {
-        return res.status(400).json({ error: "No active subscription to cancel" });
-      }
-
-      await stripe.subscriptions.update(license.stripe_subscription_id, {
-        cancel_at_period_end: atPeriodEnd,
-      });
-
-      return res.json({ ok: true, cancelledAtPeriodEnd: atPeriodEnd });
-    } catch (err) {
-      console.error("cancel-subscription failed:", err);
-      return res.status(500).json({ error: err.message || "Cancel failed" });
-    }
-  });
-
   // Verify current password then change it via admin API (never exposes password in JWT/cookie).
   apiApp.post("/auth/change-password", requireSupabaseUser, async (req, res) => {
     try {
@@ -3461,6 +3028,116 @@ function startBillingApiServer() {
     } catch (err) {
       console.error("[change-password] error:", err);
       return res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ── PayMongo subscription / gallery payment links (Photuna's own key) ──
+  const PAYMONGO_PLAN_PHP = {
+    subscription_monthly: 1800,
+    subscription_yearly: 11400,
+    gallery_plus: 900,
+    gallery_business: 1700,
+  };
+
+  // Cache for Photuna's own PayMongo secret key (read from Supabase Vault or env).
+  let _payMongoKeyCache = null;
+  let _payMongoKeyCachedAt = 0;
+  const PAYMONGO_KEY_TTL = 5 * 60 * 1000; // refresh every 5 minutes
+
+  async function getPhotunaPayMongoKey() {
+    const envKey = (process.env.PAYMONGO_SECRET_KEY || "").trim();
+    if (envKey) return envKey;
+
+    if (_payMongoKeyCache && Date.now() - _payMongoKeyCachedAt < PAYMONGO_KEY_TTL) {
+      return _payMongoKeyCache;
+    }
+
+    try {
+      const admin = getSupabaseAdmin();
+      // Vault is not accessible via REST API directly — use a public RPC wrapper
+      // (run the get_platform_secret SQL function in Supabase SQL Editor first)
+      const { data: secret } = await admin.rpc("get_platform_secret", {
+        secret_name: "paymongo_secret_key",
+      });
+      if (secret) {
+        _payMongoKeyCache = secret;
+        _payMongoKeyCachedAt = Date.now();
+        return _payMongoKeyCache;
+      }
+    } catch (_) { /* function not created yet — fall through */ }
+
+    try {
+      const admin = getSupabaseAdmin();
+      // Fallback: platform_config table with {key, value} rows
+      const { data: cfgRow } = await admin
+        .from("platform_config")
+        .select("value")
+        .eq("key", "paymongo_secret_key")
+        .maybeSingle();
+      if (cfgRow?.value) {
+        _payMongoKeyCache = cfgRow.value;
+        _payMongoKeyCachedAt = Date.now();
+        return _payMongoKeyCache;
+      }
+    } catch (_) { /* table doesn't exist */ }
+
+    return null;
+  }
+
+  apiApp.post("/billing/create-paymongo-link", requireSupabaseUser, async (req, res) => {
+    try {
+      const secretKey = await getPhotunaPayMongoKey();
+      if (!secretKey) return res.status(501).json({ error: "paymongo_not_configured" });
+
+      const { planType, plan } = req.body;
+      const amountKey = planType === "gallery" ? `gallery_${plan}` : `subscription_${plan}`;
+      const amountPhp = PAYMONGO_PLAN_PHP[amountKey];
+      if (!amountPhp) return res.status(400).json({ error: "invalid_plan" });
+
+      const PLAN_DESCRIPTIONS = {
+        subscription_monthly: "Studio Photuna Pro - Monthly",
+        subscription_yearly:  "Studio Photuna Pro - Yearly",
+        gallery_plus:         "Studio Photuna Gallery - Plus",
+        gallery_business:     "Studio Photuna Gallery - Business",
+      };
+      const description = PLAN_DESCRIPTIONS[amountKey] || `Studio Photuna ${plan}`;
+
+      const svc = new PayMongoService(secretKey);
+      const link = await svc.createPaymentLink(amountPhp, "PHP", description);
+      const qrDataUrl = await generateQrDataUrl(link.checkoutUrl);
+
+      return res.json({ linkId: link.id, checkoutUrl: link.checkoutUrl, qrDataUrl });
+    } catch (err) {
+      console.error("create-paymongo-link failed:", err);
+      return res.status(500).json({ error: err.message || "Failed to create payment link" });
+    }
+  });
+
+  apiApp.get("/billing/paymongo-link-status", requireSupabaseUser, async (req, res) => {
+    try {
+      const secretKey = await getPhotunaPayMongoKey();
+      if (!secretKey) return res.status(501).json({ error: "paymongo_not_configured" });
+
+      const { linkId, planType, plan } = req.query;
+      if (!linkId) return res.status(400).json({ error: "linkId required" });
+
+      const svc = new PayMongoService(secretKey);
+      const link = await svc.getPaymentLink(linkId);
+
+      if (!link.hasPaid) return res.json({ paid: false, status: link.status });
+
+      const userId = req.supabaseUser.id;
+      if (planType === "gallery") {
+        const tier = plan === "business" ? "business" : "plus";
+        await setGalleryAddonEntitlement(userId, tier, { payment_provider: "paymongo" });
+      } else {
+        await upsertLicense(userId, plan, "active", { payment_provider: "paymongo" });
+      }
+
+      return res.json({ paid: true, activated: true, status: link.status });
+    } catch (err) {
+      console.error("paymongo-link-status failed:", err);
+      return res.status(500).json({ error: err.message || "Status check failed" });
     }
   });
 
@@ -3569,12 +3246,15 @@ ipcMain.handle("license:read", async (_e, userId) => {
     ]);
     if (error) {
       console.warn("[license:read] query error:", error.message);
-      return null;
+      return null; // null = network/query failure, not "no row"
     }
-    return data ?? null;
+    // Return a synthetic free-plan record when the query succeeded but found no row.
+    // This lets the renderer distinguish "confirmed free" (no row) from "network error" (null),
+    // so the stale paid-plan cache gets cleared instead of being used as the offline fallback.
+    return data ?? { plan: 'free', state: 'active', _synthetic: true };
   } catch (e) {
     console.warn("[license:read] failed:", e.message);
-    return null;
+    return null; // null = timeout/crash, renderer falls back to cache
   }
 });
 
@@ -3587,7 +3267,18 @@ ipcMain.handle("license:cache-read", async (_e, userId) => {
   try {
     const cached = store?.get('_licenseCache');
     if (!cached || cached.userId !== userId) return null;
-    if (Date.now() - (cached.cachedAt || 0) > LICENSE_MAX_OFFLINE_MS) return null;
+
+    // Use the license's own expires_at as the cache validity boundary.
+    // If the license has no expiry (free plan, lifetime, etc.) fall back to the
+    // fixed offline window so the cache doesn't live forever.
+    const licenseExpiresAt =
+      cached.licenseData?.expiresAt || cached.licenseData?.expires_at || null;
+    if (licenseExpiresAt) {
+      if (new Date(licenseExpiresAt).getTime() < Date.now()) return null; // expired
+    } else {
+      if (Date.now() - (cached.cachedAt || 0) > LICENSE_MAX_OFFLINE_MS) return null;
+    }
+
     return cached;
   } catch { return null; }
 });
@@ -3601,6 +3292,14 @@ ipcMain.handle("license:cache-write", async (_e, userId, payload) => {
 
 // Register PayMongo handlers at module level to avoid race with renderer mount.
 const _pollManager = new PaymentPollManager();
+const _genericPollManager = new GenericPollManager();
+
+// Helper: get active payment gateway from stored settings
+function _getActiveGateway() {
+  const userId = getUserIdFromStore();
+  if (!userId) return null;
+  return store.get(`users.${userId}.settings`)?.business?.activeProvider ?? null;
+}
 
 async function _getPayMongoService() {
   const sk = await keytar.getPassword(PAYMONGO_SERVICE, "secretKey");
@@ -3657,6 +3356,126 @@ ipcMain.handle("paymongo:clearKeys", async () => {
   }
 });
 
+// ── Xendit key persistence (keytar-backed) ──────────────────────────────────
+const XENDIT_SERVICE = "StudioPhotunaXendit";
+
+ipcMain.handle("xendit:saveKeys", async (_e, { apiKey } = {}) => {
+  try {
+    if (!apiKey) return { ok: false, error: "API key is required" };
+    if (!apiKey.startsWith("xnd_")) {
+      return { ok: false, error: "Invalid Xendit key format" };
+    }
+    await keytar.setPassword(XENDIT_SERVICE, "apiKey", apiKey);
+    const userId = getUserIdFromStore();
+    const testMode = apiKey.startsWith("xnd_development");
+    if (userId) {
+      store.set(`users.${userId}.xendit`, {
+        apiKeyPreview: apiKey.slice(0, 16) + "...",
+        validated: true,
+        testMode,
+        validatedAt: new Date().toISOString(),
+      });
+    }
+    return { ok: true, testMode };
+  } catch (err) {
+    return { ok: false, error: err.message || "Failed to save Xendit key" };
+  }
+});
+
+ipcMain.handle("xendit:getStatus", async () => {
+  try {
+    const userId = getUserIdFromStore();
+    const cfg = userId ? (store.get(`users.${userId}.xendit`) || {}) : {};
+    const ak = await keytar.getPassword(XENDIT_SERVICE, "apiKey");
+    return {
+      ok: true,
+      configured: !!ak && !!cfg.validated,
+      apiKeyPreview: cfg.apiKeyPreview ?? null,
+      testMode: cfg.testMode ?? false,
+    };
+  } catch {
+    return { ok: true, configured: false };
+  }
+});
+
+ipcMain.handle("xendit:clearKeys", async () => {
+  try {
+    await keytar.deletePassword(XENDIT_SERVICE, "apiKey");
+    const userId = getUserIdFromStore();
+    if (userId) store.set(`users.${userId}.xendit`, {});
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
+// ── PayPal credential persistence (keytar-backed) ───────────────────────────
+const PAYPAL_SERVICE = "StudioPhotunaPayPal";
+
+ipcMain.handle("paypal:saveKeys", async (_e, { clientId, clientSecret, sandboxMode } = {}) => {
+  try {
+    if (!clientId || !clientSecret) return { ok: false, error: "Both Client ID and Secret are required" };
+    // Validate credentials by fetching an access token before storing anything.
+    const ppBase = sandboxMode ? "https://api-m.sandbox.paypal.com" : "https://api-m.paypal.com";
+    const authRes = await fetch(`${ppBase}/v1/oauth2/token`, {
+      method: "POST",
+      headers: {
+        Authorization: "Basic " + Buffer.from(`${clientId}:${clientSecret}`).toString("base64"),
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: "grant_type=client_credentials",
+    });
+    if (!authRes.ok) {
+      const body = await authRes.json().catch(() => null);
+      const hint = sandboxMode
+        ? "Make sure you are using Sandbox App credentials from developer.paypal.com."
+        : "Make sure you are using Live App credentials and that the Sandbox checkbox is unchecked.";
+      return { ok: false, error: `PayPal authentication failed — ${hint}` };
+    }
+    await keytar.setPassword(PAYPAL_SERVICE, "clientSecret", clientSecret);
+    const userId = getUserIdFromStore();
+    if (userId) {
+      store.set(`users.${userId}.paypal`, {
+        clientIdPreview: clientId.slice(0, 14) + "...",
+        clientId,
+        validated: true,
+        sandboxMode: !!sandboxMode,
+        validatedAt: new Date().toISOString(),
+      });
+    }
+    return { ok: true, sandboxMode: !!sandboxMode };
+  } catch (err) {
+    return { ok: false, error: err.message || "Failed to save PayPal credentials" };
+  }
+});
+
+ipcMain.handle("paypal:getStatus", async () => {
+  try {
+    const userId = getUserIdFromStore();
+    const cfg = userId ? (store.get(`users.${userId}.paypal`) || {}) : {};
+    const cs = await keytar.getPassword(PAYPAL_SERVICE, "clientSecret");
+    return {
+      ok: true,
+      configured: !!cs && !!cfg.validated,
+      clientIdPreview: cfg.clientIdPreview ?? null,
+      sandboxMode: cfg.sandboxMode ?? false,
+    };
+  } catch {
+    return { ok: true, configured: false };
+  }
+});
+
+ipcMain.handle("paypal:clearKeys", async () => {
+  try {
+    await keytar.deletePassword(PAYPAL_SERVICE, "clientSecret");
+    const userId = getUserIdFromStore();
+    if (userId) store.set(`users.${userId}.paypal`, {});
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
 ipcMain.handle("payment:start-qr", async (_e, { amount, currency = "PHP", provider, eventId } = {}) => {
   try {
     const svc = await _getPayMongoService();
@@ -3687,11 +3506,41 @@ ipcMain.handle("payment:start-qr", async (_e, { amount, currency = "PHP", provid
   }
 });
 
-ipcMain.handle("payment:start-card", async (_e, { amount, currency = "PHP" } = {}) => {
+ipcMain.handle("payment:start-card", async (_e, { amount, currency = "PHP", eventId } = {}) => {
   try {
-    const svc = await _getPayMongoService();
-    if (!svc) return { ok: false, configured: false, error: "PayMongo not configured" };
+    const activeGateway = _getActiveGateway();
 
+    if (activeGateway === "xendit") {
+      const ak = await keytar.getPassword(XENDIT_SERVICE, "apiKey");
+      if (!ak) return { ok: false, configured: false, error: "Xendit not configured" };
+      const xenditAmount = Number(amount);
+      if (!xenditAmount || xenditAmount <= 0) {
+        return { ok: false, configured: true, error: "Session price must be greater than zero. Set a price in Controls → Business → Pricing." };
+      }
+      const svc = new XenditService(ak);
+      const invoice = await svc.createInvoice(xenditAmount, currency);
+      const qrDataUrl = await generateQrDataUrl(invoice.invoiceUrl);
+      _genericPollManager.start({
+        sessionId: invoice.id,
+        poll: async () => {
+          const inv = await svc.getInvoice(invoice.id);
+          if (inv.status === "PAID") return { confirmed: true, paymentId: invoice.id };
+          if (inv.status === "EXPIRED") return { failed: true, reason: "Invoice expired" };
+          return {};
+        },
+        onConfirmed: (data) => {
+          if (mainWindow) mainWindow.webContents.send("payment:confirmed", { ...data, provider: "card", gateway: "xendit", eventId });
+        },
+        onFailed: (data) => {
+          if (mainWindow) mainWindow.webContents.send("payment:failed", { ...data, provider: "card", eventId });
+        },
+      });
+      return { ok: true, configured: true, sessionId: invoice.id, qrDataUrl, checkoutUrl: invoice.invoiceUrl };
+    }
+
+    // PayMongo fallback (card via payment intent — operator-confirmed at terminal)
+    const svc = await _getPayMongoService();
+    if (!svc) return { ok: false, configured: false, error: "No card payment gateway configured" };
     const intent = await svc.createPaymentIntent(amount, currency);
     return { ok: true, configured: true, intentId: intent.id, clientKey: intent.clientKey };
   } catch (err) {
@@ -3700,8 +3549,161 @@ ipcMain.handle("payment:start-card", async (_e, { amount, currency = "PHP" } = {
   }
 });
 
-ipcMain.handle("paymongo:cancelPayment", async (_e, { sourceId } = {}) => {
+ipcMain.handle("payment:start-paypal", async (_e, { amount, currency = "PHP", eventId } = {}) => {
+  try {
+    const userId = getUserIdFromStore();
+    const cfg = userId ? (store.get(`users.${userId}.paypal`) || {}) : {};
+    const clientSecret = await keytar.getPassword(PAYPAL_SERVICE, "clientSecret");
+    const clientId = cfg.clientId;
+    if (!clientId || !clientSecret) return { ok: false, configured: false, error: "PayPal not configured" };
+    const paypalAmount = Number(amount);
+    if (!paypalAmount || paypalAmount <= 0) {
+      return { ok: false, configured: true, error: "Session price must be greater than zero. Set a price in Controls → Business → Pricing." };
+    }
+    const svc = new PayPalService(clientId, clientSecret, cfg.sandboxMode ?? false);
+    const order = await svc.createOrder(paypalAmount, currency);
+    if (!order.approvalUrl) return { ok: false, error: "PayPal did not return an approval URL" };
+    const qrDataUrl = await generateQrDataUrl(order.approvalUrl);
+    _genericPollManager.start({
+      sessionId: order.id,
+      poll: async () => {
+        const o = await svc.getOrder(order.id);
+        if (o.status === "COMPLETED") return { confirmed: true, paymentId: order.id };
+        if (o.status === "APPROVED") {
+          try { await svc.captureOrder(order.id); } catch (_) {}
+          return { confirmed: true, paymentId: order.id };
+        }
+        if (o.status === "VOIDED" || o.status === "CANCELLED") {
+          return { failed: true, reason: "Order cancelled" };
+        }
+        return {};
+      },
+      onConfirmed: (data) => {
+        if (mainWindow) mainWindow.webContents.send("payment:confirmed", { ...data, provider: "paypal", eventId });
+      },
+      onFailed: (data) => {
+        if (mainWindow) mainWindow.webContents.send("payment:failed", { ...data, provider: "paypal", eventId });
+      },
+    });
+    return { ok: true, configured: true, orderId: order.id, qrDataUrl, approvalUrl: order.approvalUrl };
+  } catch (err) {
+    console.error("[payment:start-paypal] error:", err);
+    const isAuthErr = /authentication|unauthorized|401/i.test(err.message || "");
+    const msg = isAuthErr
+      ? "PayPal authentication failed. Go to Account → Business → PayPal, disconnect, and re-enter your credentials making sure the Sandbox checkbox matches your app type."
+      : (err.message || "PayPal payment error");
+    return { ok: false, configured: true, error: msg };
+  }
+});
+
+// Unified gateway payment — see safeHandle("payment:start-gateway") in app.whenReady()
+const _startGatewayHandler = async (_e, { amount, currency = "PHP", eventId } = {}) => {
+  try {
+    const activeGateway = _getActiveGateway();
+    if (!activeGateway) return { ok: false, configured: false, error: "No payment gateway selected" };
+
+    if (activeGateway === "paymongo") {
+      const svc = await _getPayMongoService();
+      if (!svc) return { ok: false, configured: false, error: "PayMongo not configured" };
+      const amountPhp = Number(amount);
+      if (!amountPhp || amountPhp <= 0) {
+        return { ok: false, configured: true, error: "Session price must be greater than zero. Set a price in Controls → Business → Pricing." };
+      }
+      const link = await svc.createPaymentLink(amountPhp, currency);
+      if (!link.checkoutUrl) return { ok: false, configured: true, error: "PayMongo did not return a checkout URL" };
+      const qrDataUrl = await generateQrDataUrl(link.checkoutUrl);
+      _genericPollManager.start({
+        sessionId: link.id,
+        poll: async () => {
+          const l = await svc.getPaymentLink(link.id);
+          if (l.hasPaid) return { confirmed: true, paymentId: l.paymentId ?? link.id };
+          if (l.status === "archived") return { failed: true, reason: "Payment link expired" };
+          return {};
+        },
+        onConfirmed: (data) => {
+          if (mainWindow) mainWindow.webContents.send("payment:confirmed", { ...data, provider: "paymongo", gateway: "paymongo", eventId });
+        },
+        onFailed: (data) => {
+          if (mainWindow) mainWindow.webContents.send("payment:failed", { ...data, provider: "paymongo", eventId });
+        },
+      });
+      return { ok: true, configured: true, sessionId: link.id, qrDataUrl, checkoutUrl: link.checkoutUrl };
+    }
+
+    if (activeGateway === "xendit") {
+      const ak = await keytar.getPassword(XENDIT_SERVICE, "apiKey");
+      if (!ak) return { ok: false, configured: false, error: "Xendit not configured" };
+      const xenditAmount = Number(amount);
+      if (!xenditAmount || xenditAmount <= 0) {
+        return { ok: false, configured: true, error: "Session price must be greater than zero. Set a price in Controls → Business → Pricing." };
+      }
+      const svc = new XenditService(ak);
+      const invoice = await svc.createInvoice(xenditAmount, currency);
+      const qrDataUrl = await generateQrDataUrl(invoice.invoiceUrl);
+      _genericPollManager.start({
+        sessionId: invoice.id,
+        poll: async () => {
+          const inv = await svc.getInvoice(invoice.id);
+          if (inv.status === "PAID") return { confirmed: true, paymentId: invoice.id };
+          if (inv.status === "EXPIRED") return { failed: true, reason: "Invoice expired" };
+          return {};
+        },
+        onConfirmed: (data) => {
+          if (mainWindow) mainWindow.webContents.send("payment:confirmed", { ...data, provider: "xendit", gateway: "xendit", eventId });
+        },
+        onFailed: (data) => {
+          if (mainWindow) mainWindow.webContents.send("payment:failed", { ...data, provider: "xendit", eventId });
+        },
+      });
+      return { ok: true, configured: true, sessionId: invoice.id, qrDataUrl, checkoutUrl: invoice.invoiceUrl };
+    }
+
+    if (activeGateway === "paypal") {
+      const userId = getUserIdFromStore();
+      const cfg = userId ? (store.get(`users.${userId}.paypal`) || {}) : {};
+      const clientSecret = await keytar.getPassword(PAYPAL_SERVICE, "clientSecret");
+      const clientId = cfg.clientId;
+      if (!clientId || !clientSecret) return { ok: false, configured: false, error: "PayPal not configured" };
+      const paypalAmount = Number(amount);
+      if (!paypalAmount || paypalAmount <= 0) {
+        return { ok: false, configured: true, error: "Session price must be greater than zero. Set a price in Controls → Business → Pricing." };
+      }
+      const svc = new PayPalService(clientId, clientSecret, cfg.sandboxMode ?? false);
+      const order = await svc.createOrder(paypalAmount, currency);
+      if (!order.approvalUrl) return { ok: false, configured: true, error: "PayPal did not return an approval URL" };
+      const qrDataUrl = await generateQrDataUrl(order.approvalUrl);
+      _genericPollManager.start({
+        sessionId: order.id,
+        poll: async () => {
+          const o = await svc.getOrder(order.id);
+          if (o.status === "COMPLETED") return { confirmed: true, paymentId: order.id };
+          if (o.status === "APPROVED") {
+            try { await svc.captureOrder(order.id); } catch (_) {}
+            return { confirmed: true, paymentId: order.id };
+          }
+          if (o.status === "VOIDED" || o.status === "CANCELLED") return { failed: true, reason: "Order cancelled" };
+          return {};
+        },
+        onConfirmed: (data) => {
+          if (mainWindow) mainWindow.webContents.send("payment:confirmed", { ...data, provider: "paypal", gateway: "paypal", eventId });
+        },
+        onFailed: (data) => {
+          if (mainWindow) mainWindow.webContents.send("payment:failed", { ...data, provider: "paypal", eventId });
+        },
+      });
+      return { ok: true, configured: true, sessionId: order.id, qrDataUrl, approvalUrl: order.approvalUrl };
+    }
+
+    return { ok: false, configured: false, error: `Unknown gateway: ${activeGateway}` };
+  } catch (err) {
+    console.error("[payment:start-gateway] error:", err);
+    return { ok: false, configured: true, error: err.message };
+  }
+};
+
+ipcMain.handle("paymongo:cancelPayment", async (_e, { sourceId, sessionId } = {}) => {
   if (sourceId) _pollManager.cancel(sourceId);
+  if (sessionId) _genericPollManager.cancel(sessionId);
   return { ok: true };
 });
 
@@ -3730,6 +3732,38 @@ ipcMain.handle("cash:detectHardware", async () => {
     return { ok: true, detected: found.length > 0, devices: found };
   } catch (err) {
     // WMI unavailable or timed out — treat as not detected, not an error
+    return { ok: true, detected: false, devices: [], error: err.message };
+  }
+});
+
+// ── Card terminal detection ─────────────────────────────────────────────────
+// Known card reader / POS terminal device-name substrings (case-insensitive).
+// Covers Ingenico, Verifone, PAX, ID TECH, MagTek, Stripe Terminal readers.
+const CARD_TERMINAL_PATTERNS = [
+  "ingenico", "ict2", "ict3", "ipp3", "iwl", "desk/",
+  "verifone", "vx520", "vx680", "v400", "p400", "mx925",
+  "pax ", "a920", "a80 ", "a60 ", "s300", "sp20",
+  "id tech", "idtech", "augusta", "minismart",
+  "magtek", "udynamo", "edynamo", "bdynamo",
+  "bbpos", "wisepos", "chipper", "rp457", "rp750",
+  "usb card reader", "usb swipe", "msr ", "emv reader",
+  "card reader", "payment terminal", "pinpad",
+];
+
+ipcMain.handle("card:detectTerminal", async () => {
+  try {
+    const { execSync } = require("child_process");
+    // Query all PnP devices (USB + serial) for card terminal signatures
+    const raw = execSync(
+      `powershell -NoProfile -NonInteractive -Command "Get-WmiObject Win32_PnPEntity | Select-Object -ExpandProperty Name"`,
+      { timeout: 7000, encoding: "utf8", windowsHide: true }
+    ).trim();
+    const lines = raw.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    const found = lines.filter((l) =>
+      CARD_TERMINAL_PATTERNS.some((p) => l.toLowerCase().includes(p))
+    );
+    return { ok: true, detected: found.length > 0, devices: found };
+  } catch (err) {
     return { ok: true, detected: false, devices: [], error: err.message };
   }
 });
@@ -3846,13 +3880,11 @@ app.whenReady().then(async () => {
     }
   });
 
+  safeHandle("payment:start-gateway", _startGatewayHandler);
+
   safeHandle("payment:finalize-cash", async (_e, { amount, currency }) => {
     console.log(`[Cash] Finalizing PHP ${amount} ${currency}`);
     return { ok: true, method: "cash", amount, currency };
-  });
-
-  safeHandle("payment:start-paypal", async (_e, { amount, currency }) => {
-    return { ok: false, configured: false, method: "paypal", amount, currency };
   });
 
   safeHandle("payment:charge-additional", async (_e, { amount, method }) => {

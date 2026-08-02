@@ -14,6 +14,7 @@ import FrameFilterScreen from "../PhotoBooth/FrameFilterScreen";
 import PrintPreviewScreen from "../PhotoBooth/PrintPreviewScreen";
 import ThankYouScreen from "../PhotoBooth/ThankYouScreen";
 import { useLicense } from "../context/LicenseContext";
+import { DEFAULT_TEMPLATES } from "../data/defaultTemplates";
 
 /** Local defaults matching AdminDashboard */
 const DEFAULT_SCREEN_TIMERS = {
@@ -256,19 +257,36 @@ export default function PhotoBooth({ frames = [], onShortcut, initialEvent = nul
       const id = typeof tplOrId === "string" ? tplOrId : tplOrId?.id;
       if (!id) return null;
 
+      // 1) Look up in the user's template library
       const all = await window.api.getTemplates();
       const found = all.find((t) => String(t.id) === String(id));
-      if (!found) return null;
+      const slots = Array.isArray(found?.previewMeta?.slots) && found.previewMeta.slots.length > 0
+        ? found.previewMeta.slots
+        : null;
 
-      return {
-        ...found,
-        previewMeta: {
-          ...found.previewMeta,
-          slots: Array.isArray(found.previewMeta?.slots)
-            ? found.previewMeta.slots
-            : [],
-        },
-      };
+      if (found && slots) {
+        return { ...found, previewMeta: { ...found.previewMeta, slots } };
+      }
+
+      // 2) Fall back to the DEFAULT_TEMPLATES bundle (covers default-* IDs)
+      const defaultTpl = DEFAULT_TEMPLATES.find((t) => String(t.id) === String(id));
+      if (defaultTpl) return defaultTpl;
+
+      // 3) Fall back to whatever previewMeta the caller already has on the object
+      if (found) {
+        return { ...found, previewMeta: { ...found.previewMeta, slots: slots ?? [] } };
+      }
+
+      // 4) Last resort: caller passed a full template object — use it directly
+      const passedObj = typeof tplOrId === "object" ? tplOrId : null;
+      if (passedObj) {
+        const passedSlots = Array.isArray(passedObj.previewMeta?.slots)
+          ? passedObj.previewMeta.slots
+          : Array.isArray(passedObj.slots) ? passedObj.slots : [];
+        return { ...passedObj, previewMeta: { ...passedObj.previewMeta, slots: passedSlots } };
+      }
+
+      return null;
     } catch (err) {
       console.error("loadFullTemplate failed", err);
       return null;
@@ -468,7 +486,10 @@ export default function PhotoBooth({ frames = [], onShortcut, initialEvent = nul
   const effective = deriveSettings(selectedEvent);
   const paymentTimer = effective.timers.payment;
   const photoCountdown = effective.countdown;         // replaces hard-coded 3
-  const photoShots = effective.numberOfShots;         // replaces hard-coded 6
+  const photoShots = Math.max(                        // ensure enough shots for template slots
+    effective.numberOfShots,
+    selectedTemplate?.previewMeta?.slots?.length ?? 0
+  );
   const selectTimer = effective.timers.photoselect;   // replaces 40
   const filterTimer = effective.timers.framefilter;   // replaces 45
   const printingTimer = effective.timers.printing;    // replaces 30

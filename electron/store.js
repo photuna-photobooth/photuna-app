@@ -15,6 +15,14 @@ try {
 
 /* ---------------- Schema ---------------- */
 const schema = {
+  users: {
+    type: "object",
+    additionalProperties: {
+      type: "object",
+      additionalProperties: true
+    },
+    default: {}
+  },
   currentEventId: {
     anyOf: [{ type: 'string' }, { type: 'null' }],
     default: null
@@ -55,7 +63,15 @@ const schema = {
 let store = null;
 if (Store) {
   try {
-    store = new Store({ schema });
+    store = new Store({
+      schema,
+      // Strip UTF-8 BOM before parsing — Windows tools sometimes add it,
+      // which causes JSON.parse to throw and silently breaks all reads/writes.
+      deserialize: (text) => {
+        const stripped = text.charCodeAt(0) === 0xFEFF ? text.slice(1) : text;
+        return JSON.parse(stripped);
+      }
+    });
     console.log("electron-store initialized at:", store.path);
   } catch (err) {
     console.error("Failed to instantiate electron-store:", err);

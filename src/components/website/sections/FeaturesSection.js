@@ -28,7 +28,7 @@ const features = [
   {
     title: "Payment Processing",
     description:
-      "Integrated Stripe payments for easy transactions. Accept cards, track revenue in real-time.",
+      "Integrated PayMongo payments for easy transactions. Accept cards, GCash, Maya, and more.",
     icon: "💳",
   },
   {

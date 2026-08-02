@@ -53,12 +53,13 @@ function normalizeLicense(raw) {
 async function fetchLicenseViaIpc(userId) {
   try {
     const data = await window.electron.invoke('license:read', userId);
+    // null = IPC/network failure → caller falls back to cache (correct offline behavior)
+    // { _synthetic: true } = Supabase query succeeded, no row found → treat as confirmed free
     if (!data?.plan) return null;
 
     const expiresMs = data.expires_at ? new Date(data.expires_at).getTime() : null;
     const isExpired = expiresMs !== null && expiresMs < Date.now() && data.plan !== 'free';
 
-    // Apply safe defaults for optional columns that may not exist in older Supabase schemas.
     const isPaid = data.plan !== 'free' && data.plan !== 'trial';
     return {
       plan: data.plan,
@@ -66,10 +67,13 @@ async function fetchLicenseViaIpc(userId) {
       expiresAt: data.expires_at ?? null,
       trialRedeemed: Boolean(data.trial_redeemed),
       trialExpired: isExpired && data.plan === 'trial',
-      entitlements: isExpired ? {
+      // Propagate the synthetic flag so callers can tell "confirmed free, no row"
+      // from "row exists with plan=free" — important for cache eviction logic.
+      _synthetic: Boolean(data._synthetic),
+      entitlements: (isExpired || data._synthetic) ? {
         watermark: true,
-        maxEvents: 0,
-        templates: 1,
+        maxEvents: 1,
+        templates: 3,
         prioritySupport: false,
         galleryTier: 'free',
         galleryAddon: false,
@@ -122,7 +126,7 @@ export function LicenseProvider({ children }) {
   const [usable, setUsable] = useState({ allow: false, reason: 'init' });
   const [loading, setLoading] = useState(true);
 
-  const refreshLicense = useCallback(async ({ hard = false } = {}) => {
+  const refreshLicense = useCallback(async () => {
     if (authLoading) return null;
 
     if (!user?.id) {
@@ -139,6 +143,9 @@ export function LicenseProvider({ children }) {
 
     setLoading(true);
 
+    // Safety valve: never stay stuck on the loading screen for more than 8 seconds.
+    const safetyTimer = setTimeout(() => setLoading(false), 8000);
+
     // Restore the local cache immediately so the UI shows the correct plan
     // while network requests are in flight — prevents the "Free" flash on Ctrl+R.
     const earlyCache = await readLicenseCache(user.id);
@@ -150,7 +157,6 @@ export function LicenseProvider({ children }) {
 
     try {
       // Device attachment
-      if (hard) localStorage.removeItem(`device.attached.${user.id}`);
       const alreadyAttached = localStorage.getItem(`device.attached.${user.id}`) === '1';
       const fpRes = await (window.system?.getFingerprint?.() ?? Promise.resolve(null)).catch(() => null);
       if (!alreadyAttached && fpRes?.ok && fpRes.fingerprint) {
@@ -162,68 +168,34 @@ export function LicenseProvider({ children }) {
         }
       }
 
-      // Step 1 — on hard refresh (e.g. after Stripe checkout), pull live state from Stripe
-      // into Supabase so the subsequent reads see the updated plan.
-      // 30 s timeout: server Supabase calls are now bounded at 9 s, but network + retries
-      // can add up. Never let this hang the whole refresh indefinitely.
-      let billingResult = null;
-      if (hard) {
-        try {
-          billingResult = await Promise.race([
-            api.billingSync(),
-            new Promise((_, reject) =>
-              setTimeout(() => reject(new Error('billing_sync_timeout')), 30000)
-            ),
-          ]);
-          if (billingResult?.synced && billingResult?.synced_supabase === false) {
-            console.error('[license] billingSync: Stripe confirmed but Supabase write FAILED:',
-              billingResult.supabase_error,
-              '— Check your licensing server console for details.');
-          }
-        } catch (e) {
-          console.warn('[license] billingSync failed or timed out:', e?.message);
-        }
-      }
-
-      // Step 2 — read license via IPC (supabaseAdmin in main, no RLS/auth issues)
+      // Step 1 — read license via IPC (supabaseAdmin in main, no RLS/auth issues).
+      // Supabase is the single authoritative source for plan data.
       const sbLicense = await fetchLicenseViaIpc(user.id);
 
-      // Step 3 — try the API for the signed JWT (best-effort; failure is not fatal)
+      // Step 2 — try the API for the signed JWT (best-effort; failure is not fatal)
       let apiRes = null;
       try {
-        apiRes = hard ? await api.licenseRefresh() : await api.licenseStatus();
+        apiRes = await api.licenseStatus();
       } catch (e) {
         console.warn('[license] API unavailable, using Supabase data:', e?.message);
       }
 
-      // Pick the highest-ranked plan across all three sources.
-      // billingSync is authoritative for Stripe-confirmed plans.
-      const apiPlanRank     = PLAN_RANK[apiRes?.license?.plan] ?? -1;
-      const sbPlanRank      = PLAN_RANK[sbLicense?.plan] ?? -1;
-      const billingPlanRank = PLAN_RANK[billingResult?.license?.plan] ?? -1;
-      let licenseData = apiPlanRank >= sbPlanRank ? (apiRes?.license ?? sbLicense) : sbLicense;
-      if (billingResult?.synced && billingPlanRank > (PLAN_RANK[licenseData?.plan] ?? -1)) {
-        licenseData = billingResult.license;
-      }
+      // Supabase is authoritative. API result provides the signed JWT only.
+      let licenseData = sbLicense ?? apiRes?.license ?? null;
 
-      // If ALL live sources returned nothing, try the local cache (e.g. API + Supabase
-      // both unreachable). Do NOT restore when DB explicitly returned 'free' / 'expired'
-      // — that means the admin has set the account to expired and the cache would lie.
+      // If ALL live sources returned nothing, fall back to the local cache.
       const livePlanRank = PLAN_RANK[licenseData?.plan] ?? -1;
       if (livePlanRank < 0) {
         const cached = await readLicenseCache(user.id);
-        const cachePlanRank = PLAN_RANK[cached?.licenseData?.plan] ?? -1;
-        if (cachePlanRank > livePlanRank) {
-          console.info('[license] live data is free/absent — restoring from local cache');
-          licenseData = cached.licenseData;
-          setLicense(normalizeLicense(licenseData));
+        if (cached?.licenseData) {
+          console.info('[license] live data unavailable — restoring from local cache');
+          setLicense(normalizeLicense(cached.licenseData));
           setSignedLicense(cached.signedLicense || null);
           setPublicKey(cached.publicKey || null);
-          return { license: licenseData };
+          return { license: cached.licenseData };
         }
-      } else if (livePlanRank === PLAN_RANK.free) {
-        // DB explicitly says free/expired — evict any stale paid-plan cache so
-        // the old plan never resurfaces when the app is offline later.
+      } else if (livePlanRank >= 0 && livePlanRank <= PLAN_RANK.free) {
+        // Live source confirmed free — evict any stale paid cache.
         clearLicenseCache(user.id);
       }
 
@@ -232,29 +204,24 @@ export function LicenseProvider({ children }) {
         return null;
       }
 
-      const useBillingJwt = billingResult?.synced && licenseData === billingResult.license;
-      const resolvedSignedLicense = useBillingJwt
-        ? (billingResult.signedLicense || null)
-        : (apiRes?.signedLicense || null);
-      const resolvedPublicKey = useBillingJwt
-        ? (billingResult.publicKey || null)
-        : (apiRes?.publicKey || null);
+      const resolvedSignedLicense = apiRes?.signedLicense || null;
+      const resolvedPublicKey = apiRes?.publicKey || null;
 
       setLicense(normalizeLicense(licenseData));
       setSignedLicense(resolvedSignedLicense);
       setPublicKey(resolvedPublicKey);
 
-      // Persist to local cache whenever we have a paid plan confirmed by live sources.
-      if (livePlanRank > PLAN_RANK.free) {
+      if (sbLicense || apiRes) {
         writeLicenseCache(user.id, licenseData, resolvedSignedLicense, resolvedPublicKey);
       }
 
-      return billingResult?.synced ? billingResult : (apiRes ?? { license: licenseData });
+      return apiRes ?? { license: licenseData };
     } catch (err) {
       console.warn('license refresh failed', err);
       setUsable({ allow: false, reason: err?.message || 'license_status_failed' });
       return null;
     } finally {
+      clearTimeout(safetyTimer);
       setLoading(false);
     }
   }, [authLoading, user?.id]);
@@ -313,7 +280,10 @@ export function LicenseProvider({ children }) {
 
   const licenseActive = !isLicenseExpired && (
     (['active', 'trialing'].includes(license?.state) && license?.plan !== 'free')
-    || ['monthly', 'yearly', 'trial', 'pro_monthly', 'pro_yearly', 'pro'].includes(profile?.subscription_plan)
+    // Only use profile.subscription_plan as fallback when Supabase returned no license at all
+    // (i.e. the licenses table row doesn't exist yet). When a license IS present, Supabase is
+    // authoritative and a stale profiles row must not promote a free license to active.
+    || (!license && ['monthly', 'yearly', 'trial', 'pro_monthly', 'pro_yearly', 'pro'].includes(profile?.subscription_plan))
   );
 
   const gating = useMemo(() => {

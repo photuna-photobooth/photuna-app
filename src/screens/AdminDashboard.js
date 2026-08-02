@@ -3,7 +3,8 @@
 // Look for // UPDATED: comments for changes.
 
 import React, { useEffect, useRef, useState, useMemo, useCallback } from "react";
-import gcashQrImage from "../gcash-qr.png";
+import QRCodeSVG from "react-qr-code";
+import QRCodeLib from "qrcode";
 import { DEFAULT_TEMPLATES, DEFAULT_FRAMES } from "../data/defaultTemplates";
 import { supabase } from "../services/supabase.js";
 import { useNavigate } from "react-router-dom";
@@ -358,6 +359,10 @@ export default function AdminDashboard({ onLogout, onStartPhotobooth, jumpToUpda
   const [profileSaving, setProfileSaving] = useState(false);
   const [passwordSaving, setPasswordSaving] = useState(false);
   const [prefsSaving, setPrefsSaving] = useState(false);
+  const [trialLoading, setTrialLoading] = useState(false);
+  const [galleryQrModal, setGalleryQrModal] = useState(null); // { ev, loading, sessions, error }
+  const [sampleFormatFilter, setSampleFormatFilter] = useState("all");
+  const [sampleFrameFilter, setSampleFrameFilter] = useState("all");
   const [billingCycle, setBillingCycle] = useState("yearly"); // "monthly" | "yearly"
   // Legacy alias so shared UI references still compile
   const accountSaving = profileSaving || passwordSaving || prefsSaving;
@@ -369,16 +374,11 @@ export default function AdminDashboard({ onLogout, onStartPhotobooth, jumpToUpda
   const [paymongoSaving, setPaymongoSaving] = useState(false);
   const [paymongoKeyInputs, setPaymongoKeyInputs] = useState({ publicKey: "", secretKey: "" });
   // Multi-provider payment gateway state
-  const [activeProvider, setActiveProvider] = useState(null); // null | "paymongo" | "stripe" | "xendit" | "paypal"
+  const [activeProvider, setActiveProvider] = useState(null); // null | "paymongo" | "xendit" | "paypal"
+  // stripeProviders kept for settings-persistence compat (no UI — Stripe removed)
   const [stripeProviders, setStripeProviders] = useState({ ...DEFAULT_STRIPE_PROVIDERS });
   const [xenditProviders, setXenditProviders] = useState({ ...DEFAULT_XENDIT_PROVIDERS });
   const [paypalProviders, setPaypalProviders] = useState({ ...DEFAULT_PAYPAL_PROVIDERS });
-  // Stripe connection
-  const [stripeConfigured, setStripeConfigured] = useState(false);
-  const [stripeTestMode, setStripeTestMode] = useState(false);
-  const [stripePublicKey, setStripePublicKey] = useState("");
-  const [stripeSaving, setStripeSaving] = useState(false);
-  const [stripeKeyInputs, setStripeKeyInputs] = useState({ publicKey: "", secretKey: "" });
   // Xendit connection
   const [xenditConfigured, setXenditConfigured] = useState(false);
   const [xenditTestMode, setXenditTestMode] = useState(false);
@@ -1467,6 +1467,10 @@ This cannot be undone.`
       showToast(`"${tpl.name}" is already in your library`);
       return;
     }
+    if (Number.isFinite(templateLimit) && templateLimit > 0 && templates.length >= templateLimit) {
+      showToast(`Template limit reached (${templateLimit}). Upgrade your plan for more templates.`);
+      return;
+    }
     const nextTemplates = [tpl, ...templates];
     setTemplates(nextTemplates);
     await persistAll({ nextTemplates });
@@ -1477,6 +1481,10 @@ This cannot be undone.`
     if (!currentEvent) return;
     let nextTemplates = templates;
     if (!templates.some(t => t.id === tpl.id)) {
+      if (Number.isFinite(templateLimit) && templateLimit > 0 && templates.length >= templateLimit) {
+        showToast(`Template limit reached (${templateLimit}). Upgrade your plan for more templates.`);
+        return;
+      }
       nextTemplates = [tpl, ...templates];
       setTemplates(nextTemplates);
       await persistAll({ nextTemplates });
@@ -1492,7 +1500,13 @@ This cannot be undone.`
     setEvents(updatedEvents);
     setCurrentEvent(evCopy);
     native?.setEvents?.(updatedEvents, ctx).catch(() => {});
-    showToast(`"${tpl.name}" applied to ${currentEvent.name}`);
+    const templateSlotCount = tpl.previewMeta?.slots?.length ?? 0;
+    if (templateSlotCount > numberOfShots) {
+      setNumberOfShots(templateSlotCount);
+      showToast(`"${tpl.name}" applied — shots per session updated to ${templateSlotCount} to match template slots`);
+    } else {
+      showToast(`"${tpl.name}" applied to ${currentEvent.name}`);
+    }
   };
 
   const handleAddSampleFrame = async (frame) => {
@@ -1549,6 +1563,14 @@ This cannot be undone.`
     const nextEvents = events.map((e) => (e.id === evCopy.id ? evCopy : e));
     await persistAll({ nextEvents });
 
+    if (!alreadyApplied) {
+      const templateSlotCount = tpl.previewMeta?.slots?.length ?? 0;
+      if (templateSlotCount > numberOfShots) {
+        setNumberOfShots(templateSlotCount);
+        showToast(`Applied "${tpl.name}" — shots per session updated to ${templateSlotCount} to match template slots`);
+        return;
+      }
+    }
     showToast(
       alreadyApplied
         ? `Removed "${tpl.name}" from ${evCopy.name}`
@@ -2551,8 +2573,8 @@ This cannot be undone.`
     : "Free";
   const ent = license?.entitlements ?? {};
   const expiresAt = license?.expiresAt ?? 0;
-  const eventLimit = Number(gating?.maxEvents ?? ent?.maxEvents ?? 1);
-  const templateLimit = Number(gating?.templates ?? ent?.templates ?? 1);
+  const eventLimit = Number(gating?.maxEvents || ent?.maxEvents || 1);
+  const templateLimit = Number(gating?.templates || ent?.templates || 3);
   const galleryAddonEnabled = Boolean(gating?.galleryEnabled || gating?.galleryAddon || ent?.galleryEnabled || ent?.galleryAddon);
   const settingsToSave = sanitizeSettings({
     selectedCameraId,
@@ -2599,7 +2621,7 @@ This cannot be undone.`
     business: {
       activeProvider,
       paymentEnabled,
-      payment: { providers: { ...paymentProviders }, stripeProviders: { ...stripeProviders }, xenditProviders: { ...xenditProviders }, paypalProviders: { ...paypalProviders } },
+      payment: { providers: { ...paymentProviders }, stripeProviders: { ...stripeProviders }, xenditProviders: { ...xenditProviders }, paypalProviders: { ...paypalProviders }, cashMode, gcashStaticQrDataUrl },
       pricing: {
         model: pricingModel,
         pricePerSession,
@@ -2618,30 +2640,11 @@ This cannot be undone.`
     Boolean(license?.trialRedeemed) || Boolean(license?.trialExpired);
   const trialEligible = !hasPaidPlan && !alreadyRedeemedOrExpired;
   // Payment gateway availability
-  const anyProviderConfigured = paymongoConfigured || stripeConfigured || xenditConfigured || paypalConfigured;
+  const anyProviderConfigured = paymongoConfigured || xenditConfigured || paypalConfigured;
   const activeProviderIsTest =
     (activeProvider === "paymongo" && paymongoTestMode) ||
-    (activeProvider === "stripe" && stripeTestMode) ||
     (activeProvider === "xendit" && xenditTestMode) ||
     (activeProvider === "paypal" && paypalSandboxMode);
-
-  // ===== Supabase-aware billing and license adapters =====
-
-  async function fallbackCreateCheckoutSession(plan) {
-    if (typeof licensingApi.createCheckoutSession === "function") {
-      return licensingApi.createCheckoutSession(plan);
-    }
-
-    throw new Error("createCheckoutSession is not available.");
-  }
-
-  async function fallbackCustomerPortal() {
-    if (typeof licensingApi.customerPortal === "function") {
-      return licensingApi.customerPortal();
-    }
-
-    throw new Error("customerPortal is not available.");
-  }
 
   async function fallbackRedeemTrial() {
     if (typeof licensingApi.redeemTrial === "function") return licensingApi.redeemTrial();
@@ -2658,9 +2661,19 @@ This cannot be undone.`
     if (!native || !userId) return;
     const ctx = { userId };
 
-    // Init Supabase settings sync and pull cloud data into electron-store
+    // Fast path: show events immediately from the local file before any network calls.
+    // This way the Events Library is populated instantly even when pullSettings is
+    // slow or the Supabase session hasn't fully settled yet after a fresh login.
+    try {
+      const quickEvs = await native.getEvents?.(ctx);
+      if (Array.isArray(quickEvs) && quickEvs.length > 0) setEvents(quickEvs);
+    } catch { }
+
+    // Sync from Supabase — captures the return value so we can use it as a
+    // fallback below without making a second round-trip.
     initSettingsSync(userId);
-    try { await pullSettings(); } catch { /* non-fatal */ }
+    let sbData = null;
+    try { sbData = await pullSettings(); } catch { }
 
     try {
       const [
@@ -2668,7 +2681,7 @@ This cannot be undone.`
         persistedTemplates, persistedFrames, persistedTones, persistedPalettes,
         currentEventId, currentSubTab, persistedActiveMain
       ] = await Promise.all([
-        native.getEvents?.(ctx),
+        native.getEvents?.(ctx),   // re-read — pullSettings may have written new events
         native.getAppearance?.(ctx),
         native.getSettings?.(ctx),
         native.getTemplates?.(ctx),
@@ -2680,8 +2693,16 @@ This cannot be undone.`
         native.getActiveMain?.(),
       ]);
 
-      // Events
-      if (Array.isArray(persistedEvents)) setEvents(persistedEvents);
+      // Prefer the freshly-read local file; if it is still empty (first login on
+      // this machine), use the Supabase data already fetched by pullSettings.
+      let resolvedEvents = Array.isArray(persistedEvents) ? persistedEvents : [];
+      if (resolvedEvents.length === 0 && Array.isArray(sbData?.events) && sbData.events.length > 0) {
+        resolvedEvents = sbData.events;
+        native?.setEvents?.(resolvedEvents, ctx).catch(() => {});
+      }
+      // Only update if we have events, or the fast path also found nothing
+      // (avoids overwriting the fast-path state with an empty array).
+      if (resolvedEvents.length > 0) setEvents(resolvedEvents);
 
       // Appearance
       if (appearance) {
@@ -2795,8 +2816,56 @@ This cannot be undone.`
       }
 
       // Templates / Frames / Tones / Palettes
-      if (Array.isArray(persistedTemplates)) setTemplates(persistedTemplates);
-      if (Array.isArray(persistedFrames)) setFrames(persistedFrames);
+      // Start with what's in the local store
+      let resolvedTemplates = Array.isArray(persistedTemplates) ? [...persistedTemplates] : [];
+      let resolvedFrames = Array.isArray(persistedFrames) ? [...persistedFrames] : [];
+
+      // Recover any templates/frames that are referenced by events but missing from the
+      // library (can happen after Supabase overwrites before the local-wins fix was applied).
+      // Sources: (1) previewMeta snapshot stored in the event, (2) DEFAULT_TEMPLATES/FRAMES by id.
+      if (Array.isArray(persistedEvents)) {
+        const localTplIds = new Set(resolvedTemplates.map((t) => String(t.id)));
+        const localFrmIds = new Set(resolvedFrames.map((f) => String(f.id)));
+        const defaultTplById = new Map(DEFAULT_TEMPLATES.map((t) => [String(t.id), t]));
+        const defaultFrmById = new Map(DEFAULT_FRAMES.map((f) => [String(f.id), f]));
+        const recovered = [];
+        const recoveredFrames = [];
+
+        for (const ev of persistedEvents) {
+          for (const at of (ev.appliedTemplates ?? [])) {
+            if (localTplIds.has(String(at.id))) continue;
+            if (at.previewMeta) {
+              // Preferred: restore from the event's own previewMeta snapshot
+              recovered.push({ id: at.id, name: at.name, previewMeta: at.previewMeta, isDefault: String(at.id).startsWith('default-') });
+            } else if (defaultTplById.has(String(at.id))) {
+              // Fallback: restore from the built-in defaults (for default- prefixed templates)
+              recovered.push(defaultTplById.get(String(at.id)));
+            }
+            localTplIds.add(String(at.id));
+          }
+          for (const af of (ev.appliedFrames ?? [])) {
+            if (localFrmIds.has(String(af.id))) continue;
+            if (defaultFrmById.has(String(af.id))) {
+              // Frame SVG data isn't stored in events — restore from built-in defaults
+              recoveredFrames.push(defaultFrmById.get(String(af.id)));
+            }
+            localFrmIds.add(String(af.id));
+          }
+        }
+
+        if (recovered.length > 0) {
+          resolvedTemplates = [...resolvedTemplates, ...recovered];
+          // Persist the recovered templates so they survive next reload
+          native?.setTemplates?.(resolvedTemplates, ctx).catch?.(() => {});
+        }
+        if (recoveredFrames.length > 0) {
+          resolvedFrames = [...resolvedFrames, ...recoveredFrames];
+          native?.setFrames?.(resolvedFrames, ctx).catch?.(() => {});
+        }
+      }
+
+      setTemplates(resolvedTemplates);
+      setFrames(resolvedFrames);
       if (Array.isArray(persistedTones)) setTones(persistedTones);
       if (Array.isArray(persistedPalettes)) setPalettes(persistedPalettes);
 
@@ -2825,6 +2894,7 @@ This cannot be undone.`
   const canvasRef = useRef(null);
   const pointerState = useRef({ mode: null, slotId: null, start: null, orig: null, handle: null });
   const rotatingRef = useRef(null);
+  const avatarInputRef = useRef(null);
 
   const asSelectValue = (v) => (typeof v === 'string' ? v : v ?? '');
 
@@ -2942,36 +3012,31 @@ This cannot be undone.`
     setAccountPreferences((prev) => ({ ...prev, [key]: value }));
   };
 
-  const chooseBadgePhoto = async () => {
+  const chooseBadgePhoto = () => {
+    avatarInputRef.current?.click();
+  };
+
+  const handleAvatarFileChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    // Reset so the same file can be re-selected if needed
+    e.target.value = "";
+
+    setProfileSaving(true);
     try {
-      const input = document.createElement("input");
-      input.type = "file";
-      input.accept = "image/*";
-
-      input.onchange = async () => {
-        const file = input.files?.[0];
-        if (!file) return;
-
-        setProfileSaving(true);
-        try {
-          // Upload through the embedded server (service role) so storage policies
-          // and profile update both use admin credentials — no RLS surprises.
-          const result = await licensingApi.uploadAvatar(file);
-          const publicUrl = result?.avatar_url;
-          setAccountForm((prev) => ({ ...prev, badgePhoto: publicUrl }));
-          showToast?.("Badge photo updated");
-        } catch (err) {
-          console.error(err);
-          showToast?.(err?.message || "Failed to save badge photo");
-        } finally {
-          setProfileSaving(false);
-        }
-      };
-
-      input.click();
+      // Upload through the embedded server (service role) so storage policies
+      // and profile update both use admin credentials — no RLS surprises.
+      const result = await licensingApi.uploadAvatar(file);
+      const publicUrl = result?.avatar_url;
+      // Append cache-buster so the browser reloads the new image
+      const bustedUrl = publicUrl ? `${publicUrl}?t=${Date.now()}` : publicUrl;
+      setAccountForm((prev) => ({ ...prev, badgePhoto: bustedUrl }));
+      showToast?.("Badge photo updated");
     } catch (err) {
       console.error(err);
-      showToast?.("Unable to open file picker");
+      showToast?.(err?.message || "Failed to save badge photo");
+    } finally {
+      setProfileSaving(false);
     }
   };
 
@@ -2985,8 +3050,10 @@ This cannot be undone.`
         email: accountForm.email?.trim() || "",
         phone: accountForm.phone?.trim() || "",
         company: accountForm.company?.trim() || "",
-        avatar_url: accountForm.badgePhoto || "",
       };
+      // Only include avatar_url when we actually have one; sending "" would wipe
+      // any previously uploaded photo stored in the profiles row.
+      if (accountForm.badgePhoto) patch.avatar_url = accountForm.badgePhoto;
 
       // Use the embedded API server (service role) — avoids anon-client RLS issues.
       const result = await licensingApi.updateUserProfile(patch);
@@ -3268,12 +3335,20 @@ This cannot be undone.`
               </h4>
               <p className="mt-0.5 text-xs text-slate-500">{accountForm.role || "Operator"}</p>
               <p className="mt-0.5 text-xs text-slate-400">{accountForm.email || user?.email || ""}</p>
+              <input
+                ref={avatarInputRef}
+                type="file"
+                accept="image/*"
+                style={{ display: "none" }}
+                onChange={handleAvatarFileChange}
+              />
               <button
                 type="button"
                 onClick={chooseBadgePhoto}
-                className="mt-5 inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-5 py-2.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 hover:border-slate-300"
+                disabled={profileSaving}
+                className="mt-5 inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-5 py-2.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 hover:border-slate-300 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Update photo
+                {profileSaving ? "Uploading…" : "Update photo"}
               </button>
             </div>
 
@@ -3509,23 +3584,26 @@ This cannot be undone.`
                 </div>
                 <button
                   type="button"
-                  disabled={!trialEligible}
+                  disabled={!trialEligible || trialLoading}
                   onClick={async () => {
+                    setTrialLoading(true);
                     try {
                       await licensingApi.redeemTrial();
-                      await refreshLicense();
+                      await ctxRefreshLicense();
                       showToast?.("Trial started");
                     } catch (e) {
                       console.error("trial failed:", e);
                       showToast?.(`Trial failed: ${e?.message ?? "unknown error"}`);
+                    } finally {
+                      setTrialLoading(false);
                     }
                   }}
-                  className={`mt-6 w-full rounded-lg py-3 text-sm font-bold transition-all duration-200 ${trialEligible
+                  className={`mt-6 w-full rounded-lg py-3 text-sm font-bold transition-all duration-200 ${trialEligible && !trialLoading
                     ? "border border-slate-200 text-slate-800 hover:bg-slate-50 hover:-translate-y-0.5 hover:shadow-md"
                     : "border border-slate-100 text-slate-400 cursor-not-allowed bg-slate-50"
                     }`}
                 >
-                  {trialEligible ? "Start Free Trial" : "Trial unavailable"}
+                  {trialLoading ? "Starting trial…" : trialEligible ? "Start Free Trial" : "Trial unavailable"}
                 </button>
               </div>
 
@@ -3599,13 +3677,10 @@ This cannot be undone.`
                 ) : (
                   <button
                     type="button"
-                    onClick={() => {
-                      setGcashBilling(billingCycle);
-                      openGcashPayment("pro");
-                    }}
+                    onClick={() => openPayMongoPayment("subscription", billingCycle)}
                     className="mt-6 w-full rounded-lg bg-blue-600 py-3 text-sm font-bold text-white shadow-md transition-all duration-200 hover:bg-blue-500 hover:-translate-y-0.5 hover:shadow-lg active:scale-[0.98]"
                   >
-                    {`Pay via GCash — ${billingCycle === "yearly" ? "Yearly" : "Monthly"}`}
+                    {`Pay via PayMongo — ${billingCycle === "yearly" ? "Yearly" : "Monthly"}`}
                   </button>
                 )}
               </div>
@@ -3617,7 +3692,7 @@ This cannot be undone.`
           {/* Trust signals */}
           <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
             {[
-              { title: "Secure billing", desc: "Payments processed securely via GCash. We verify and activate your plan manually.", icon: "M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" },
+              { title: "Secure billing", desc: "Payments processed securely via PayMongo. Your plan activates automatically once payment is confirmed.", icon: "M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" },
               { title: "Flexible changes", desc: "Upgrade, downgrade, or cancel anytime based on booth usage and event demand.", icon: "M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" },
               { title: "Trial friendly", desc: "Start with a 14-day trial when eligible. Switch to a paid plan whenever you're ready.", icon: "M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" },
             ].map(({ title, desc, icon }) => (
@@ -3785,19 +3860,20 @@ This cannot be undone.`
                   </div>
                 </div>
               </div>
-              <button
-                type="button"
-                disabled={!hasPaidPlan || galleryPlan === "plus"}
-                onClick={() => hasPaidPlan && openGcashPayment("gallery", "plus")}
-                className={`mt-6 w-full rounded-lg py-3 text-sm font-bold shadow-md transition-all active:scale-[0.98] ${galleryPlan === "plus"
-                  ? "bg-emerald-500 text-white cursor-default"
-                  : hasPaidPlan
-                    ? "bg-blue-600 text-white hover:bg-blue-500 hover:-translate-y-0.5 hover:shadow-lg"
-                    : "bg-white/10 text-white/40 cursor-not-allowed"
-                  }`}
-              >
-                {galleryPlan === "plus" ? "Current Plan" : "Pay via GCash — Plus"}
-              </button>
+              {galleryPlan === "plus" ? (
+                <div className="mt-6 w-full rounded-lg bg-emerald-500 py-3 text-sm font-bold text-white text-center shadow-md cursor-default">
+                  Current Plan
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  disabled={!hasPaidPlan}
+                  onClick={() => hasPaidPlan && openPayMongoPayment("gallery", "plus")}
+                  className={`mt-6 w-full rounded-lg py-3 text-sm font-bold shadow-md transition-all active:scale-[0.98] ${hasPaidPlan ? "bg-blue-600 text-white hover:bg-blue-500 hover:-translate-y-0.5 hover:shadow-lg" : "bg-white/10 text-white/40 cursor-not-allowed"}`}
+                >
+                  Pay via PayMongo — Plus
+                </button>
+              )}
             </div>
 
             {/* BUSINESS tier — ₱1,700/mo */}
@@ -3854,19 +3930,20 @@ This cannot be undone.`
                   </div>
                 </div>
               </div>
-              <button
-                type="button"
-                disabled={!hasPaidPlan || galleryPlan === "business"}
-                onClick={() => hasPaidPlan && openGcashPayment("gallery", "business")}
-                className={`mt-6 w-full rounded-lg py-3 text-sm font-bold transition-all active:scale-[0.98] ${galleryPlan === "business"
-                  ? "bg-emerald-500 text-white shadow-md cursor-default"
-                  : hasPaidPlan
-                    ? "border border-slate-200 text-slate-700 hover:bg-slate-50 hover:-translate-y-0.5 hover:shadow-md"
-                    : "border border-slate-100 text-slate-400 cursor-not-allowed bg-slate-50"
-                  }`}
-              >
-                {galleryPlan === "business" ? "Current Plan" : "Pay via GCash — Business"}
-              </button>
+              {galleryPlan === "business" ? (
+                <div className="mt-6 w-full rounded-lg bg-emerald-500 py-3 text-sm font-bold text-white text-center shadow-md cursor-default">
+                  Current Plan
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  disabled={!hasPaidPlan}
+                  onClick={() => hasPaidPlan && openPayMongoPayment("gallery", "business")}
+                  className={`mt-6 w-full rounded-lg py-3 text-sm font-bold transition-all active:scale-[0.98] ${hasPaidPlan ? "bg-slate-900 text-white hover:bg-slate-700 hover:-translate-y-0.5 hover:shadow-md" : "border border-slate-100 text-slate-400 cursor-not-allowed bg-slate-50"}`}
+                >
+                  Pay via PayMongo — Business
+                </button>
+              )}
             </div>
           </div>
 
@@ -3946,15 +4023,6 @@ This cannot be undone.`
                 docsHref: "paymongo.com",
               },
               {
-                key: "stripe",
-                name: "Stripe",
-                region: "Global / International",
-                methods: ["Cards", "Apple Pay", "Google Pay", "Link", "SEPA", "iDEAL"],
-                configured: stripeConfigured,
-                testMode: stripeTestMode,
-                docsHref: "stripe.com",
-              },
-              {
                 key: "xendit",
                 name: "Xendit",
                 region: "Indonesia & Philippines",
@@ -3981,7 +4049,26 @@ This cannot be undone.`
                     <button
                       key={p.key}
                       type="button"
-                      onClick={() => setActiveProvider(isActive ? null : p.key)}
+                      onClick={() => {
+                        const newProvider = isActive ? null : p.key;
+                        setActiveProvider(newProvider);
+                        if (currentEvent) {
+                          const updatedEvent = {
+                            ...currentEvent,
+                            settings: {
+                              ...(currentEvent.settings ?? {}),
+                              business: {
+                                ...(currentEvent.settings?.business ?? {}),
+                                activeProvider: newProvider,
+                              },
+                            },
+                          };
+                          const updatedEvents = events.map((e) => (e.id === currentEvent.id ? updatedEvent : e));
+                          setEvents(updatedEvents);
+                          setCurrentEvent(updatedEvent);
+                          native?.setEvents?.(updatedEvents, ctx)?.catch?.(() => {});
+                        }
+                      }}
                       className={`text-left rounded-xl border-2 p-4 transition-all ${
                         isActive
                           ? "border-blue-500 bg-blue-50 shadow-md shadow-blue-100"
@@ -4078,60 +4165,6 @@ This cannot be undone.`
             </div>
           )}
 
-          {/* ── Stripe config card ── */}
-          {activeProvider === "stripe" && (
-            <div className={`${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_CARD} p-6`}>
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h4 className="text-sm font-bold text-slate-900">Stripe</h4>
-                  <p className="mt-0.5 text-xs text-slate-500">Get your API keys from dashboard.stripe.com → Developers → API Keys.</p>
-                </div>
-                {stripeConfigured && (
-                  <div className="flex items-center gap-1.5">
-                    <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold ${stripeTestMode ? "bg-amber-100 text-amber-700" : "bg-green-100 text-green-700"}`}>{stripeTestMode ? "Test Mode" : "Live"}</span>
-                    <span className="rounded-full bg-green-100 px-2.5 py-0.5 text-[10px] font-semibold text-green-700">Connected</span>
-                  </div>
-                )}
-              </div>
-              {stripeConfigured ? (
-                <div className="space-y-3">
-                  <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-xs text-green-700">
-                    <div className="font-semibold">Keys configured — publishable key: {stripePublicKey}</div>
-                    <div className="mt-0.5 text-green-600">Business mode is available in Controls → Mode.</div>
-                  </div>
-                  <button type="button" onClick={() => { setStripeConfigured(false); setStripeTestMode(false); setStripePublicKey(""); setStripeKeyInputs({ publicKey: "", secretKey: "" }); showToast?.("Stripe keys removed"); }} className="text-xs font-semibold text-red-600 hover:underline">Disconnect</button>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  <div className="grid grid-cols-1 gap-2.5">
-                    <div className="space-y-1">
-                      <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Publishable Key</label>
-                      <input type="text" value={stripeKeyInputs.publicKey} onChange={(e) => setStripeKeyInputs((p) => ({ ...p, publicKey: e.target.value }))} placeholder="pk_test_... or pk_live_..." className={`${SURFACE_BG} ${SURFACE_BORDER} ${INPUT_RADIUS} w-full px-3 py-2 text-sm font-mono outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100 transition`} />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Secret Key</label>
-                      <input type="password" value={stripeKeyInputs.secretKey} onChange={(e) => setStripeKeyInputs((p) => ({ ...p, secretKey: e.target.value }))} placeholder="sk_test_... or sk_live_..." className={`${SURFACE_BG} ${SURFACE_BORDER} ${INPUT_RADIUS} w-full px-3 py-2 text-sm font-mono outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100 transition`} />
-                    </div>
-                  </div>
-                  <button type="button" disabled={stripeSaving || !stripeKeyInputs.publicKey || !stripeKeyInputs.secretKey} onClick={async () => {
-                    setStripeSaving(true);
-                    try {
-                      const isTest = stripeKeyInputs.publicKey.startsWith("pk_test_");
-                      setStripeConfigured(true);
-                      setStripeTestMode(isTest);
-                      setStripePublicKey(stripeKeyInputs.publicKey.slice(0, 14) + "...");
-                      setStripeKeyInputs({ publicKey: "", secretKey: "" });
-                      showToast?.("Stripe keys saved");
-                    } catch (err) { showToast?.(err?.message || "Failed to save keys"); }
-                    finally { setStripeSaving(false); }
-                  }} className="inline-flex items-center justify-center rounded-lg bg-blue-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 active:scale-[0.98] transition disabled:opacity-60 disabled:cursor-not-allowed">
-                    {stripeSaving ? "Saving…" : "Save Keys"}
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-
           {/* ── Xendit config card ── */}
           {activeProvider === "xendit" && (
             <div className={`${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_CARD} p-6`}>
@@ -4153,7 +4186,7 @@ This cannot be undone.`
                     <div className="font-semibold">API key configured: {xenditKeyDisplay}</div>
                     <div className="mt-0.5 text-green-600">Business mode is available in Controls → Mode.</div>
                   </div>
-                  <button type="button" onClick={() => { setXenditConfigured(false); setXenditTestMode(false); setXenditKeyDisplay(""); setXenditKeyInput(""); showToast?.("Xendit key removed"); }} className="text-xs font-semibold text-red-600 hover:underline">Disconnect</button>
+                  <button type="button" onClick={async () => { await window.electron?.clearXenditKeys?.().catch(() => {}); setXenditConfigured(false); setXenditTestMode(false); setXenditKeyDisplay(""); setXenditKeyInput(""); showToast?.("Xendit key removed"); }} className="text-xs font-semibold text-red-600 hover:underline">Disconnect</button>
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -4165,9 +4198,10 @@ This cannot be undone.`
                   <button type="button" disabled={xenditSaving || !xenditKeyInput} onClick={async () => {
                     setXenditSaving(true);
                     try {
-                      const isTest = xenditKeyInput.startsWith("xnd_development");
+                      const res = await window.electron?.saveXenditKeys?.({ apiKey: xenditKeyInput });
+                      if (res && !res.ok) { showToast?.(res.error || "Failed to save key"); return; }
                       setXenditConfigured(true);
-                      setXenditTestMode(isTest);
+                      setXenditTestMode(res?.testMode ?? xenditKeyInput.startsWith("xnd_development"));
                       setXenditKeyDisplay(xenditKeyInput.slice(0, 16) + "...");
                       setXenditKeyInput("");
                       showToast?.("Xendit key saved");
@@ -4202,7 +4236,7 @@ This cannot be undone.`
                     <div className="font-semibold">Credentials configured — Client ID: {paypalClientIdDisplay}</div>
                     <div className="mt-0.5 text-green-600">Business mode is available in Controls → Mode.</div>
                   </div>
-                  <button type="button" onClick={() => { setPaypalConfigured(false); setPaypalSandboxMode(false); setPaypalClientIdDisplay(""); setPaypalKeyInputs({ clientId: "", clientSecret: "" }); showToast?.("PayPal credentials removed"); }} className="text-xs font-semibold text-red-600 hover:underline">Disconnect</button>
+                  <button type="button" onClick={async () => { await window.electron?.clearPaypalKeys?.().catch(() => {}); setPaypalConfigured(false); setPaypalSandboxMode(false); setPaypalClientIdDisplay(""); setPaypalKeyInputs({ clientId: "", clientSecret: "" }); showToast?.("PayPal credentials removed"); }} className="text-xs font-semibold text-red-600 hover:underline">Disconnect</button>
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -4223,7 +4257,10 @@ This cannot be undone.`
                   <button type="button" disabled={paypalSaving || !paypalKeyInputs.clientId || !paypalKeyInputs.clientSecret} onClick={async () => {
                     setPaypalSaving(true);
                     try {
+                      const res = await window.electron?.savePaypalKeys?.({ ...paypalKeyInputs, sandboxMode: paypalSandboxMode });
+                      if (res && !res.ok) { showToast?.(res.error || "Failed to save credentials"); return; }
                       setPaypalConfigured(true);
+                      setPaypalSandboxMode(res?.sandboxMode ?? paypalSandboxMode);
                       setPaypalClientIdDisplay(paypalKeyInputs.clientId.slice(0, 14) + "...");
                       setPaypalKeyInputs({ clientId: "", clientSecret: "" });
                       showToast?.("PayPal credentials saved");
@@ -4331,118 +4368,80 @@ This cannot be undone.`
       )}
 
 
-      {/* ===== GCASH PAYMENT MODAL ===== */}
-      {showGcashModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4" onClick={() => setShowGcashModal(false)}>
-          <div className="w-full max-w-2xl rounded-xl border border-slate-200 bg-white shadow-[0_32px_80px_rgba(0,0,0,0.15)] overflow-hidden" onClick={(e) => e.stopPropagation()}>
-            {/* Modal header */}
+      {/* ===== PAYMONGO PAYMENT MODAL ===== */}
+      {showPaymongoModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4" onClick={closePaymongoModal}>
+          <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white shadow-[0_32px_80px_rgba(0,0,0,0.15)] overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
               <div>
-                <h3 className="text-lg font-bold text-slate-900">Pay via GCash</h3>
-                <p className="text-xs text-slate-500 mt-0.5">We'll verify and activate your plan manually — usually within a day.</p>
+                <h3 className="text-lg font-bold text-slate-900">Pay via PayMongo</h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {paymongoPlanType === "gallery"
+                    ? `Gallery ${paymongoPlan.charAt(0).toUpperCase() + paymongoPlan.slice(1)} — ₱${PAYMONGO_PHP_AMOUNTS[paymongoPlan]?.toLocaleString("en-PH") ?? ""}/mo`
+                    : `Pro ${paymongoPlan.charAt(0).toUpperCase() + paymongoPlan.slice(1)} — ₱${PAYMONGO_PHP_AMOUNTS[paymongoPlan]?.toLocaleString("en-PH") ?? ""}`}
+                </p>
               </div>
-              <button type="button" onClick={() => setShowGcashModal(false)} className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-400 hover:bg-slate-50 hover:text-slate-600 transition">
+              <button type="button" onClick={closePaymongoModal} className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-400 hover:bg-slate-50 hover:text-slate-600 transition">
                 <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
               </button>
             </div>
 
-            {/* Modal body — 2-column */}
-            <div className="grid grid-cols-1 sm:grid-cols-2">
-              {/* Left: QR + plan info */}
-              <div className="flex flex-col items-center justify-center gap-4 p-6 bg-slate-50 border-r border-slate-100">
-                <div className="rounded-lg border border-slate-200 p-3 bg-white shadow-sm">
-                  <div className="w-44 h-44 bg-slate-100 rounded-xl flex items-center justify-center text-xs text-slate-400">
-                    <img
-                      src={gcashQrImage}
-                      alt="GCash QR"
-                      className="w-full h-full object-contain"
-                    />
+            {/* Body */}
+            <div className="flex flex-col items-center gap-5 p-8">
+              {/* Loading state */}
+              {paymongoStatus === "loading" && (
+                <div className="flex flex-col items-center gap-3 py-6">
+                  <div className="h-10 w-10 animate-spin rounded-full border-4 border-blue-100 border-t-blue-600" />
+                  <p className="text-sm text-slate-500">Generating payment link…</p>
+                </div>
+              )}
+
+              {/* Error state */}
+              {paymongoStatus === "error" && (
+                <div className="flex flex-col items-center gap-3 py-4 text-center">
+                  <svg className="h-10 w-10 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" /></svg>
+                  <p className="text-sm font-semibold text-red-600">{paymongoError}</p>
+                  <button type="button" onClick={() => openPayMongoPayment(paymongoPlanType, paymongoPlan)} className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-bold text-white hover:bg-blue-500">Try again</button>
+                </div>
+              )}
+
+              {/* Confirmed */}
+              {paymongoStatus === "confirmed" && (
+                <div className="flex flex-col items-center gap-3 py-6 text-center">
+                  <div className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-50">
+                    <svg className="h-8 w-8 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
                   </div>
+                  <p className="text-base font-bold text-slate-900">Payment Confirmed!</p>
+                  <p className="text-sm text-slate-500">Your plan is being activated…</p>
                 </div>
+              )}
 
-                {/* Billing toggle — only for Pro plans */}
-                {gcashPlanType === "pro" && (
-                  <div className="grid grid-cols-2 gap-1.5 rounded-full border border-slate-200 bg-white p-1">
-                    {["monthly", "yearly"].map((cycle) => (
-                      <button
-                        key={cycle}
-                        type="button"
-                        onClick={() => setGcashBilling(cycle)}
-                        className={`rounded-full px-4 py-1.5 text-xs font-bold transition-all ${gcashBilling === cycle ? "bg-slate-900 text-white shadow-sm" : "text-slate-500 hover:text-slate-800"}`}
-                      >
-                        {cycle === "monthly" ? "Monthly" : "Yearly"}
-                      </button>
-                    ))}
+              {/* QR + polling */}
+              {(paymongoStatus === "polling") && (
+                <>
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 shadow-sm">
+                    <img src={paymongoQrDataUrl} alt="PayMongo QR" className="h-52 w-52 object-contain" />
                   </div>
-                )}
 
-                <div className="text-center space-y-1">
-                  <div className="text-2xl font-black text-slate-900">
-                    ₱{getGcashAmount().toLocaleString("en-PH", { minimumFractionDigits: 2 })}
+                  <div className="text-center space-y-1">
+                    <p className="text-xs text-slate-500">Scan with GCash, Maya, or any QR payment app</p>
+                    <div className="flex items-center justify-center gap-1.5 text-xs text-blue-500">
+                      <div className="h-2 w-2 animate-pulse rounded-full bg-blue-500" />
+                      Waiting for payment…
+                    </div>
                   </div>
-                  <div className="text-[11px] text-slate-500 leading-snug">
-                    {gcashPlanType === "pro"
-                      ? gcashBilling === "yearly"
-                        ? `₱${Math.round(getGcashAmount() / 12).toLocaleString("en-PH")}/mo equivalent`
-                        : "Billed monthly"
-                      : `Gallery ${gcashGalleryTier.charAt(0).toUpperCase() + gcashGalleryTier.slice(1)} — billed monthly`
-                    }
-                  </div>
-                  <p className="text-[11px] text-slate-400">Scan QR in GCash app, send the exact amount, then fill the form.</p>
-                </div>
-              </div>
 
-              {/* Right: proof form */}
-              <form onSubmit={handleGcashProofSubmit} className="flex flex-col gap-4 p-6">
-                <div className="text-[11px] font-bold uppercase tracking-widest text-slate-500">Payment Details</div>
-
-                <div className="space-y-1.5">
-                  <input
-                    type="text"
-                    value={gcashSenderName}
-                    onChange={(e) => setGcashSenderName(e.target.value)}
-                    placeholder="GCash account name"
-                    className={`${SURFACE_BG} ${SURFACE_BORDER} ${INPUT_RADIUS} w-full px-4 py-2.5 text-sm outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100 transition`}
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <input
-                    type="text"
-                    value={gcashRefNumber}
-                    onChange={(e) => setGcashRefNumber(e.target.value)}
-                    placeholder="Reference number (13 characters)"
-                    required
-                    minLength={6}
-                    className={`${SURFACE_BG} ${SURFACE_BORDER} ${INPUT_RADIUS} w-full px-4 py-2.5 text-sm outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100 transition`}
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-                    Receipt screenshot <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="file"
-                    accept="image/png,image/jpeg,image/webp"
-                    onChange={(e) => setGcashScreenshot(e.target.files?.[0] || null)}
-                    required
-                    className={`${SURFACE_BG} ${SURFACE_BORDER} ${INPUT_RADIUS} w-full px-4 py-2.5 text-sm file:mr-3 file:rounded-full file:border-0 file:bg-blue-50 file:px-3 file:py-1 file:text-xs file:font-semibold file:text-blue-600 hover:file:bg-blue-100`}
-                  />
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={gcashSubmitting}
-                  className="w-full rounded-lg bg-blue-600 py-3 text-sm font-bold text-white shadow-md transition-all hover:bg-blue-500 hover:-translate-y-0.5 active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed"
-                >
-                  {gcashSubmitting ? "Submitting..." : "Submit Payment Proof"}
-                </button>
-
-                {gcashMessage && (
-                  <p className="text-center text-xs font-semibold text-red-600">{gcashMessage}</p>
-                )}
-              </form>
+                  <button
+                    type="button"
+                    onClick={() => { window.system?.openExternal?.(paymongoCheckoutUrl) ?? window.open(paymongoCheckoutUrl, "_blank", "noopener,noreferrer"); }}
+                    className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-100 transition"
+                  >
+                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                    Open in browser
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -4890,7 +4889,7 @@ This cannot be undone.`
     }
   }, [storagePath]);
 
-  // 3) Subscribe to AuthGate’s broadcast
+  // 3) Subscribe to AuthGate's broadcast
   useEffect(() => {
     if (authLoading) return;
 
@@ -4903,6 +4902,37 @@ This cannot be undone.`
     setEvents([]);
     setCurrentEvent(null);
   }, [authLoading, identity.userId, loadPersisted]);
+
+  // Auto-refresh license and events when the window regains focus (throttled to 30 s).
+  // This keeps plan details and event counts up to date after admin changes without
+  // requiring a full page reload.
+  const lastFocusRefresh = useRef(0);
+  useEffect(() => {
+    if (!identity?.userId || !ready) return;
+
+    const onFocus = () => {
+      const now = Date.now();
+      if (now - lastFocusRefresh.current < 30000) return;
+      lastFocusRefresh.current = now;
+      ctxRefreshLicense().catch(() => {});
+      if (native?.getEvents) {
+        native.getEvents({ userId: identity.userId })
+          .then((evs) => { if (Array.isArray(evs) && evs.length) setEvents(evs); })
+          .catch(() => {});
+      }
+    };
+
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [identity?.userId, ready, native, ctxRefreshLicense]);
+
+  // Periodic license refresh every 5 minutes so plan changes from Supabase
+  // appear without requiring a manual page reload.
+  useEffect(() => {
+    if (!identity?.userId) return;
+    const id = setInterval(() => ctxRefreshLicense().catch(() => {}), 5 * 60 * 1000);
+    return () => clearInterval(id);
+  }, [identity?.userId, ctxRefreshLicense]);
 
   function sanitizeSettings(input = {}) {
     const {
@@ -4950,11 +4980,19 @@ This cannot be undone.`
       return Math.max(min, Math.min(max, v));
     };
 
+    const activeGateway = business?.activeProvider ?? null;
     const safeBusinessProviders = {
       gcash: !!business?.payment?.providers?.gcash,
       maya: !!business?.payment?.providers?.maya,
       grabpay: !!business?.payment?.providers?.grabpay,
-      card: !!(business?.payment?.providers?.card || business?.payment?.providers?.stripe),
+      // Map gateway-specific "card" flags to the unified providers.card that PaymentScreen reads.
+      card: !!(
+        business?.payment?.providers?.card ||
+        business?.payment?.providers?.stripe ||
+        (activeGateway === 'stripe' && business?.payment?.stripeProviders?.card) ||
+        (activeGateway === 'xendit' && business?.payment?.xenditProviders?.card) ||
+        (activeGateway === 'paypal' && business?.payment?.paypalProviders?.card)
+      ),
       cash: business?.payment?.providers?.cash ?? true,
     };
 
@@ -5050,9 +5088,21 @@ This cannot be undone.`
       },
 
       business: {
+        activeProvider: typeof business?.activeProvider === 'string' ? business.activeProvider : null,
         paymentEnabled: business?.paymentEnabled ?? true,
         payment: {
           providers: safeBusinessProviders,
+          stripeProviders: typeof business?.payment?.stripeProviders === 'object' && business.payment.stripeProviders !== null
+            ? { ...DEFAULT_STRIPE_PROVIDERS, ...business.payment.stripeProviders }
+            : { ...DEFAULT_STRIPE_PROVIDERS },
+          xenditProviders: typeof business?.payment?.xenditProviders === 'object' && business.payment.xenditProviders !== null
+            ? { ...DEFAULT_XENDIT_PROVIDERS, ...business.payment.xenditProviders }
+            : { ...DEFAULT_XENDIT_PROVIDERS },
+          paypalProviders: typeof business?.payment?.paypalProviders === 'object' && business.payment.paypalProviders !== null
+            ? { ...DEFAULT_PAYPAL_PROVIDERS, ...business.payment.paypalProviders }
+            : { ...DEFAULT_PAYPAL_PROVIDERS },
+          cashMode: ['manual', 'auto'].includes(business?.payment?.cashMode) ? business.payment.cashMode : 'manual',
+          gcashStaticQrDataUrl: typeof business?.payment?.gcashStaticQrDataUrl === 'string' ? business.payment.gcashStaticQrDataUrl : null,
         },
         pricing: {
           model:
@@ -5623,165 +5673,6 @@ This cannot be undone.`
     showToast("Report exported as CSV");
   };
 
-  // ---------------------------
-  // Load persisted state (Electron)
-  // ---------------------------
-
-  useEffect(() => {
-    (async () => {
-      if (!native || !ready) return;
-      try {
-        const ctx = { userId: identity.userId };
-        const [
-          persistedEvents, appearance, settings, persistedTemplates, persistedFrames, persistedTones, persistedPalettes, currentEventId, currentSubTab, persistedActiveMain,
-        ] = await Promise.all([
-          native?.getEvents?.(ctx),
-          native?.getAppearance?.(ctx),
-          native?.getSettings?.(ctx),
-          native?.getTemplates?.(ctx),
-          native?.getFrames?.(ctx),
-          native?.getTones?.(ctx),
-          native?.getPalettes?.(ctx),
-          native?.getCurrentEventId?.(), // can remain global pin, or scope by user if desired
-          native?.getCurrentSubTab?.(),
-          native?.getActiveMain?.(),
-        ]);
-
-        if (Array.isArray(persistedEvents)) setEvents(persistedEvents);
-
-        // Appearance
-        if (appearance) {
-          setLogoPath(appearance.logoPath ? { url: appearance.logoPath, name: "logo", previewUrl: appearance.logoPath } : null);
-          setBackgroundMediaPath(
-            appearance.backgroundMediaPath
-              ? {
-                url: appearance.backgroundMediaPath,
-                name: appearance.backgroundMediaName ?? "background",
-                previewUrl: appearance.backgroundMediaPath,
-                mime: appearance.backgroundMediaMime ?? "",
-              }
-              : null
-          );
-          setBackgroundType(appearance.backgroundType ?? "media");
-          setBoothName(appearance.boothName ?? "");
-          setBoothSlogan(appearance.boothSlogan ?? "");
-          setHeaderFont(appearance.headerFont ?? headerFont);
-          setGeneralFont(appearance.generalFont ?? generalFont);
-          setHeaderFontColor(appearance.headerFontColor ?? headerFontColor);
-          setGeneralFontColor(appearance.generalFontColor ?? generalFontColor);
-          setBgColor(appearance.bgColor ?? bgColor);
-          setButtonBgColor(appearance.buttonBgColor ?? buttonBgColor);
-          setButtonHoverColor(appearance.buttonHoverColor ?? buttonHoverColor);
-          setbuttonFont(appearance.buttonFont ?? buttonFont);
-          setButtonFontColor(appearance.buttonFontColor ?? buttonFontColor);
-          setStartButtonHidden(!!appearance.startButtonHidden);
-          setStartButtonText(appearance.startButtonText ?? "Tap to Start");
-          setSelectedBgColorId(appearance.selectedBgColorId ?? null);
-        }
-
-        // Settings
-        // Settings
-        if (settings) {
-          setCountdown(settings.countdown ?? countdown);
-          setRetakeLimit(settings.retakeLimit ?? retakeLimit);
-          setScreenTimers(settings.screenTimers ?? screenTimers);
-          setNumberOfShots(settings.numberOfShots ?? numberOfShots);
-          setFlashEnabled(settings.flashEnabled ?? flashEnabled);
-          setSoundEnabled(settings.soundEnabled ?? soundEnabled);
-          setLanguage(settings.language ?? language);
-          setPrice(settings.price ?? price);
-          setAppMode(settings.appMode ?? DEFAULT_APP_MODE);
-          setTimersEnabled(settings.timersEnabled ?? !!settings.screenTimers);
-
-          // Camera
-          setSelectedCameraId(settings.selectedCameraId ?? "");
-          setMirrorCamera(settings.mirrorCamera ?? false);
-          setCameraResolution(settings.cameraResolution ?? "1080p");
-          setCameraWidth(settings.cameraWidth ?? 1920);
-          setCameraHeight(settings.cameraHeight ?? 1080);
-          setFacingMode(settings.facingMode ?? "user");
-
-          // Printing
-          setSelectedPrinter(settings.selectedPrinter ?? "");
-          setPaperSize(settings.paperSize ?? "4x6");
-          setPrintCopies(settings.printCopies ?? 1);
-          setPrintColorMode(settings.printColorMode ?? "color");
-          setPrintQuality(settings.printQuality ?? "high");
-          setPrintOrientation(settings.printOrientation ?? "landscape");
-          setPrintDuplexMode(settings.printDuplexMode ?? "simplex");
-          setPrintDpi(settings.printDpi ?? 300);
-          setUsePrinterDefaults(settings.usePrinterDefaults ?? false);
-
-          // Storage
-          setStoragePath(settings.storagePath ?? "");
-          setAutoDeleteDays(settings.autoDeleteDays ?? 14);
-
-          // General
-          setDimWhenIdle(settings.dimWhenIdle ?? true);
-          setIdleTimeout(settings.idleTimeout ?? 60);
-
-          // System
-          setLaunchOnStartup(settings.launchOnStartup ?? true);
-          setAutoRestart(settings.autoRestart ?? true);
-          setAutoUpdateEnabled(settings.autoUpdateEnabled ?? true);
-
-          // Rental
-          const rental = settings.rental ?? {};
-          setRentalTimerEnabled(rental.timerEnabled ?? DEFAULT_RENTAL.timerEnabled);
-          setRentalTimerHours(rental.timerHours ?? DEFAULT_RENTAL.timerHours);
-          setRentalSessionLimitEnabled(rental.sessionLimitEnabled ?? DEFAULT_RENTAL.sessionLimitEnabled);
-          setRentalSessionLimit(rental.sessionLimit ?? DEFAULT_RENTAL.sessionLimit);
-          setOfflineModeEnabled(rental.offlineModeEnabled ?? DEFAULT_RENTAL.offlineModeEnabled);
-          setAutoSaveTarget(rental.autoSaveTarget ?? DEFAULT_RENTAL.autoSaveTarget);
-          setEndSessionSummaryEnabled(rental.endSessionSummaryEnabled ?? DEFAULT_RENTAL.endSessionSummaryEnabled);
-
-          // Business
-          const business = settings.business ?? {};
-          setPaymentEnabled(business.paymentEnabled ?? DEFAULT_BUSINESS.paymentEnabled);
-          setActiveProvider(business.activeProvider ?? null);
-          setPaymentProviders(business.payment?.providers ?? { ...DEFAULT_BUSINESS.payment.providers });
-          setStripeProviders(business.payment?.stripeProviders ?? { ...DEFAULT_STRIPE_PROVIDERS });
-          setXenditProviders(business.payment?.xenditProviders ?? { ...DEFAULT_XENDIT_PROVIDERS });
-          setPaypalProviders(business.payment?.paypalProviders ?? { ...DEFAULT_PAYPAL_PROVIDERS });
-          setCashMode(business.payment?.cashMode ?? "manual");
-          setGcashStaticQrDataUrl(business.payment?.gcashStaticQrDataUrl ?? "");
-
-          const pricing = business.pricing ?? DEFAULT_BUSINESS.pricing;
-          setPricingModel(pricing.model ?? DEFAULT_BUSINESS.pricing.model);
-          setPricePerSession(pricing.pricePerSession ?? DEFAULT_BUSINESS.pricing.pricePerSession);
-          setAdditionalPrintPrice(pricing.additionalPrintPrice ?? DEFAULT_BUSINESS.pricing.additionalPrintPrice);
-          setCurrency(pricing.currency ?? DEFAULT_BUSINESS.pricing.currency);
-          setTaxEnabled(pricing.taxEnabled ?? DEFAULT_BUSINESS.pricing.taxEnabled);
-          setTaxRate(pricing.taxRate ?? DEFAULT_BUSINESS.pricing.taxRate);
-        }
-
-        // Templates / Frames / Tones / Palettes
-        if (Array.isArray(persistedTemplates)) setTemplates(persistedTemplates);
-        if (Array.isArray(persistedFrames)) setFrames(persistedFrames);
-        if (Array.isArray(persistedTones)) setTones(persistedTones);
-        if (Array.isArray(persistedPalettes)) setPalettes(persistedPalettes);
-
-        // Restore current event + sub-tab
-        if (currentEventId != null && Array.isArray(persistedEvents)) {
-          const found = persistedEvents.find((e) => e.id === currentEventId);
-          if (found) {
-            setCurrentEvent(JSON.parse(JSON.stringify(found)));
-            setActiveSub(currentSubTab ?? "branding");
-          }
-        }
-
-        // Restore active main tab (default to "home" if nothing persisted)
-        if (persistedActiveMain) {
-          setActiveMain(persistedActiveMain);
-        }
-        setHydrated(true); // <- mark hydration complete
-      } catch (err) {
-        console.error("load persisted state error", err);
-      }
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [native, ready, identity.userId]);
-
   // --- Event save/create/delete ---
   const saveCurrentEvent = () => {
     if (!currentEvent) {
@@ -5789,50 +5680,54 @@ This cannot be undone.`
       return;
     }
 
-    const settingsToSave = sanitizeSettings({
-      selectedCameraId,
-      mirrorCamera,
-      cameraResolution,
-      cameraWidth,
-      cameraHeight,
-      facingMode,
-      countdown,
-      retakeLimit,
-      screenTimers,
-      numberOfShots,
-      flashEnabled,
-      soundEnabled,
-      language,
-      price,
-      appMode,
-      timersEnabled,
-      rental: {
-        timerEnabled: rentalTimerEnabled,
-        timerHours: rentalTimerHours,
-        sessionLimitEnabled: rentalSessionLimitEnabled,
-        sessionLimit: rentalSessionLimit,
-        offlineModeEnabled,
-        autoSaveTarget,
-        endSessionSummaryEnabled,
-      },
-      business: {
-        activeProvider,
-        paymentEnabled,
-        payment: { providers: { ...paymentProviders }, stripeProviders: { ...stripeProviders }, xenditProviders: { ...xenditProviders }, paypalProviders: { ...paypalProviders } },
-        pricing: {
-          model: pricingModel,
-          pricePerSession,
-          additionalPrintPrice,
-          currency,
-          taxEnabled,
-          taxRate,
+    const settingsToSave = {
+      _settingsSaved: true,
+      ...sanitizeSettings({
+        selectedCameraId,
+        mirrorCamera,
+        cameraResolution,
+        cameraWidth,
+        cameraHeight,
+        facingMode,
+        countdown,
+        retakeLimit,
+        screenTimers,
+        numberOfShots,
+        flashEnabled,
+        soundEnabled,
+        language,
+        price,
+        appMode,
+        timersEnabled,
+        rental: {
+          timerEnabled: rentalTimerEnabled,
+          timerHours: rentalTimerHours,
+          sessionLimitEnabled: rentalSessionLimitEnabled,
+          sessionLimit: rentalSessionLimit,
+          offlineModeEnabled,
+          autoSaveTarget,
+          endSessionSummaryEnabled,
         },
-      },
-    });
+        business: {
+          activeProvider,
+          paymentEnabled,
+          payment: { providers: { ...paymentProviders }, stripeProviders: { ...stripeProviders }, xenditProviders: { ...xenditProviders }, paypalProviders: { ...paypalProviders }, cashMode, gcashStaticQrDataUrl },
+          pricing: {
+            model: pricingModel,
+            pricePerSession,
+            additionalPrintPrice,
+            currency,
+            taxEnabled,
+            taxRate,
+          },
+        },
+      }),
+    };
 
     const updatedEvent = {
       ...currentEvent,
       appearance: {
+        _brandingSaved: true,
         headerFont,
         generalFont,
         headerFontColor,
@@ -5990,7 +5885,7 @@ This cannot be undone.`
       business: {
         activeProvider,
         paymentEnabled,
-        payment: { providers: { ...paymentProviders }, stripeProviders: { ...stripeProviders }, xenditProviders: { ...xenditProviders }, paypalProviders: { ...paypalProviders } },
+        payment: { providers: { ...paymentProviders }, stripeProviders: { ...stripeProviders }, xenditProviders: { ...xenditProviders }, paypalProviders: { ...paypalProviders }, cashMode, gcashStaticQrDataUrl },
         pricing: {
           model: pricingModel,
           pricePerSession,
@@ -6049,8 +5944,14 @@ This cannot be undone.`
     offlineModeEnabled,
     autoSaveTarget,
     endSessionSummaryEnabled,
+    activeProvider,
     paymentEnabled,
     paymentProviders,
+    stripeProviders,
+    xenditProviders,
+    paypalProviders,
+    cashMode,
+    gcashStaticQrDataUrl,
     pricingModel,
     pricePerSession,
     additionalPrintPrice,
@@ -6076,11 +5977,72 @@ This cannot be undone.`
   }, [activeMain, native, hydrated]);
 
   useEffect(() => {
-    if (!currentEvent) return;
-    // Example only: adjust to your storage shape/keys
-    const saved = currentEvent?.appearance ?? {};
-    if (saved.HeaderFont) setHeaderFont(saved.HeaderFont);
-    if (saved.GeneralFont) setGeneralFont(saved.GeneralFont);
+    // Restore event-level settings (flow, mode, business, rental) when an event
+    // has been explicitly saved (_settingsSaved). Machine-level settings
+    // (camera, printer, storage) stay global and are intentionally skipped.
+    if (!currentEvent?.settings?._settingsSaved) return;
+    const s = currentEvent.settings;
+    setCountdown(s.countdown ?? 5);
+    setRetakeLimit(s.retakeLimit ?? 0);
+    setScreenTimers(s.screenTimers ?? DEFAULT_SCREEN_TIMERS);
+    setNumberOfShots(s.numberOfShots ?? 3);
+    setTimersEnabled(s.timersEnabled ?? false);
+    setFlashEnabled(s.flashEnabled ?? true);
+    setSoundEnabled(s.soundEnabled ?? true);
+    setLanguage(s.language ?? 'en');
+    setPrice(s.price ?? 0);
+    setAppMode(s.appMode ?? DEFAULT_APP_MODE);
+    const rental = s.rental ?? {};
+    setRentalTimerEnabled(rental.timerEnabled ?? DEFAULT_RENTAL.timerEnabled);
+    setRentalTimerHours(rental.timerHours ?? DEFAULT_RENTAL.timerHours);
+    setRentalSessionLimitEnabled(rental.sessionLimitEnabled ?? DEFAULT_RENTAL.sessionLimitEnabled);
+    setRentalSessionLimit(rental.sessionLimit ?? DEFAULT_RENTAL.sessionLimit);
+    setOfflineModeEnabled(rental.offlineModeEnabled ?? DEFAULT_RENTAL.offlineModeEnabled);
+    setAutoSaveTarget(rental.autoSaveTarget ?? DEFAULT_RENTAL.autoSaveTarget);
+    setEndSessionSummaryEnabled(rental.endSessionSummaryEnabled ?? DEFAULT_RENTAL.endSessionSummaryEnabled);
+    const business = s.business ?? {};
+    setPaymentEnabled(business.paymentEnabled ?? DEFAULT_BUSINESS.paymentEnabled);
+    if (business.activeProvider) setActiveProvider(business.activeProvider);
+    setPaymentProviders(business.payment?.providers ?? { ...DEFAULT_BUSINESS.payment.providers });
+    setStripeProviders(business.payment?.stripeProviders ?? { ...DEFAULT_STRIPE_PROVIDERS });
+    setXenditProviders(business.payment?.xenditProviders ?? { ...DEFAULT_XENDIT_PROVIDERS });
+    setPaypalProviders(business.payment?.paypalProviders ?? { ...DEFAULT_PAYPAL_PROVIDERS });
+    setCashMode(business.payment?.cashMode ?? 'manual');
+    const pricing = business.pricing ?? {};
+    setPricingModel(pricing.model ?? DEFAULT_BUSINESS.pricing.model);
+    setPricePerSession(pricing.pricePerSession ?? DEFAULT_BUSINESS.pricing.pricePerSession);
+    setAdditionalPrintPrice(pricing.additionalPrintPrice ?? DEFAULT_BUSINESS.pricing.additionalPrintPrice);
+    setCurrency(pricing.currency ?? DEFAULT_BUSINESS.pricing.currency);
+    setTaxEnabled(pricing.taxEnabled ?? DEFAULT_BUSINESS.pricing.taxEnabled);
+    setTaxRate(pricing.taxRate ?? DEFAULT_BUSINESS.pricing.taxRate);
+  }, [currentEvent]);
+
+  useEffect(() => {
+    // Only restore per-event branding when the user has explicitly saved it
+    // (marked by _brandingSaved). Events without the marker fall through to
+    // the global appearance loaded by loadPersisted.
+    if (!currentEvent?.appearance?._brandingSaved) return;
+    const ap = currentEvent.appearance;
+    setHeaderFont(ap.headerFont || 'Inter');
+    setGeneralFont(ap.generalFont || 'Inter');
+    setbuttonFont(ap.buttonFont || 'Inter');
+    setHeaderFontColor(ap.headerFontColor || '#111827');
+    setGeneralFontColor(ap.generalFontColor || '#374151');
+    setBgColor(ap.bgColor || '#ffffff');
+    setButtonBgColor(ap.buttonBgColor || ACCENT_COLOR);
+    setButtonHoverColor(ap.buttonHoverColor || '#5348ff');
+    setButtonFontColor(ap.buttonFontColor || '#ffffff');
+    setBoothName(ap.boothName ?? '');
+    setBoothSlogan(ap.boothSlogan ?? '');
+    setBackgroundType(ap.backgroundType || 'media');
+    setStartButtonText(ap.startButtonText || 'Tap to Start');
+    setStartButtonHidden(ap.startButtonHidden ?? false);
+    setLogoPath(ap.logoPath
+      ? { url: ap.logoPath, name: 'logo', previewUrl: ap.logoPath }
+      : null);
+    setBackgroundMediaPath(ap.backgroundMediaPath
+      ? { url: ap.backgroundMediaPath, name: ap.backgroundMediaName ?? 'background', previewUrl: ap.backgroundMediaPath, mime: ap.backgroundMediaMime ?? '' }
+      : null);
   }, [currentEvent]);
 
   useEffect(() => {
@@ -6164,11 +6126,25 @@ This cannot be undone.`
         }
 
         if (!cancelled) {
-          const pmStatus = await window.electron?.getPayMongoStatus?.().catch(() => null);
+          const [pmStatus, xenditStatus, paypalStatus] = await Promise.all([
+            window.electron?.getPayMongoStatus?.().catch(() => null),
+            window.electron?.getXenditStatus?.().catch(() => null),
+            window.electron?.getPaypalStatus?.().catch(() => null),
+          ]);
           if (pmStatus?.ok) {
             setPaymongoConfigured(pmStatus.configured);
             setPaymongoTestMode(pmStatus.testMode);
             setPaymongoPublicKey(pmStatus.publicKey || "");
+          }
+          if (xenditStatus?.ok) {
+            setXenditConfigured(xenditStatus.configured);
+            setXenditTestMode(xenditStatus.testMode);
+            if (xenditStatus.apiKeyPreview) setXenditKeyDisplay(xenditStatus.apiKeyPreview);
+          }
+          if (paypalStatus?.ok) {
+            setPaypalConfigured(paypalStatus.configured);
+            setPaypalSandboxMode(paypalStatus.sandboxMode);
+            if (paypalStatus.clientIdPreview) setPaypalClientIdDisplay(paypalStatus.clientIdPreview);
           }
         }
       } catch (err) {
@@ -6181,22 +6157,35 @@ This cannot be undone.`
     };
   }, [activeMain, identity?.userId, profile, user]);
 
-  // Load PayMongo status at startup so the Business mode radio is not grayed
-  // out until the user happens to visit Account Center > Business.
+  // Load all payment gateway statuses at startup so Business mode reflects real state.
   useEffect(() => {
     if (!identity?.userId) return;
     let cancelled = false;
-    window.electron?.getPayMongoStatus?.()
-      .then((pmStatus) => {
-        if (!cancelled && pmStatus?.ok) {
-          setPaymongoConfigured(pmStatus.configured);
-          setPaymongoTestMode(pmStatus.testMode);
-          setPaymongoPublicKey(pmStatus.publicKey || "");
-        }
-      })
-      .catch(() => {});
+    Promise.all([
+      window.electron?.getPayMongoStatus?.().catch(() => null),
+      window.electron?.getXenditStatus?.().catch(() => null),
+      window.electron?.getPaypalStatus?.().catch(() => null),
+    ]).then(([pmStatus, xenditStatus, paypalStatus]) => {
+      if (cancelled) return;
+      if (pmStatus?.ok) {
+        setPaymongoConfigured(pmStatus.configured);
+        setPaymongoTestMode(pmStatus.testMode);
+        setPaymongoPublicKey(pmStatus.publicKey || "");
+      }
+      if (xenditStatus?.ok) {
+        setXenditConfigured(xenditStatus.configured);
+        setXenditTestMode(xenditStatus.testMode);
+        if (xenditStatus.apiKeyPreview) setXenditKeyDisplay(xenditStatus.apiKeyPreview);
+      }
+      if (paypalStatus?.ok) {
+        setPaypalConfigured(paypalStatus.configured);
+        setPaypalSandboxMode(paypalStatus.sandboxMode);
+        if (paypalStatus.clientIdPreview) setPaypalClientIdDisplay(paypalStatus.clientIdPreview);
+      }
+    });
     return () => { cancelled = true; };
   }, [identity?.userId]);
+
 
   const handleGcashQrUpload = (e) => {
     const file = e.target.files?.[0];
@@ -6446,92 +6435,10 @@ This cannot be undone.`
   }
 
   const refreshLicense = useCallback(async () => {
-    await ctxRefreshLicense({ hard: true }).catch((err) =>
+    await ctxRefreshLicense().catch((err) =>
       console.error("ctxRefreshLicense failed", err)
     );
   }, [ctxRefreshLicense]);
-
-  const checkoutPendingRef = useRef(false);
-
-  const openCheckout = async (plan) => {
-    try {
-      const res = await licensingApi.createCheckoutSession(plan);
-
-      if (!res?.url) throw new Error("No checkout URL returned from backend");
-
-      // Open Stripe checkout in the system browser (not inside Electron's window).
-      window.system?.openExternal?.(res.url) ??
-        window.open(res.url, "_blank", "noopener,noreferrer");
-
-      // Mark a checkout as pending so that when the user switches back to this
-      // window after completing payment, we automatically sync the license.
-      checkoutPendingRef.current = true;
-      showToast?.("Checkout opened in your browser. Return here after payment to apply your plan.");
-      return { ok: true };
-    } catch (err) {
-      console.error("openCheckout failed:", err);
-      showToast?.(`Checkout failed: ${err?.message || "Unknown error"}`);
-      return { ok: false, error: err?.message || "Checkout failed" };
-    }
-  };
-
-  const openGalleryAddonCheckout = async () => {
-    try {
-      const res = await licensingApi.createGalleryAddonCheckoutSession();
-      if (!res?.url) throw new Error("No checkout URL returned from backend");
-
-      window.system?.openExternal?.(res.url) ??
-        window.open(res.url, "_blank", "noopener,noreferrer");
-
-      checkoutPendingRef.current = true;
-      showToast?.("Gallery add-on checkout opened. Return here after payment to apply access.");
-      return { ok: true };
-    } catch (err) {
-      console.error("openGalleryAddonCheckout failed:", err);
-      showToast?.(`Gallery add-on checkout failed: ${err?.message || "Unknown error"}`);
-      return { ok: false, error: err?.message || "Gallery add-on checkout failed" };
-    }
-  };
-
-  // Auto-refresh license when the user switches back to the app after Stripe checkout.
-  useEffect(() => {
-    const onFocus = async () => {
-      if (!checkoutPendingRef.current) return;
-      checkoutPendingRef.current = false;
-      showToast?.("Verifying payment…");
-      try {
-        await refreshLicense();
-        // refreshLicense calls ctxRefreshLicense({ hard: true }) which calls billingSync.
-        // If the plan changed, gating.plan will reflect it after the state update.
-        showToast?.("License status updated");
-      } catch (err) {
-        showToast?.("Could not verify payment — try clicking Refresh license");
-      }
-    };
-    window.addEventListener('focus', onFocus);
-    return () => window.removeEventListener('focus', onFocus);
-  }, [refreshLicense]);
-
-  useEffect(() => {
-    if (!user?.id) return;
-    refreshLicense();
-  }, [user?.id, refreshLicense]);
-
-  const openCustomerPortal = useCallback(async () => {
-    try {
-      const res = await licensingApi.customerPortal();
-
-      if (res?.url) {
-        window.system?.openExternal?.(res.url) ??
-          window.open(res.url, "_blank", "noopener,noreferrer");
-      } else {
-        showToast?.("Portal URL not returned");
-      }
-    } catch (err) {
-      console.error("Open portal failed", err);
-      showToast?.(err?.message || "Open portal failed");
-    }
-  }, []);
 
   const toNumber = (v, fallback = 0) => {
     const n = Number(v);
@@ -6539,101 +6446,67 @@ This cannot be undone.`
   };
 
   // ---------------------------
-  // GCASH PAYMENT FLOW
+  // PAYMONGO PAYMENT FLOW
   // ---------------------------
-  const GCASH_PHP_AMOUNTS = { monthly: 1800, yearly: 11400 };
-  const [showGcashModal, setShowGcashModal] = useState(false);
-  const [gcashBilling, setGcashBilling] = useState("yearly");
-  const [gcashSenderName, setGcashSenderName] = useState("");
-  const [gcashRefNumber, setGcashRefNumber] = useState("");
-  const [gcashScreenshot, setGcashScreenshot] = useState(null);
-  const [gcashSubmitting, setGcashSubmitting] = useState(false);
-  const [gcashMessage, setGcashMessage] = useState("");
-  const [gcashPlanType, setGcashPlanType] = useState("pro"); // "pro" | "gallery"
-  const [gcashGalleryTier, setGcashGalleryTier] = useState(""); // "free" | "plus" | "business"
+  const PAYMONGO_PHP_AMOUNTS = { monthly: 1800, yearly: 11400, plus: 900, business: 1700 };
+  const [showPaymongoModal, setShowPaymongoModal] = useState(false);
+  const [paymongoQrDataUrl, setPaymongoQrDataUrl] = useState("");
+  const [paymongoCheckoutUrl, setPaymongoCheckoutUrl] = useState("");
+  const [paymongoLinkId, setPaymongoLinkId] = useState("");
+  const [paymongoPlanType, setPaymongoPlanType] = useState("subscription");
+  const [paymongoPlan, setPaymongoPlan] = useState("monthly");
+  const [paymongoStatus, setPaymongoStatus] = useState("idle"); // idle | loading | polling | confirmed | error
+  const [paymongoError, setPaymongoError] = useState("");
+  const paymongoTimerRef = useRef(null);
 
-  const GALLERY_PHP_AMOUNTS = { plus: 900, business: 1700 }; // ₱900/mo, ₱1,700/mo
-
-  const openGcashPayment = (planType = "pro", galleryTier = "") => {
-    setGcashPlanType(planType);
-    setGcashGalleryTier(galleryTier);
-    setGcashSenderName("");
-    setGcashRefNumber("");
-    setGcashScreenshot(null);
-    setGcashMessage("");
-    setShowGcashModal(true);
-  };
-
-  const getGcashAmount = () => {
-    if (gcashPlanType === "gallery") {
-      return GALLERY_PHP_AMOUNTS[gcashGalleryTier] || 0;
+  const stopPaymongoPoll = () => {
+    if (paymongoTimerRef.current) {
+      clearInterval(paymongoTimerRef.current);
+      paymongoTimerRef.current = null;
     }
-    return GCASH_PHP_AMOUNTS[gcashBilling] || 0;
   };
 
-  const handleGcashProofSubmit = async (e) => {
-    e.preventDefault();
-    if (!user?.id) { showToast?.("Please log in first."); return; }
-    if (!gcashScreenshot) { setGcashMessage("Please attach a screenshot of your GCash receipt."); return; }
-    if (!gcashRefNumber.trim()) { setGcashMessage("Please enter a valid reference number."); return; }
-
-    setGcashSubmitting(true);
-    setGcashMessage("");
+  const openPayMongoPayment = async (planType, plan) => {
+    stopPaymongoPoll();
+    setPaymongoPlanType(planType);
+    setPaymongoPlan(plan);
+    setPaymongoStatus("loading");
+    setPaymongoError("");
+    setPaymongoQrDataUrl("");
+    setPaymongoLinkId("");
+    setPaymongoCheckoutUrl("");
+    setShowPaymongoModal(true);
 
     try {
-      // Check for existing pending/active proofs
-      const { data: existing } = await supabase
-        .from("payment_proofs")
-        .select("id, status, billing, created_at")
-        .eq("user_id", user.id)
-        .in("status", ["pending", "approved"])
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      const res = await licensingApi.createPayMongoLink(planType, plan);
+      setPaymongoQrDataUrl(res.qrDataUrl);
+      setPaymongoLinkId(res.linkId);
+      setPaymongoCheckoutUrl(res.checkoutUrl);
+      setPaymongoStatus("polling");
 
-      if (existing?.status === "pending") {
-        setGcashMessage("You already have a payment proof under review. Please wait for verification.");
-        setGcashSubmitting(false);
-        return;
-      }
-
-      // Upload screenshot
-      const ext = (gcashScreenshot.name?.split(".").pop() || "jpg").toLowerCase();
-      const path = `${user.id}/${Date.now()}.${ext}`;
-      const { error: uploadError } = await supabase.storage
-        .from("payment-proofs")
-        .upload(path, gcashScreenshot, { contentType: gcashScreenshot.type || "image/jpeg" });
-      if (uploadError) throw uploadError;
-
-      // Insert payment proof
-      const proofData = {
-        user_id: user.id,
-        billing: gcashPlanType === "gallery" ? `gallery_${gcashGalleryTier}` : gcashBilling,
-        amount_php: getGcashAmount(),
-        gcash_reference_number: gcashRefNumber.trim(),
-        gcash_sender_name: gcashSenderName.trim() || null,
-        screenshot_path: path,
-        status: "pending",
-      };
-      const { error: insertError } = await supabase.from("payment_proofs").insert(proofData);
-      if (insertError) throw insertError;
-
-      // Update license state
-      await supabase.from("licenses").upsert(
-        { user_id: user.id, payment_provider: "manual_gcash", state: "pending_verification" },
-        { onConflict: "user_id" }
-      );
-
-      showToast?.("Payment proof submitted! We'll verify and activate your plan shortly.");
-      setShowGcashModal(false);
-      await refreshLicense();
+      paymongoTimerRef.current = setInterval(async () => {
+        try {
+          const status = await licensingApi.getPayMongoLinkStatus(res.linkId, planType, plan);
+          if (status.paid) {
+            stopPaymongoPoll();
+            setPaymongoStatus("confirmed");
+            showToast?.("Payment confirmed! Activating your plan...");
+            await refreshLicense();
+          }
+        } catch (_) { /* ignore transient poll errors */ }
+      }, 3000);
     } catch (err) {
-      console.error("GCash payment submission error:", err);
-      setGcashMessage(err?.message || "Could not submit proof. Please try again.");
-    } finally {
-      setGcashSubmitting(false);
+      setPaymongoStatus("error");
+      setPaymongoError(err?.message || "Failed to create payment link. Check your internet connection.");
     }
   };
+
+  const closePaymongoModal = () => {
+    stopPaymongoPoll();
+    setShowPaymongoModal(false);
+    setPaymongoStatus("idle");
+  };
+
 
   // Gallery plan state
   const [galleryPlan, setGalleryPlan] = useState("free"); // "free" | "plus" | "business"
@@ -9620,7 +9493,24 @@ This cannot be undone.`
                   <div>
                     <div className="flex items-center justify-between mb-3">
                       <h4 className="text-sm font-semibold text-gray-700">Event library</h4>
-                      <span className="text-[11px] text-gray-400">{events.length} event{events.length !== 1 ? "s" : ""}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[11px] text-gray-400">{events.length} event{events.length !== 1 ? "s" : ""}</span>
+                        <button
+                          title="Reload events"
+                          onClick={async () => {
+                            if (!identity?.userId) return;
+                            try {
+                              const evs = await native?.getEvents?.({ userId: identity.userId });
+                              if (Array.isArray(evs) && evs.length > 0) setEvents(evs);
+                            } catch { /* silent */ }
+                          }}
+                          className="rounded-full p-1 text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition"
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                          </svg>
+                        </button>
+                      </div>
                     </div>
 
                     {!hydrated ? (
@@ -9649,10 +9539,15 @@ This cannot be undone.`
                     ) : (
                       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
                         {events.map((ev) => {
-                          const sessionPrice = ev.settings?.business?.pricing?.pricePerSession ?? ev.settings?.price ?? 0;
+                          const isActive = currentEvent?.id === ev.id;
+                          const sessionPrice = isActive
+                            ? pricePerSession
+                            : (ev.settings?.business?.pricing?.pricePerSession ?? ev.settings?.price ?? 0);
+                          const cardShots = isActive
+                            ? numberOfShots
+                            : (ev.settings?.numberOfShots ?? "—");
                           const totalSessions = ev.sessions?.length ?? 0;
                           const todaySessions = completedSessionsToday(ev);
-                          const isActive = currentEvent?.id === ev.id;
 
                           return (
                             <div
@@ -9674,7 +9569,7 @@ This cannot be undone.`
                                   </div>
                                 </div>
                                 <span className="flex-shrink-0 rounded-full bg-gray-50 border border-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-500">
-                                  {ev.settings?.appMode ?? DEFAULT_APP_MODE}
+                                  {(isActive ? appMode : ev.settings?.appMode) ?? DEFAULT_APP_MODE}
                                 </span>
                               </div>
 
@@ -9682,7 +9577,7 @@ This cannot be undone.`
                               <div className="mt-3 grid grid-cols-4 gap-1.5">
                                 {[
                                   { label: "Price", value: peso(sessionPrice) },
-                                  { label: "Shots", value: ev.settings?.numberOfShots ?? "—" },
+                                  { label: "Shots", value: cardShots },
                                   { label: "Today", value: todaySessions },
                                   { label: "Total", value: totalSessions },
                                 ].map(({ label, value }) => (
@@ -9724,6 +9619,35 @@ This cannot be undone.`
                                   className="flex-1 inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 active:scale-[0.98]"
                                 >
                                   Open editor
+                                </button>
+
+                                {/* QR Gallery button — requires gallery subscription */}
+                                <button
+                                  title={galleryAddonEnabled ? "View QR gallery for this event" : "Gallery subscription required"}
+                                  disabled={!galleryAddonEnabled}
+                                  onClick={async () => {
+                                    if (!galleryAddonEnabled) return;
+                                    setGalleryQrModal({ ev, loading: true, sessions: [], eventQr: null, eventQrLoading: false, error: null });
+                                    try {
+                                      const res = await window.electron.getEventGallerySessions({ eventId: ev.id });
+                                      const all = res?.sessions ?? [];
+                                      // Separate the event-level QR (no sessionId) from per-session entries
+                                      const eventQrEntry = all.find(s => !s.sessionId) || null;
+                                      const sessionEntries = all.filter(s => !!s.sessionId);
+                                      setGalleryQrModal({ ev, loading: false, sessions: sessionEntries, eventQr: eventQrEntry, eventQrLoading: false, error: res?.error ?? null });
+                                    } catch (err) {
+                                      setGalleryQrModal({ ev, loading: false, sessions: [], eventQr: null, eventQrLoading: false, error: err?.message || "Failed to load galleries" });
+                                    }
+                                  }}
+                                  className={`rounded-lg border px-2.5 py-2 text-xs font-semibold transition active:scale-[0.98] ${
+                                    galleryAddonEnabled
+                                      ? "border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100"
+                                      : "border-slate-100 bg-slate-50 text-slate-300 cursor-not-allowed"
+                                  }`}
+                                >
+                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
+                                  </svg>
                                 </button>
 
                                 <button
@@ -9952,7 +9876,7 @@ This cannot be undone.`
                                   return;
                                 }
 
-                                // Optional: reject SVGs if you don’t want vector uploads
+                                // Optional: reject SVGs if you don't want vector uploads
                                 if (type === 'image/svg+xml') {
                                   showToast('SVGs are not supported. Please upload a raster image like JPG/PNG/WEBP/GIF.');
                                   return;
@@ -10715,9 +10639,30 @@ This cannot be undone.`
 
                       {/* Sample templates */}
                       <div className="mt-6">
-                        <div className="mb-3 text-[10px] font-semibold uppercase tracking-widest text-slate-400">Templates</div>
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">Templates</div>
+                          {/* Format filter chips */}
+                          <div className="flex items-center gap-1">
+                            {["all", "4x6", "2x6", "6x4", "6x2"].map((fmt) => (
+                              <button
+                                key={fmt}
+                                onClick={() => setSampleFormatFilter(fmt)}
+                                className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold transition ${
+                                  sampleFormatFilter === fmt
+                                    ? "bg-blue-600 text-white"
+                                    : "bg-gray-100 text-gray-500 hover:bg-gray-200"
+                                }`}
+                              >
+                                {fmt === "all" ? "All" : fmt}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
                         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                          {DEFAULT_TEMPLATES.map((tpl) => {
+                          {DEFAULT_TEMPLATES.filter((tpl) => {
+                            if (sampleFormatFilter === "all") return true;
+                            return (tpl.previewMeta?.layout ?? "4x6") === sampleFormatFilter;
+                          }).map((tpl) => {
                             const inLibrary = templates.some(t => t.id === tpl.id);
                             const alreadyApplied = currentEvent?.appliedTemplates?.some(t => t.id === tpl.id) ?? false;
                             const layout = tpl.previewMeta?.layout ?? "4x6";
@@ -10776,14 +10721,38 @@ This cannot be undone.`
 
                       {/* Sample frames */}
                       <div className="mt-8">
-                        <div className="mb-3 text-[10px] font-semibold uppercase tracking-widest text-slate-400">Frames</div>
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">Frames</div>
+                          {/* Frame format filter chips */}
+                          <div className="flex items-center gap-1">
+                            {["all", "4x6", "2x6", "6x4", "6x2"].map((fmt) => (
+                              <button
+                                key={fmt}
+                                onClick={() => setSampleFrameFilter(fmt)}
+                                className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold transition ${
+                                  sampleFrameFilter === fmt
+                                    ? "bg-blue-600 text-white"
+                                    : "bg-gray-100 text-gray-500 hover:bg-gray-200"
+                                }`}
+                              >
+                                {fmt === "all" ? "All" : fmt}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
                         <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
-                          {DEFAULT_FRAMES.map((frame) => {
+                          {DEFAULT_FRAMES.filter((frame) => {
+                            if (sampleFrameFilter === "all") return true;
+                            return !!frame.previews?.[sampleFrameFilter]?.originalDataUrl;
+                          }).map((frame) => {
                             const inLibrary = frames.some(f => f.id === frame.id);
                             const alreadyApplied = currentEvent?.appliedFrames?.some(f => f.id === frame.id) ?? false;
+                            // Use selected format's preview; fall back to first available
                             const sampleFrameOrder = ["4x6", "2x6", "6x4", "6x2"];
-                            const firstKey = sampleFrameOrder.find(k => frame.previews?.[k]?.originalDataUrl) ?? null;
-                            const thumbSrc = firstKey ? frame.previews[firstKey].originalDataUrl : null;
+                            const preferredKey = sampleFrameFilter !== "all" && frame.previews?.[sampleFrameFilter]?.originalDataUrl
+                              ? sampleFrameFilter
+                              : sampleFrameOrder.find(k => frame.previews?.[k]?.originalDataUrl) ?? null;
+                            const thumbSrc = preferredKey ? frame.previews[preferredKey].originalDataUrl : null;
                             return (
                               <div key={frame.id} className="rounded-lg border border-slate-200 bg-white p-3 flex flex-col gap-3">
                                 <div className="text-sm font-medium text-slate-800 truncate">{frame.name}</div>
@@ -11293,92 +11262,22 @@ This cannot be undone.`
                                 />
                                 Enable payment
                               </label>
-                              {/* Active provider info + provider-specific methods */}
+                              {/* Active gateway info */}
                               {!activeProvider ? (
-                                <p className="mt-2 text-xs text-amber-600">No payment provider selected. Configure one in Account → Business.</p>
+                                <p className="mt-2 text-xs text-amber-600">
+                                  {anyProviderConfigured
+                                    ? "Provider connected but not selected as active — go to Account → Business and click your gateway card to activate it."
+                                    : "No payment provider selected. Configure one in Account → Business."}
+                                </p>
                               ) : (
-                                <div className="mt-2 space-y-3">
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-[11px] text-slate-500">Via:</span>
-                                    <span className="text-[11px] font-semibold text-slate-700 capitalize">{activeProvider}</span>
-                                    {activeProviderIsTest && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">Test Mode</span>}
-                                  </div>
-
-                                  {/* PayMongo methods */}
-                                  {activeProvider === "paymongo" && (
-                                    <div className="grid grid-cols-2 gap-2">
-                                      {[["GCash", "gcash"], ["Maya", "maya"], ["GrabPay", "grabpay"], ["Card", "card"]].map(([label, key]) => (
-                                        <label key={key} className={`inline-flex items-center gap-2 text-sm ${!paymentEnabled || !paymongoConfigured ? "opacity-50 cursor-not-allowed" : ""}`}>
-                                          <input type="checkbox" checked={!!paymentProviders[key]} onChange={(e) => setPaymentProviders((prev) => ({ ...prev, [key]: e.target.checked }))} disabled={!paymentEnabled || !paymongoConfigured} />
-                                          {label}
-                                        </label>
-                                      ))}
-                                      {!paymongoConfigured && <p className="col-span-2 text-[10px] text-amber-600">PayMongo not connected — configure in Account → Business.</p>}
-                                    </div>
-                                  )}
-
-                                  {/* Stripe methods */}
-                                  {activeProvider === "stripe" && (
-                                    <div className="grid grid-cols-2 gap-2">
-                                      {[["Cards", "card"], ["Apple Pay", "applePay"], ["Google Pay", "googlePay"], ["Link", "link"], ["SEPA", "sepa"], ["iDEAL", "ideal"]].map(([label, key]) => (
-                                        <label key={key} className={`inline-flex items-center gap-2 text-sm ${!paymentEnabled || !stripeConfigured ? "opacity-50 cursor-not-allowed" : ""}`}>
-                                          <input type="checkbox" checked={!!stripeProviders[key]} onChange={(e) => setStripeProviders((prev) => ({ ...prev, [key]: e.target.checked }))} disabled={!paymentEnabled || !stripeConfigured} />
-                                          {label}
-                                        </label>
-                                      ))}
-                                      {!stripeConfigured && <p className="col-span-2 text-[10px] text-amber-600">Stripe not connected — configure in Account → Business.</p>}
-                                    </div>
-                                  )}
-
-                                  {/* Xendit methods */}
-                                  {activeProvider === "xendit" && (
-                                    <div className="space-y-2">
-                                      <div className="grid grid-cols-2 gap-2">
-                                        {[["Cards", "card"], ["OVO", "ovo"], ["DANA", "dana"], ["GoPay", "gopay"], ["LinkAja", "linkaja"], ["ShopeePay", "shopeepay"], ["QRIS", "qris"]].map(([label, key]) => (
-                                          <label key={key} className={`inline-flex items-center gap-2 text-sm ${!paymentEnabled || !xenditConfigured ? "opacity-50 cursor-not-allowed" : ""}`}>
-                                            <input type="checkbox" checked={!!xenditProviders[key]} onChange={(e) => setXenditProviders((prev) => ({ ...prev, [key]: e.target.checked }))} disabled={!paymentEnabled || !xenditConfigured} />
-                                            {label}
-                                          </label>
-                                        ))}
-                                      </div>
-                                      <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mt-1">Virtual Accounts</p>
-                                      <div className="grid grid-cols-2 gap-2">
-                                        {[["BCA", "va_bca"], ["BNI", "va_bni"], ["BRI", "va_bri"], ["Mandiri", "va_mandiri"]].map(([label, key]) => (
-                                          <label key={key} className={`inline-flex items-center gap-2 text-sm ${!paymentEnabled || !xenditConfigured ? "opacity-50 cursor-not-allowed" : ""}`}>
-                                            <input type="checkbox" checked={!!xenditProviders[key]} onChange={(e) => setXenditProviders((prev) => ({ ...prev, [key]: e.target.checked }))} disabled={!paymentEnabled || !xenditConfigured} />
-                                            {label} VA
-                                          </label>
-                                        ))}
-                                      </div>
-                                      <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mt-1">Retail Outlets</p>
-                                      <div className="grid grid-cols-2 gap-2">
-                                        {[["Alfamart", "alfamart"], ["Indomaret", "indomaret"]].map(([label, key]) => (
-                                          <label key={key} className={`inline-flex items-center gap-2 text-sm ${!paymentEnabled || !xenditConfigured ? "opacity-50 cursor-not-allowed" : ""}`}>
-                                            <input type="checkbox" checked={!!xenditProviders[key]} onChange={(e) => setXenditProviders((prev) => ({ ...prev, [key]: e.target.checked }))} disabled={!paymentEnabled || !xenditConfigured} />
-                                            {label}
-                                          </label>
-                                        ))}
-                                      </div>
-                                      {!xenditConfigured && <p className="text-[10px] text-amber-600">Xendit not connected — configure in Account → Business.</p>}
-                                    </div>
-                                  )}
-
-                                  {/* PayPal methods */}
-                                  {activeProvider === "paypal" && (
-                                    <div className="grid grid-cols-2 gap-2">
-                                      {[["PayPal Wallet", "wallet"], ["Pay Later", "payLater"], ["Venmo", "venmo"], ["Cards", "card"]].map(([label, key]) => (
-                                        <label key={key} className={`inline-flex items-center gap-2 text-sm ${!paymentEnabled || !paypalConfigured ? "opacity-50 cursor-not-allowed" : ""}`}>
-                                          <input type="checkbox" checked={!!paypalProviders[key]} onChange={(e) => setPaypalProviders((prev) => ({ ...prev, [key]: e.target.checked }))} disabled={!paymentEnabled || !paypalConfigured} />
-                                          {label}
-                                        </label>
-                                      ))}
-                                      {!paypalConfigured && <p className="col-span-2 text-[10px] text-amber-600">PayPal not connected — configure in Account → Business.</p>}
-                                    </div>
-                                  )}
+                                <div className="mt-2 flex items-center gap-2">
+                                  <span className="text-[11px] text-slate-500">Via:</span>
+                                  <span className="text-[11px] font-semibold text-slate-700 capitalize">{activeProvider}</span>
+                                  {activeProviderIsTest && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">Test Mode</span>}
                                 </div>
                               )}
 
-                              {/* Cash — always available regardless of gateway */}
+                              {/* Cash */}
                               <div className="mt-3 border-t border-slate-100 pt-3">
                                 <label className={`inline-flex items-center gap-2 text-sm ${!paymentEnabled ? "opacity-50 cursor-not-allowed" : ""}`}>
                                   <input type="checkbox" checked={!!paymentProviders.cash} onChange={(e) => setPaymentProviders((prev) => ({ ...prev, cash: e.target.checked }))} disabled={!paymentEnabled} />
@@ -11401,29 +11300,6 @@ This cannot be undone.`
                                   </label>
                                   {cashHardwareDetected && cashHardwareDevices.length > 0 && <p className="text-[10px] text-slate-500 italic">{cashHardwareDevices.join(", ")}</p>}
                                   <button type="button" disabled={cashHardwareDetecting} onClick={handleDetectCashHardware} className="text-[11px] text-blue-600 underline disabled:opacity-50">{cashHardwareDetecting ? "Scanning…" : "Scan for hardware"}</button>
-                                </div>
-                              )}
-
-                              {/* GCash static QR — available when PayMongo is active and GCash is enabled */}
-                              {paymentEnabled && activeProvider === "paymongo" && paymentProviders.gcash && (
-                                <div className="mt-3 border-l-2 border-blue-200 pl-3 space-y-1.5">
-                                  <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">GCash Static QR (fallback)</p>
-                                  {gcashStaticQrDataUrl ? (
-                                    <div className="flex items-start gap-3 mt-1">
-                                      <img src={gcashStaticQrDataUrl} alt="GCash QR" className="w-20 h-20 rounded-lg border border-slate-200 object-contain bg-white" />
-                                      <div className="flex flex-col gap-1">
-                                        <span className="text-[11px] text-green-700 font-semibold">QR uploaded</span>
-                                        <label className="cursor-pointer text-[11px] text-blue-600 underline">Replace<input type="file" accept="image/*" className="hidden" onChange={handleGcashQrUpload} /></label>
-                                        <button type="button" onClick={() => setGcashStaticQrDataUrl("")} className="text-left text-[11px] text-red-500 underline">Remove</button>
-                                      </div>
-                                    </div>
-                                  ) : (
-                                    <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-blue-300 bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700 hover:bg-blue-100 transition">
-                                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
-                                      Upload GCash QR image
-                                      <input type="file" accept="image/*" className="hidden" onChange={handleGcashQrUpload} />
-                                    </label>
-                                  )}
                                 </div>
                               )}
                             </div>
@@ -12016,6 +11892,214 @@ This cannot be undone.`
                 </div>
               )}
             </div>
+
+            {/* QR Gallery modal */}
+            {galleryQrModal && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+                <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col overflow-hidden">
+                  {/* Header */}
+                  <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+                    <div>
+                      <div className="text-sm font-semibold text-gray-900">QR Gallery</div>
+                      <div className="text-xs text-gray-400 mt-0.5 truncate max-w-xs">
+                        {galleryQrModal.ev?.name || "Event"}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setGalleryQrModal(null)}
+                      className="rounded-full p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+
+                  {/* Body */}
+                  <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
+                    {galleryQrModal.loading && (
+                      <div className="flex flex-col items-center justify-center py-10 gap-3 text-gray-400">
+                        <svg className="w-6 h-6 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 12a8 8 0 018-8v8H4z" />
+                        </svg>
+                        <span className="text-xs">Loading galleries…</span>
+                      </div>
+                    )}
+
+                    {!galleryQrModal.loading && galleryQrModal.error && (
+                      <div className="rounded-lg bg-red-50 border border-red-100 px-4 py-3 text-xs text-red-600">
+                        {galleryQrModal.error}
+                      </div>
+                    )}
+
+                    {/* ── Event-level QR (pre-session) ───────────────────── */}
+                    {!galleryQrModal.loading && (
+                      <div className="rounded-xl border border-violet-100 bg-violet-50/50 p-4">
+                        <div className="flex items-center justify-between mb-3">
+                          <div>
+                            <div className="text-[11px] font-semibold text-violet-700 uppercase tracking-wide">Event Gallery QR</div>
+                            <div className="text-[10px] text-violet-500 mt-0.5">Share with clients before any session starts</div>
+                          </div>
+                          {!galleryQrModal.eventQr && (
+                            <button
+                              disabled={galleryQrModal.eventQrLoading}
+                              onClick={async () => {
+                                setGalleryQrModal((prev) => ({ ...prev, eventQrLoading: true }));
+                                try {
+                                  const res = await window.electron.createEventGalleryQr({ eventId: galleryQrModal.ev?.id });
+                                  if (res?.ok) {
+                                    setGalleryQrModal((prev) => ({ ...prev, eventQr: { slug: res.slug, qrUrl: res.qrUrl, expiresAt: res.expiresAt }, eventQrLoading: false }));
+                                    showToast?.("Event QR created!");
+                                  } else {
+                                    showToast?.(res?.error || "Failed to create event QR");
+                                    setGalleryQrModal((prev) => ({ ...prev, eventQrLoading: false }));
+                                  }
+                                } catch (err) {
+                                  showToast?.(err?.message || "Failed to create event QR");
+                                  setGalleryQrModal((prev) => ({ ...prev, eventQrLoading: false }));
+                                }
+                              }}
+                              className="inline-flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-violet-700 transition disabled:opacity-60 disabled:cursor-not-allowed"
+                            >
+                              {galleryQrModal.eventQrLoading ? (
+                                <svg className="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 12a8 8 0 018-8v8H4z" /></svg>
+                              ) : (
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                              )}
+                              Generate QR
+                            </button>
+                          )}
+                        </div>
+
+                        {galleryQrModal.eventQr ? (
+                          <div className="flex gap-4 items-start">
+                            <div className="flex-shrink-0 bg-white rounded-lg p-2 border border-violet-200 shadow-sm">
+                              <QRCodeSVG value={galleryQrModal.eventQr.qrUrl} size={96} />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="text-xs font-medium text-gray-800 break-all leading-relaxed">
+                                {galleryQrModal.eventQr.qrUrl}
+                              </div>
+                              {galleryQrModal.eventQr.expiresAt && (
+                                <div className="mt-1 text-[10px] text-gray-400">
+                                  Expires {new Date(galleryQrModal.eventQr.expiresAt).toLocaleDateString()}
+                                </div>
+                              )}
+                              <div className="mt-2 flex items-center gap-2 flex-wrap">
+                                <button
+                                  onClick={() => { navigator.clipboard?.writeText(galleryQrModal.eventQr.qrUrl); showToast?.("Event gallery link copied!"); }}
+                                  className="inline-flex items-center gap-1 rounded-md border border-violet-200 bg-white px-2.5 py-1 text-[10px] font-semibold text-violet-700 hover:bg-violet-50 transition"
+                                >
+                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+                                  Copy link
+                                </button>
+                                <button
+                                  onClick={async () => {
+                                    try {
+                                      const dataUrl = await QRCodeLib.toDataURL(galleryQrModal.eventQr.qrUrl, { width: 512, margin: 2 });
+                                      const a = document.createElement("a");
+                                      a.href = dataUrl;
+                                      a.download = `event-qr-${galleryQrModal.eventQr.slug || "event"}.png`;
+                                      a.click();
+                                    } catch { showToast?.("Failed to download QR"); }
+                                  }}
+                                  className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white px-2.5 py-1 text-[10px] font-semibold text-gray-600 hover:bg-gray-50 transition"
+                                >
+                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                                  Download QR
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="text-[11px] text-violet-400 italic">
+                            No event QR yet — click Generate QR to create one instantly.
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* ── Per-session galleries ───────────────────────────── */}
+                    {!galleryQrModal.loading && galleryQrModal.sessions.length === 0 && (
+                      <div className="flex flex-col items-center justify-center py-6 gap-2 text-gray-400">
+                        <svg className="w-8 h-8 text-gray-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                        </svg>
+                        <div className="text-xs font-medium text-gray-400">No session galleries yet</div>
+                        <div className="text-[11px] text-gray-300 text-center max-w-[220px]">
+                          Individual session QR codes appear here after each booth session.
+                        </div>
+                      </div>
+                    )}
+
+                    {!galleryQrModal.loading && galleryQrModal.sessions.length > 0 && (
+                      <div className="space-y-4">
+                        <div className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide">Session Galleries</div>
+                        {galleryQrModal.sessions.map((session, idx) => (
+                          <div key={session.slug} className="rounded-xl border border-gray-100 bg-gray-50 p-4 flex gap-4 items-start">
+                            <div className="flex-shrink-0 bg-white rounded-lg p-2 border border-gray-200 shadow-sm">
+                              <QRCodeSVG value={session.qrUrl} size={96} />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
+                                Session {galleryQrModal.sessions.length - idx}
+                              </div>
+                              <div className="mt-1 text-xs font-medium text-gray-800 break-all leading-relaxed">
+                                {session.qrUrl}
+                              </div>
+                              {session.expiresAt && (
+                                <div className="mt-1 text-[10px] text-gray-400">
+                                  Expires {new Date(session.expiresAt).toLocaleDateString()}
+                                </div>
+                              )}
+                              <div className="mt-2 flex items-center gap-2 flex-wrap">
+                                <button
+                                  onClick={() => { navigator.clipboard?.writeText(session.qrUrl); showToast?.("Gallery link copied!"); }}
+                                  className="inline-flex items-center gap-1 rounded-md border border-violet-200 bg-violet-50 px-2.5 py-1 text-[10px] font-semibold text-violet-700 hover:bg-violet-100 transition"
+                                >
+                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+                                  Copy link
+                                </button>
+                                <button
+                                  onClick={async () => {
+                                    try {
+                                      const dataUrl = await QRCodeLib.toDataURL(session.qrUrl, { width: 512, margin: 2 });
+                                      const a = document.createElement("a");
+                                      a.href = dataUrl;
+                                      a.download = `gallery-qr-${session.slug || "session"}.png`;
+                                      a.click();
+                                    } catch { showToast?.("Failed to download QR code"); }
+                                  }}
+                                  className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white px-2.5 py-1 text-[10px] font-semibold text-gray-600 hover:bg-gray-50 transition"
+                                >
+                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                                  Download QR
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Footer */}
+                  <div className="px-5 py-3 border-t border-gray-100 flex items-center justify-between">
+                    <div className="text-[10px] text-gray-400">
+                      {galleryQrModal.sessions.length > 0
+                        ? `${galleryQrModal.sessions.length} session${galleryQrModal.sessions.length !== 1 ? "s" : ""} found`
+                        : ""}
+                    </div>
+                    <button
+                      onClick={() => setGalleryQrModal(null)}
+                      className="rounded-lg border border-gray-200 bg-white px-4 py-1.5 text-xs font-semibold text-gray-600 hover:bg-gray-50 transition"
+                    >
+                      Close
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Delete confirmation modal */}
             {deleteTarget && (

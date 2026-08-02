@@ -1,6 +1,7 @@
 {
   "short_name": "Photuna",
-  "name": "Studio Photuna",
+  "name": "Photuna Booth",
+  "description": "Studio Photuna — Photo booth management for operators",
   "icons": [
     {
       "src": "favicon.png",
@@ -15,11 +16,14 @@
     {
       "src": "logo512.png",
       "type": "image/png",
-      "sizes": "512x512"
+      "sizes": "512x512",
+      "purpose": "any maskable"
     }
   ],
-  "start_url": ".",
+  "start_url": "/",
+  "scope": "/",
   "display": "standalone",
-  "theme_color": "#000000",
-  "background_color": "#ffffff"
+  "orientation": "any",
+  "theme_color": "#1e1b4b",
+  "background_color": "#0f172a"
 }

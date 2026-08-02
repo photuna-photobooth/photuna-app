@@ -289,33 +289,12 @@ export default function AuthGate({ children }) {
     }
   };
 
-  const upgrade = async (plan) => {
-    setMsg('');
-    setPlanLoading(true);
-    try {
-      const res = await api.createCheckoutSession(plan);
-      if (res?.url) {
-        if (window.system?.openExternal) {
-          await window.system.openExternal(res.url);
-        } else {
-          window.open(res.url, '_blank');
-        }
-        setMsg('Checkout opened in your browser. Complete payment, then click Refresh License below.');
-      } else {
-        setMsg('No checkout URL returned. Please try again.');
-      }
-    } catch (err) {
-      setMsg(err?.message ? `Checkout error: ${err.message}` : 'Checkout failed. Please try again.');
-    } finally {
-      setPlanLoading(false);
-    }
-  };
 
   const handleRefreshLicense = async () => {
     setMsg('');
     setPlanLoading(true);
     try {
-      await refreshLicense({ hard: true });
+      await refreshLicense();
       setMsg('License refreshed.');
     } catch (err) {
       setMsg('Refresh failed. Please try again.');
@@ -637,11 +616,10 @@ export default function AuthGate({ children }) {
                         {planLoading ? 'Please wait...' : 'Redeem 14-day Trial'}
                       </button>
                       <button
-                        className="rounded-full border border-blue-200 bg-blue-50 px-5 py-2.5 text-sm font-semibold text-blue-700 transition hover:bg-blue-100 disabled:opacity-50"
-                        onClick={() => upgrade(selectedProPlan.plan)}
-                        disabled={planLoading}
+                        className="rounded-full border border-blue-200 bg-blue-50 px-5 py-2.5 text-sm font-semibold text-blue-700 transition hover:bg-blue-100"
+                        onClick={() => setMsg('Go to Settings → Billing to subscribe.')}
                       >
-                        {planLoading ? 'Please wait...' : selectedProPlan.cta}
+                        {selectedProPlan.cta}
                       </button>
                     </>
                   )}

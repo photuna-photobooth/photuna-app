@@ -5,7 +5,7 @@ import { useAuth } from "../../context/AuthContext";
 import { useLicense } from "../../context/LicenseContext";
 import * as licensingApi from "../../services/licensingApi";
 
-const ACCENT = "#635bff"; // Stripe indigo
+const ACCENT = "#635bff";
 const surface = "bg-white border border-gray-200 rounded-lg shadow-lg";
 
 export default function AccountMenu({
@@ -51,16 +51,11 @@ export default function AccountMenu({
     }
   };
 
-  const openBillingPortal = async () => {
-    const { url } = await licensingApi.customerPortal();
-    await window.system.openExternal(url);
-  };
-
   const handleRefreshLicense = async () => {
     setRefreshing(true);
     setMsg("");
     try {
-      await refreshLicense({ hard: true });
+      await refreshLicense();
       setMsg("License refreshed.");
     } catch (err) {
       setMsg(`Error: ${err?.message || String(err)}`);

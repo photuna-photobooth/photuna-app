@@ -96,6 +96,7 @@ const apiImpl = {
   startQrPayment: (payload) => ipcRenderer.invoke("payment:start-qr", payload),
   startPayPalPayment: (payload) => ipcRenderer.invoke("payment:start-paypal", payload),
   startCardPayment: (payload) => ipcRenderer.invoke("payment:start-card", payload),
+  startGatewayPayment: (payload) => ipcRenderer.invoke("payment:start-gateway", payload),
   chargeAdditionalPayment: (payload) => ipcRenderer.invoke("payment:charge-additional", payload),
   recordPayment: (record) => ipcRenderer.invoke("payment:record", record),
   cancelPayment: (payload) => ipcRenderer.invoke("paymongo:cancelPayment", payload),
@@ -105,6 +106,17 @@ const apiImpl = {
   clearPayMongoKeys: () => ipcRenderer.invoke("paymongo:clearKeys"),
   onPaymentConfirmed: (listener) => onChannel("payment:confirmed", listener),
   onPaymentFailed: (listener) => onChannel("payment:failed", listener),
+
+  saveXenditKeys: (payload) => ipcRenderer.invoke("xendit:saveKeys", payload),
+  getXenditStatus: () => ipcRenderer.invoke("xendit:getStatus"),
+  clearXenditKeys: () => ipcRenderer.invoke("xendit:clearKeys"),
+
+  savePaypalKeys: (payload) => ipcRenderer.invoke("paypal:saveKeys", payload),
+  getPaypalStatus: () => ipcRenderer.invoke("paypal:getStatus"),
+  clearPaypalKeys: () => ipcRenderer.invoke("paypal:clearKeys"),
+
+  /* Card terminal & cash hardware detection */
+  detectCardTerminal: () => ipcRenderer.invoke("card:detectTerminal"),
 
   /* DNP printer detection */
   scanDnpPrinters: () => ipcRenderer.invoke("printer:dnpScan"),
@@ -146,6 +158,22 @@ const apiImpl = {
       ...payload,
       userId: payload?.userId ?? ctx?.userId ?? null,
       storagePath: payload?.storagePath ?? storagePath,
+    });
+  },
+
+  getEventGallerySessions: async ({ eventId, userId } = {}) => {
+    const ctx = await withIdentityCtx();
+    return ipcRenderer.invoke("gallery:get-event-sessions", {
+      eventId,
+      userId: userId ?? ctx?.userId ?? null,
+    });
+  },
+
+  createEventGalleryQr: async ({ eventId, userId } = {}) => {
+    const ctx = await withIdentityCtx();
+    return ipcRenderer.invoke("gallery:create-event-qr", {
+      eventId,
+      userId: userId ?? ctx?.userId ?? null,
     });
   },
 

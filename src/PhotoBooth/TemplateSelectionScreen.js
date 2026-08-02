@@ -222,9 +222,11 @@ export default function TemplateSelectionScreen({
   useEffect(() => {
     (async () => {
       try {
-        const shots = effectiveNumberOfShots;
+        // Always take at least as many photos as there are template slots.
+        const shots = Math.max(effectiveNumberOfShots, totalSlots);
         if (Array.isArray(photosProp) && photosProp.length > 0) {
-          setPhotos(photosProp.map(normalizeToFileUrl).slice(0, shots));
+          // Don't slice — photosProp is already the curated session capture.
+          setPhotos(photosProp.map(normalizeToFileUrl));
           return;
         }
         const imgs = await window.electron.getCapturedPhotos(eventId);
@@ -245,7 +247,7 @@ export default function TemplateSelectionScreen({
         setPhotos([]);
       }
     })();
-  }, [eventId, effectiveNumberOfShots, photosProp]);
+  }, [eventId, effectiveNumberOfShots, totalSlots, photosProp]);
 
   /* ---------------- Countdown ---------------- */
   useEffect(() => {
@@ -371,158 +373,151 @@ export default function TemplateSelectionScreen({
 
   return (
     <div
-      className={`w-full h-screen text-black overflow-hidden ${isPortrait ? "flex flex-col" : "grid grid-cols-[.8fr_.8fr] py-[50px]"}`}
+      className="w-full h-screen text-black overflow-hidden flex flex-col p-3"
       style={{ backgroundColor: appearance.bgColor || "#ffffff", color: bodyColor, fontFamily: uiFont }}
     >
 
-      {/* Portrait: inline header row (Row 1) */}
-      {isPortrait && (
-        <div className="shrink-0 flex items-center justify-between" style={{ padding: '2vh 4vw' }}>
-          {logoPath
-            ? <img src={logoPath} alt="logo" style={{ maxHeight: '6vh' }} className="w-auto object-contain" />
-            : <span className="font-bold" style={{ fontFamily: headerFont, color: brandColor, fontSize: 'clamp(18px, 2.5vw, 46px)' }}>{brandName}</span>
-          }
-          <div className="px-5 py-2 rounded-full font-bold shadow-sm" style={{ backgroundColor: primaryColor, color: buttonFontColor, fontFamily: uiFont, fontSize: 'clamp(16px, 2vw, 38px)' }} aria-live="polite">
-            {Math.max(0, timeLeft)}s
-          </div>
-        </div>
-      )}
-
-      {/* Landscape: absolute header + timer */}
-      {!isPortrait && (<>
-        <div className="absolute top-6 left-6 z-20">
+      {/* ── Header: logo + timer — always in flow so scroll never overlaps ── */}
+      <div
+        className="shrink-0 flex items-center"
+        style={{ padding: isPortrait ? '2vh 4vw' : '6px 24px 4px' }}
+      >
+        {/* Logo */}
+        <div style={{ flex: 1 }}>
           {logoPath ? (
-            <img src={logoPath} alt="logo" className="max-w-[300px] sm:max-w-[300px] md:max-w-[400px]" />
+            isPortrait
+              ? <img src={logoPath} alt="logo" style={{ maxHeight: '6vh' }} className="w-auto object-contain" />
+              : <img src={logoPath} alt="logo" className="max-w-[300px] sm:max-w-[300px] md:max-w-[400px]" />
+          ) : isPortrait ? (
+            <span className="font-bold" style={{ fontFamily: headerFont, color: brandColor, fontSize: 'clamp(18px, 2.5vw, 46px)' }}>{brandName}</span>
           ) : (
-            <>
+            <div>
               <h1 className="font-bold" style={{ fontFamily: headerFont, color: brandColor, fontSize: 'clamp(22px, 3.5vw, 56px)' }}>{brandName}</h1>
               {brandSlogan && <p style={{ color: bodyColor, fontSize: 'clamp(12px, 1.4vw, 22px)' }}>{brandSlogan}</p>}
-            </>
+            </div>
           )}
         </div>
-        <div className="absolute top-6 left-1/2 transform -translate-x-1/2 z-30">
-          <div className="rounded-full font-bold shadow-sm" style={{ fontFamily: uiFont, backgroundColor: primaryColor, color: buttonFontColor, fontSize: 'clamp(14px, 1.8vw, 26px)', padding: 'clamp(6px, 0.8vh, 12px) clamp(14px, 1.8vw, 28px)' }} aria-live="polite">
-            {Math.max(0, timeLeft)}s
-          </div>
-        </div>
-      </>)}
 
-      {/* LEFT: photos — portrait: Row 3 (h-[45vh] shrink-0, order 2) */}
-      <div
-        className={isPortrait ? "shrink-0 flex flex-col" : "col-span-1 h-full min-h-0 flex flex-col"}
-        style={isPortrait ? { height: '45vh', order: 2 } : undefined}
-      >
+        {/* Timer — centered via flex spacers */}
         <div
-          className={`flex-1 min-h-0 overflow-y-auto light-scroll ${isPortrait ? "" : "pt-32 px-20"}`}
-          style={isPortrait ? { padding: '2vh 4vw 1vh' } : undefined}
+          className="rounded-full font-bold shadow-sm px-5 py-2"
+          style={{
+            backgroundColor: primaryColor,
+            color: buttonFontColor,
+            fontFamily: uiFont,
+            fontSize: isPortrait ? 'clamp(16px, 2vw, 38px)' : 'clamp(14px, 1.8vw, 26px)',
+          }}
+          aria-live="polite"
         >
-        <div className="grid grid-cols-2 gap-4">
-      
-          {photos.map((src, i) => {
-            const selected = selectedIndices.includes(i);
-            const order = selected ? selectedIndices.indexOf(i) + 1 : null;
-            return (
-              <button
-                key={i}
-                onClick={() => toggleSelection(i)}
-                className={`relative overflow-hidden rounded-xl shadow-md border-2 transition-transform active:scale-95 ${selected ? "border-black" : "border-gray-200"
-                  }`}
-                style={{ fontFamily: uiFont }}
-              >
-                <img src={src} alt={`Photo ${i + 1}`} className="w-full h-auto object-cover" />
-                {selected && (
-                  <div className="absolute top-2 left-2">
-                    <span
-                      className="text-white text-xs font-bold px-2 py-1 rounded-md"
-                      style={{ backgroundColor: primaryColor, fontFamily: buttonFont }}
-                    >
-                      {order}
-                    </span>
-                  </div>
-                )}
-              </button>
-            );
-          })}
+          {Math.max(0, timeLeft)}s
         </div>
 
-        </div>
-
-        {/* Footer actions — pinned at bottom */}
-        <div
-          className={`shrink-0 flex items-center justify-between ${isPortrait ? "" : "px-20 py-4"}`}
-          style={isPortrait ? { padding: '1vh 4vw 2vh' } : undefined}
-        >
-          <span
-            className="flex items-center gap-2 px-10 py-4 rounded-full font-bold shadow-lg"
-            style={{ backgroundColor: primaryColor, color: "#fff", fontFamily: buttonFont, fontSize: isPortrait ? 'clamp(18px, 2.5vw, 46px)' : '1.5rem' }}
-          >
-            {T.photosCount} {selectedIndices.length}/{totalSlots}
-          </span>
-          <div className="flex items-center gap-3">
-            {onCancel && (
-              <button
-                onClick={onCancel}
-                className="px-5 py-2 rounded-full font-semibold bg-gray-200 hover:bg-gray-300 transition"
-                style={{ fontFamily: uiFont, fontSize: isPortrait ? 'clamp(14px, 1.8vw, 34px)' : '1.125rem' }}
-              >
-                {T.back}
-              </button>
-            )}
-            <button
-              onClick={onSave}
-              disabled={selectedIndices.length < totalSlots || selectedIndices.length === 0}
-              className={`flex items-center gap-2 px-10 py-4 rounded-full font-bold shadow-lg transition
-    ${selectedIndices.length >= totalSlots && totalSlots > 0
-                  ? "cursor-pointer"
-                  : "bg-gray-300 text-gray-500 cursor-not-allowed"
-                }
-  `}
-              style={{
-                fontFamily: buttonFont,
-                fontSize: isPortrait ? 'clamp(18px, 2.5vw, 46px)' : '1.5rem',
-                backgroundColor:
-                  selectedIndices.length >= totalSlots && totalSlots > 0
-                    ? primaryColor
-                    : undefined,
-                color:
-                  selectedIndices.length >= totalSlots && totalSlots > 0
-                    ? buttonFontColor
-                    : undefined,
-              }}
-              onMouseEnter={(e) => {
-                if (selectedIndices.length >= totalSlots && totalSlots > 0) {
-                  e.currentTarget.style.backgroundColor = buttonHoverColor;
-                  e.currentTarget.style.color = buttonFontColor;
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (selectedIndices.length >= totalSlots && totalSlots > 0) {
-                  e.currentTarget.style.backgroundColor = primaryColor;
-                  e.currentTarget.style.color = buttonFontColor;
-                }
-              }}
-            >
-              {T.next}
-            </button>
-          </div>
-        </div>
+        {/* Right spacer — keeps timer visually centered in landscape */}
+        {!isPortrait && <div style={{ flex: 1 }} />}
       </div>
 
-      {/* RIGHT: template preview — portrait: Row 2 (flex-1 min-h-0, order 1) */}
+      {/* ── Body: 2-column (landscape) or reordered stack (portrait) ── */}
       <div
-        className={isPortrait
-          ? "flex-1 min-h-0 overflow-y-auto light-scroll"
-          : "col-span-1 h-full overflow-y-auto light-scroll px-10 py-32"
-        }
-        style={isPortrait ? { padding: '1vh 4vw', order: 1 } : undefined}
+        className={`flex-1 min-h-0 ${isPortrait ? "flex flex-col" : "grid grid-cols-[.8fr_.8fr] pb-[50px]"}`}
       >
+        {/* LEFT column: photo grid + counter + next button */}
+        <div
+          className={isPortrait ? "shrink-0 flex flex-col" : "col-span-1 h-full min-h-0 flex flex-col"}
+          style={isPortrait ? { height: '45vh', order: 2 } : undefined}
+        >
+          {/* Photo grid */}
+          <div
+            className={`flex-1 min-h-0 overflow-y-auto light-scroll ${isPortrait ? "" : "pt-4 px-20"}`}
+            style={isPortrait ? { padding: '2vh 4vw 1vh' } : undefined}
+          >
+            <div className="grid grid-cols-2 gap-4">
+              {photos.map((src, i) => {
+                const selected = selectedIndices.includes(i);
+                const order = selected ? selectedIndices.indexOf(i) + 1 : null;
+                return (
+                  <button
+                    key={i}
+                    onClick={() => toggleSelection(i)}
+                    className={`relative overflow-hidden rounded-xl shadow-md border-2 transition-transform active:scale-95 ${selected ? "border-black" : "border-gray-200"}`}
+                    style={{ fontFamily: uiFont }}
+                  >
+                    <img src={src} alt={`Photo ${i + 1}`} className="w-full h-auto object-cover" />
+                    {selected && (
+                      <div className="absolute top-2 left-2">
+                        <span className="text-white text-xs font-bold px-2 py-1 rounded-md" style={{ backgroundColor: primaryColor, fontFamily: buttonFont }}>
+                          {order}
+                        </span>
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
 
+          {/* Counter + buttons — pinned below photo grid */}
+          <div
+            className={`shrink-0 flex items-center justify-between ${isPortrait ? "" : "px-20 py-4"}`}
+            style={isPortrait ? { padding: '1vh 4vw 2vh' } : undefined}
+          >
+            <span
+              className="flex items-center gap-2 px-10 py-4 rounded-full font-bold shadow-lg"
+              style={{ backgroundColor: primaryColor, color: "#fff", fontFamily: buttonFont, fontSize: isPortrait ? 'clamp(18px, 2.5vw, 46px)' : '1.5rem' }}
+            >
+              {T.photosCount} {selectedIndices.length}/{totalSlots}
+            </span>
+            <div className="flex items-center gap-3">
+              {onCancel && (
+                <button
+                  onClick={onCancel}
+                  className="px-5 py-2 rounded-full font-semibold bg-gray-200 hover:bg-gray-300 transition"
+                  style={{ fontFamily: uiFont, fontSize: isPortrait ? 'clamp(14px, 1.8vw, 34px)' : '1.125rem' }}
+                >
+                  {T.back}
+                </button>
+              )}
+              <button
+                onClick={onSave}
+                disabled={selectedIndices.length < totalSlots || selectedIndices.length === 0}
+                className={`flex items-center gap-2 px-10 py-4 rounded-full font-bold shadow-lg transition ${
+                  selectedIndices.length >= totalSlots && totalSlots > 0 ? "cursor-pointer" : "bg-gray-300 text-gray-500 cursor-not-allowed"
+                }`}
+                style={{
+                  fontFamily: buttonFont,
+                  fontSize: isPortrait ? 'clamp(18px, 2.5vw, 46px)' : '1.5rem',
+                  backgroundColor: selectedIndices.length >= totalSlots && totalSlots > 0 ? primaryColor : undefined,
+                  color: selectedIndices.length >= totalSlots && totalSlots > 0 ? buttonFontColor : undefined,
+                }}
+                onMouseEnter={(e) => {
+                  if (selectedIndices.length >= totalSlots && totalSlots > 0) {
+                    e.currentTarget.style.backgroundColor = buttonHoverColor;
+                    e.currentTarget.style.color = buttonFontColor;
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (selectedIndices.length >= totalSlots && totalSlots > 0) {
+                    e.currentTarget.style.backgroundColor = primaryColor;
+                    e.currentTarget.style.color = buttonFontColor;
+                  }
+                }}
+              >
+                {T.next}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* RIGHT column: template preview */}
+        <div
+          className={isPortrait
+            ? "flex-1 min-h-0 overflow-y-auto light-scroll"
+            : "col-span-1 h-full overflow-y-auto light-scroll px-10 pt-4 pb-16"
+          }
+          style={isPortrait ? { padding: '1vh 4vw', order: 1 } : undefined}
+        >
         {(() => {
-          const layoutKey = normalizedLayout; // "4x6" | "2x6" | "6x4" | "6x2"
-
+          const layoutKey = normalizedLayout;
           const isStrip = layoutKey === "2x6" || layoutKey === "6x2";
-
-          // aspectRatio inline style — mirrors FrameFilterScreen which is confirmed working
           const aspectStyle = {
             aspectRatio:
               layoutKey === "2x6" ? "2 / 6" :
@@ -530,7 +525,6 @@ export default function TemplateSelectionScreen({
               layoutKey === "6x2" ? "6 / 2" :
               "4 / 6",
           };
-
           const boxClass = (() => {
             switch (layoutKey) {
               case "2x6": return "w-full max-w-[230px]";
@@ -540,7 +534,6 @@ export default function TemplateSelectionScreen({
             }
           })();
 
-          // WYSIWYG slot canvas — same pattern as FrameFilterScreen
           const Canvas = (
             <div className="relative w-full h-full bg-white">
               {template.slots.length === 0 && (
@@ -570,13 +563,8 @@ export default function TemplateSelectionScreen({
                     {src ? (
                       <img src={src} className="w-full h-full object-cover" alt="" />
                     ) : (
-                      <div
-                        className="w-full h-full flex items-center justify-center"
-                        style={{ backgroundColor: 'rgba(99,102,241,0.12)', border: '2px dashed rgba(99,102,241,0.5)' }}
-                      >
-                        <span className="text-xs font-bold" style={{ color: 'rgba(99,102,241,0.8)' }}>
-                          {slotNum}
-                        </span>
+                      <div className="w-full h-full flex items-center justify-center" style={{ backgroundColor: 'rgba(99,102,241,0.12)', border: '2px dashed rgba(99,102,241,0.5)' }}>
+                        <span className="text-xs font-bold" style={{ color: 'rgba(99,102,241,0.8)' }}>{slotNum}</span>
                       </div>
                     )}
                   </div>
@@ -585,21 +573,13 @@ export default function TemplateSelectionScreen({
             </div>
           );
 
-          // Non-strip layouts — single preview box (4x6, 6x4)
           if (!isStrip) {
             return (
               <div className="flex items-center justify-center">
-                <div
-                  className={`shadow-lg border border-gray-200 relative overflow-hidden ${boxClass}`}
-                  style={aspectStyle}
-                >
-                  {Canvas}
-                </div>
+                <div className={`shadow-lg border border-gray-200 relative overflow-hidden ${boxClass}`} style={aspectStyle}>{Canvas}</div>
               </div>
             );
           }
-
-          // Strip layouts — 2x6 (tall): side-by-side; 6x2 (wide): stacked
           if (layoutKey === "2x6") {
             return (
               <div className="flex items-center justify-center gap-6">
@@ -608,7 +588,6 @@ export default function TemplateSelectionScreen({
               </div>
             );
           }
-
           return (
             <div className="flex flex-col items-center justify-center gap-6">
               <div className={`shadow-lg border border-gray-200 relative overflow-hidden ${boxClass}`} style={aspectStyle}>{Canvas}</div>
@@ -616,7 +595,9 @@ export default function TemplateSelectionScreen({
             </div>
           );
         })()}
+        </div>
       </div>
+
     </div>
   );
 }

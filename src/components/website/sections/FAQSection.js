@@ -19,7 +19,7 @@ const faqs = [
   },
   {
     q: "What payment methods are supported?",
-    a: "We support all major credit cards, debit cards, and other payment methods via Stripe.",
+    a: "We support GCash, Maya, GrabPay, credit cards, and more via PayMongo.",
   },
   {
     q: "Is there a free trial?",

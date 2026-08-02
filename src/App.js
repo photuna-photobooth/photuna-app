@@ -331,11 +331,19 @@ export default function App() {
     setUpdatePercent(0);
   }, []);
 
-  // Block render while Supabase session is restoring (Ctrl+R, cold start).
-  // Without this gate, the app briefly shows AuthGate or a null-license dashboard
-  // before the session resolves, making the plan appear as "Free".
-  if (authLoading) {
-    return <AppLoadingScreen message="Restoring your session…" />;
+  // Block render until auth AND the initial license fetch have resolved.
+  // We only gate on the FIRST load — licenseLoading goes true again on every
+  // manual refresh (e.g. AdminDashboard calling refreshLicense after billing),
+  // so gating on licenseLoading directly creates an infinite unmount/remount loop.
+  const licenseEverLoaded = React.useRef(false);
+  if (!licenseLoading) licenseEverLoaded.current = true;
+
+  if (authLoading || (user && !licenseEverLoaded.current)) {
+    return (
+      <AppLoadingScreen
+        message={authLoading ? "Restoring your session…" : "Loading your account…"}
+      />
+    );
   }
 
   // Not logged in? Show Auth Gate (login/register + trial/upgrade)

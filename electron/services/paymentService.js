@@ -137,6 +137,48 @@ class PayMongoService {
     };
   }
 
+  async createPaymentLink(amountPhp, currency = "PHP", description = "Photobooth Session") {
+    const body = await paymongoFetch("/links", this.secretKey, {
+      method: "POST",
+      body: JSON.stringify({
+        data: {
+          attributes: {
+            amount: toCentavos(amountPhp),
+            currency,
+            description,
+            remarks: "",
+          },
+        },
+      }),
+    });
+    const link = body?.data;
+    return {
+      id: link?.id,
+      checkoutUrl: link?.attributes?.checkout_url,
+      status: link?.attributes?.status,
+    };
+  }
+
+  async getPaymentLink(linkId) {
+    const body = await paymongoFetch(`/links/${linkId}`, this.secretKey);
+    const link = body?.data;
+    const payments = link?.attributes?.payments ?? [];
+    const paid = payments.find((p) => p?.attributes?.status === "paid");
+    return {
+      id: link?.id,
+      status: link?.attributes?.status,
+      hasPaid: !!paid,
+      paymentId: paid?.id ?? null,
+    };
+  }
+
+  async archiveLink(linkId) {
+    return paymongoFetch(`/links/${linkId}/archive`, this.secretKey, {
+      method: "POST",
+      body: JSON.stringify({}),
+    }).catch(() => {});
+  }
+
   async createPaymentIntent(amountPhp, currency = "PHP", description = "Photobooth session") {
     const body = await paymongoFetch("/payment_intents", this.secretKey, {
       method: "POST",
@@ -238,9 +280,190 @@ function isTestMode(key) {
   return typeof key === "string" && key.includes("_test_");
 }
 
+// ── Xendit ──────────────────────────────────────────────────────────────────
+const XENDIT_BASE = "https://api.xendit.co";
+
+async function xenditFetch(path, apiKey, options = {}) {
+  const res = await fetch(`${XENDIT_BASE}${path}`, {
+    ...options,
+    headers: {
+      Authorization: "Basic " + Buffer.from(apiKey + ":").toString("base64"),
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      ...(options.headers || {}),
+    },
+  });
+  const body = await res.json().catch(() => null);
+  if (!res.ok) {
+    const err = new Error(body?.message || body?.error_code || `Xendit API error ${res.status}`);
+    err.status = res.status;
+    throw err;
+  }
+  return body;
+}
+
+class XenditService {
+  constructor(apiKey) { this.apiKey = apiKey; }
+
+  async createInvoice(amount, currency, description = "Photobooth Session") {
+    const body = await xenditFetch("/v2/invoices", this.apiKey, {
+      method: "POST",
+      body: JSON.stringify({
+        external_id: `photobooth-${Date.now()}`,
+        amount: Number(amount),
+        currency,
+        description,
+        invoice_duration: 300,
+      }),
+    });
+    return { id: body.id, invoiceUrl: body.invoice_url };
+  }
+
+  async getInvoice(invoiceId) {
+    return xenditFetch(`/v2/invoices/${invoiceId}`, this.apiKey);
+  }
+
+  async expireInvoice(invoiceId) {
+    return xenditFetch(`/invoices/${invoiceId}/expire!`, this.apiKey, {
+      method: "POST",
+      body: "{}",
+    }).catch(() => {});
+  }
+}
+
+// ── PayPal ──────────────────────────────────────────────────────────────────
+class PayPalService {
+  constructor(clientId, clientSecret, sandbox = false) {
+    this.clientId = clientId;
+    this.clientSecret = clientSecret;
+    this.base = sandbox
+      ? "https://api-m.sandbox.paypal.com"
+      : "https://api-m.paypal.com";
+    this._accessToken = null;
+    this._tokenExpiry = 0;
+  }
+
+  async getAccessToken() {
+    if (this._accessToken && Date.now() < this._tokenExpiry - 30000) {
+      return this._accessToken;
+    }
+    const res = await fetch(`${this.base}/v1/oauth2/token`, {
+      method: "POST",
+      headers: {
+        Authorization: "Basic " + Buffer.from(`${this.clientId}:${this.clientSecret}`).toString("base64"),
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: "grant_type=client_credentials",
+    });
+    const body = await res.json().catch(() => null);
+    if (!res.ok) throw new Error(body?.error_description || `PayPal auth failed ${res.status}`);
+    this._accessToken = body.access_token;
+    this._tokenExpiry = Date.now() + body.expires_in * 1000;
+    return this._accessToken;
+  }
+
+  async _fetch(path, options = {}) {
+    const token = await this.getAccessToken();
+    const res = await fetch(`${this.base}${path}`, {
+      ...options,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        ...(options.headers || {}),
+      },
+    });
+    const body = await res.json().catch(() => null);
+    if (!res.ok) {
+      const err = new Error(
+        body?.details?.[0]?.description || body?.message || `PayPal API error ${res.status}`
+      );
+      err.status = res.status;
+      throw err;
+    }
+    return body;
+  }
+
+  async createOrder(amount, currency, description = "Photobooth Session") {
+    const body = await this._fetch("/v2/checkout/orders", {
+      method: "POST",
+      body: JSON.stringify({
+        intent: "CAPTURE",
+        purchase_units: [{
+          amount: { currency_code: currency, value: Number(amount).toFixed(2) },
+          description,
+        }],
+        application_context: {
+          return_url: "https://studiophotuna.com/payment/success",
+          cancel_url: "https://studiophotuna.com/payment/cancel",
+        },
+      }),
+    });
+    const approveLink = body.links?.find((l) => l.rel === "approve" || l.rel === "payer-action");
+    return { id: body.id, approvalUrl: approveLink?.href };
+  }
+
+  async getOrder(orderId) {
+    return this._fetch(`/v2/checkout/orders/${orderId}`);
+  }
+
+  async captureOrder(orderId) {
+    return this._fetch(`/v2/checkout/orders/${orderId}/capture`, {
+      method: "POST",
+      body: "{}",
+    });
+  }
+}
+
+// ── Generic poll manager (Stripe / Xendit / PayPal) ─────────────────────────
+// poll() must return { confirmed, failed, reason, paymentId } or {}
+class GenericPollManager {
+  constructor() { this.activePolls = new Map(); }
+
+  start({ sessionId, poll, onConfirmed, onFailed, timeoutMs = POLL_TIMEOUT_MS }) {
+    this.cancel(sessionId);
+    const startTime = Date.now();
+    const interval = setInterval(async () => {
+      try {
+        if (Date.now() - startTime > timeoutMs) {
+          this.cancel(sessionId);
+          onFailed({ sessionId, reason: "Payment timed out after 5 minutes" });
+          return;
+        }
+        const result = await poll();
+        if (result.confirmed) {
+          this.cancel(sessionId);
+          onConfirmed({ sessionId, paymentId: result.paymentId ?? sessionId });
+        } else if (result.failed) {
+          this.cancel(sessionId);
+          onFailed({ sessionId, reason: result.reason || "Payment failed or expired" });
+        }
+      } catch (err) {
+        if (Date.now() - startTime > timeoutMs) {
+          this.cancel(sessionId);
+          onFailed({ sessionId, reason: err.message || "Poll error" });
+        }
+      }
+    }, POLL_INTERVAL_MS);
+    this.activePolls.set(sessionId, interval);
+  }
+
+  cancel(sessionId) {
+    const timer = this.activePolls.get(sessionId);
+    if (timer) { clearInterval(timer); this.activePolls.delete(sessionId); }
+  }
+
+  cancelAll() {
+    for (const [id] of this.activePolls) this.cancel(id);
+  }
+}
+
 module.exports = {
   PayMongoService,
   PaymentPollManager,
+  GenericPollManager,
+  XenditService,
+  PayPalService,
   generateQrDataUrl,
   toCentavos,
   isTestMode,

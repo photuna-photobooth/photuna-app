@@ -1,0 +1,411 @@
+/**
+ * Capacitor platform shim
+ *
+ * Polyfills the same API surface as the Electron preload bridge (window.electron)
+ * so all existing React screens work unmodified on iPad.
+ *
+ * Strategy per method type:
+ *   - Data storage  → @capacitor/preferences (NSUserDefaults, scoped by userId key)
+ *   - Gallery data  → Supabase direct queries (same DB as Windows app)
+ *   - Hardware IPC  → Stubs (camera Phase 2, printing Phase 3)
+ *   - App updates   → No-ops (App Store manages updates on iOS)
+ *   - Event emitters → No-ops returning unsubscribe functions
+ */
+
+import { Preferences } from '@capacitor/preferences';
+import { supabase } from '../services/supabase';
+import { changePassword } from '../services/licensingApi';
+
+const GALLERY_BASE = 'https://studiophotuna-gallery.vercel.app/gallery';
+
+// ── Identity ────────────────────────────────────────────────────────────────
+
+async function getUserId() {
+  const { data: { session } } = await supabase.auth.getSession();
+  return session?.user?.id ?? null;
+}
+
+// ── Preferences helpers ──────────────────────────────────────────────────────
+
+function scopedKey(name, userId) {
+  return userId ? `${name}:${userId}` : name;
+}
+
+async function prefGet(name, userId, fallback = null) {
+  try {
+    const { value } = await Preferences.get({ key: scopedKey(name, userId) });
+    return value != null ? JSON.parse(value) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+async function prefSet(name, value, userId) {
+  try {
+    await Preferences.set({ key: scopedKey(name, userId), value: JSON.stringify(value) });
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err?.message };
+  }
+}
+
+async function prefRemove(name, userId) {
+  try {
+    await Preferences.remove({ key: scopedKey(name, userId) });
+    return { ok: true };
+  } catch {
+    return { ok: true };
+  }
+}
+
+// ── Stubs ────────────────────────────────────────────────────────────────────
+
+const noopUnsub = () => {};
+const noop = async () => null;
+
+// ── The shim object ──────────────────────────────────────────────────────────
+
+export const capacitorShim = {
+
+  // ── Identity helper (mirrors preload's secureStore:getIdentity) ────────────
+  getIdentity: async () => {
+    const userId = await getUserId();
+    return { userId };
+  },
+
+  // ── Events ─────────────────────────────────────────────────────────────────
+  getEvents: async (ctx) => prefGet('events', ctx?.userId, []),
+  setEvents: async (events, ctx) => prefSet('events', events, ctx?.userId),
+  loadEvents: async (ctx) => prefGet('events', ctx?.userId, []),
+  cleanupEventStorage: noop,
+
+  // ── Settings ───────────────────────────────────────────────────────────────
+  getSettings: async (ctx) => prefGet('settings', ctx?.userId, {}),
+  setSettings: async (settings, ctx) => prefSet('settings', settings, ctx?.userId),
+
+  // ── Appearance ─────────────────────────────────────────────────────────────
+  getAppearance: async (ctx) => prefGet('appearance', ctx?.userId, {}),
+  setAppearance: async (appearance, ctx) => prefSet('appearance', appearance, ctx?.userId),
+
+  // ── Templates ──────────────────────────────────────────────────────────────
+  getTemplates: async (ctx) => prefGet('templates', ctx?.userId, []),
+  setTemplates: async (templates, ctx) => prefSet('templates', templates, ctx?.userId),
+
+  // ── Frames ─────────────────────────────────────────────────────────────────
+  getFrames: async (ctx) => prefGet('frames', ctx?.userId, []),
+  setFrames: async (frames, ctx) => prefSet('frames', frames, ctx?.userId),
+
+  // ── Palettes & Tones ───────────────────────────────────────────────────────
+  getPalettes: async (ctx) => prefGet('palettes', ctx?.userId, []),
+  setPalettes: async (palettes, ctx) => prefSet('palettes', palettes, ctx?.userId),
+  getTones: async (ctx) => prefGet('tones', ctx?.userId, []),
+  setTones: async (tones, ctx) => prefSet('tones', tones, ctx?.userId),
+
+  // ── Navigation state ────────────────────────────────────────────────────────
+  getCurrentEventId: () => prefGet('currentEventId', null, null),
+  setCurrentEventId: (id) => prefSet('currentEventId', id, null),
+  getActiveMain: () => prefGet('activeMain', null, null),
+  setActiveMain: (tab) => prefSet('activeMain', tab, null),
+  getCurrentSubTab: () => prefGet('currentSubTab', null, null),
+  setCurrentSubTab: (tab) => prefSet('currentSubTab', tab, null),
+
+  // ── Meta flags ─────────────────────────────────────────────────────────────
+  getMetaFlag: async ({ key } = {}) => prefGet(`meta:${key}`, null, null),
+  setMetaFlag: async ({ key, value } = {}) => prefSet(`meta:${key}`, value, null),
+
+  // ── Account preferences ────────────────────────────────────────────────────
+  getAccountPreferences: async () => {
+    const userId = await getUserId();
+    return prefGet('accountPreferences', userId, {});
+  },
+  saveAccountPreferences: async (prefs = {}) => {
+    const userId = prefs?.userId ?? await getUserId();
+    return prefSet('accountPreferences', prefs, userId);
+  },
+  changeAccountPassword: async ({ currentPassword, newPassword } = {}) => {
+    return changePassword(currentPassword, newPassword);
+  },
+
+  // ── Payment keys (stored locally in Preferences) ───────────────────────────
+  getPayMongoStatus: async () => {
+    const keys = await prefGet('paymongo', null, null);
+    return { configured: !!(keys?.secretKey), ...(keys ?? {}) };
+  },
+  savePayMongoKeys: async (payload) => prefSet('paymongo', payload, null),
+  clearPayMongoKeys: async () => prefRemove('paymongo', null),
+
+  getXenditStatus: async () => {
+    const keys = await prefGet('xendit', null, null);
+    return { configured: !!(keys?.apiKey), ...(keys ?? {}) };
+  },
+  saveXenditKeys: async (payload) => prefSet('xendit', payload, null),
+  clearXenditKeys: async () => prefRemove('xendit', null),
+
+  getPaypalStatus: async () => {
+    const keys = await prefGet('paypal', null, null);
+    return { configured: !!(keys?.clientId), ...(keys ?? {}) };
+  },
+  savePaypalKeys: async (payload) => prefSet('paypal', payload, null),
+  clearPaypalKeys: async () => prefRemove('paypal', null),
+
+  // ── Gallery — Supabase direct ───────────────────────────────────────────────
+  getEventGallerySessions: async ({ eventId } = {}) => {
+    try {
+      const { data, error } = await supabase
+        .from('galleries')
+        .select('*')
+        .eq('event_id', eventId)
+        .order('created_at', { ascending: false });
+
+      if (error) return { sessions: [], error: error.message };
+
+      const sessions = (data ?? []).map(row => ({
+        sessionId: row.session_id ?? null,
+        slug: row.slug,
+        qrUrl: `${GALLERY_BASE}/${row.slug}`,
+        expiresAt: row.expires_at,
+        createdAt: row.created_at,
+      }));
+
+      return { sessions };
+    } catch (err) {
+      return { sessions: [], error: err?.message };
+    }
+  },
+
+  createEventGalleryQr: async ({ eventId } = {}) => {
+    try {
+      const userId = await getUserId();
+
+      const { data: existing } = await supabase
+        .from('galleries')
+        .select('slug, expires_at')
+        .eq('event_id', eventId)
+        .is('session_id', null)
+        .maybeSingle();
+
+      if (existing?.slug) {
+        return {
+          ok: true,
+          slug: existing.slug,
+          qrUrl: `${GALLERY_BASE}/${existing.slug}`,
+          expiresAt: existing.expires_at,
+          isNew: false,
+        };
+      }
+
+      const slug = `evt-${String(eventId).replace(/-/g, '').slice(0, 12)}-${Date.now().toString(36)}`;
+      const expiresAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString();
+
+      const { error } = await supabase.from('galleries').insert({
+        slug,
+        event_id: eventId,
+        session_id: null,
+        owner_user_id: userId,
+        final_url: null,
+        expires_at: expiresAt,
+      });
+
+      if (error) return { ok: false, error: error.message };
+      return { ok: true, slug, qrUrl: `${GALLERY_BASE}/${slug}`, expiresAt, isNew: true };
+    } catch (err) {
+      return { ok: false, error: err?.message };
+    }
+  },
+
+  // Gallery create (full session gallery — Phase 2)
+  createOnlineGallery: async () => ({ ok: false, error: 'Gallery upload not yet available on iPad' }),
+
+  // ── Event data ─────────────────────────────────────────────────────────────
+  saveEventData: async (data = {}, ctx) => {
+    try {
+      const userId = ctx?.userId ?? await getUserId();
+      const { error } = await supabase
+        .from('events')
+        .upsert({ ...data, user_id: userId });
+      if (error) return { ok: false, error: error.message };
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err?.message };
+    }
+  },
+  getEventData: async (eventId = 'default', ctx) => {
+    try {
+      const userId = ctx?.userId ?? await getUserId();
+      const { data, error } = await supabase
+        .from('events')
+        .select('*')
+        .eq('id', eventId)
+        .eq('user_id', userId)
+        .single();
+      if (error) return null;
+      return data;
+    } catch {
+      return null;
+    }
+  },
+  syncEvent: noop,
+
+  // ── Template selection ─────────────────────────────────────────────────────
+  getActiveTemplate: async (eventId = 'default', ctx) =>
+    prefGet(`template:${eventId}`, ctx?.userId, null),
+  saveTemplateSelection: async (payload = {}, ctx) => {
+    return prefSet(`template:${payload?.eventId ?? 'default'}`, payload, ctx?.userId);
+  },
+
+  // ── Appearance assets ──────────────────────────────────────────────────────
+  // File-picker operations are Windows-only; on iPad assets come from Supabase URLs
+  saveAppearanceLogoFromFile: async () => ({ ok: false, error: 'Use URL-based assets on iPad' }),
+  saveAppearanceBackgroundFromFile: async () => ({ ok: false, error: 'Use URL-based assets on iPad' }),
+  saveAppearanceBackgroundFromDataUrl: async () => ({ ok: false, error: 'Use URL-based assets on iPad' }),
+  saveTemplateThumbnail: async () => ({ ok: false, savedPath: null }),
+  deleteAppearanceAsset: async () => ({ ok: true }),
+  resolveAppearanceUrl: async ({ savedPath, relativeKey } = {}) => ({
+    ok: true,
+    url: savedPath ?? relativeKey ?? null,
+  }),
+
+  // ── Camera (Phase 2 — will use @capacitor/camera) ─────────────────────────
+  capturePhoto: async () => ({ ok: false, error: 'Camera capture coming in Phase 2' }),
+  capturesList: async () => ({ items: [] }),
+  getCapturedPhotos: async () => [],
+  listCameras: async () => [],
+  getCameraCapabilities: async () => ({}),
+
+  // ── Printing (Phase 3) ─────────────────────────────────────────────────────
+  printPhoto: async () => ({ ok: false, error: 'Printing coming in Phase 3' }),
+  getPrinters: async () => [],
+  listPrinters: async () => [],
+  testPrint: async () => ({ ok: false }),
+  scanDnpPrinters: async () => [],
+  setDnpCutMode: noop,
+  detectCardTerminal: async () => ({ found: false }),
+
+  // ── Payments (Windows booth handles transactions; admin views on iPad) ──────
+  finalizeCashPayment: async () => ({ ok: false, error: 'Payments run on Windows booth' }),
+  startQrPayment: async () => ({ ok: false }),
+  startPayPalPayment: async () => ({ ok: false }),
+  startCardPayment: async () => ({ ok: false }),
+  startGatewayPayment: async () => ({ ok: false }),
+  chargeAdditionalPayment: async () => ({ ok: false }),
+  recordPayment: async () => ({ ok: false }),
+  cancelPayment: async () => ({ ok: false }),
+
+  // ── App control ────────────────────────────────────────────────────────────
+  restartApp: async () => { window.location.reload(); },
+  checkUpdates: async () => ({ updateAvailable: false }),
+  downloadUpdate: noop,
+  installUpdate: noop,
+  clearCache: async () => { await Preferences.clear(); return { ok: true }; },
+  getStorageInfo: async () => ({ available: true }),
+  cleanupStorage: async () => ({ ok: true }),
+  deleteStoredPhotos: async () => ({ ok: true }),
+
+  // ── Preview server (Windows-only) ──────────────────────────────────────────
+  previewStartServer: async () => ({ ok: false }),
+  previewCreateSession: async () => ({ ok: false }),
+  previewGetUrl: async () => null,
+  previewSaveStill: async () => ({ ok: false }),
+  getPreviewSlotClips: async () => [],
+  buildFinalMotion: async () => ({ ok: false }),
+  saveFinalPng: async () => ({ ok: false }),
+  savePrintCopy: async () => ({ ok: false }),
+
+  // ── Event subscriptions (no IPC on iPad — return unsubscribe fn) ───────────
+  onUpdaterStatus: () => noopUnsub,
+  onEventsUpdated: () => noopUnsub,
+  offEventsUpdated: noop,
+  onPrintProgress: () => noopUnsub,
+  onPaymentConfirmed: () => noopUnsub,
+  onPaymentFailed: () => noopUnsub,
+  on: () => noopUnsub,
+  off: noop,
+  removeListener: noop,
+  triggerShutter: () => {},
+
+  // ── Misc ───────────────────────────────────────────────────────────────────
+  previewSuffix: () => `?_t=${Date.now()}`,
+
+  // ── General invoke router ──────────────────────────────────────────────────
+  // Handles the channels called via window.electron.invoke(channel, ...args)
+  invoke: async (channel, ...args) => {
+    switch (channel) {
+
+      // Identity
+      case 'secureStore:getIdentity': {
+        const userId = await getUserId();
+        return { userId };
+      }
+
+      // Settings via invoke (some screens use the invoke form)
+      case 'store:getSettings': {
+        return prefGet('settings', args[0]?.userId, {});
+      }
+      case 'store:setSettings': {
+        const [settings, ctx] = args;
+        return prefSet('settings', settings, ctx?.userId);
+      }
+
+      // License cache
+      case 'license:read': {
+        const userId = args[0];
+        return prefGet(`license:${userId}`, null, null);
+      }
+      case 'license:cache-read': {
+        const userId = args[0];
+        return prefGet(`licenseCache:${userId}`, null, null);
+      }
+      case 'license:cache-write': {
+        const [userId, data] = args;
+        return prefSet(`licenseCache:${userId}`, data, null);
+      }
+
+      // App updates — iPad uses App Store
+      case 'app:check-updates':
+        return { updateAvailable: false };
+      case 'app:download-update':
+      case 'app:install-update':
+      case 'app:restart':
+      case 'app:clear-cache':
+        return { ok: true };
+
+      // Startup / storage — no-ops on iPad
+      case 'startup:set':
+      case 'storage:select':
+      case 'storage:cleanup':
+      case 'storage:delete-stored-photos':
+      case 'log:export':
+      case 'event:cleanupStorage':
+        return { ok: true };
+
+      // Storage info
+      case 'storage:info':
+        return { available: true };
+
+      // Auth OAuth popup — open in Safari on iPad; Supabase handles the redirect
+      case 'auth:oauth-popup': {
+        const url = args[0];
+        if (url) window.open(url, '_blank');
+        return { ok: true };
+      }
+
+      // Meta flags via invoke form
+      case 'store:getMetaFlag': {
+        const { key } = args[0] ?? {};
+        return prefGet(`meta:${key}`, null, null);
+      }
+      case 'store:setMetaFlag': {
+        const { key, value } = args[0] ?? {};
+        return prefSet(`meta:${key}`, value, null);
+      }
+
+      // Capabilities check — return empty on iPad
+      case 'app:getCapabilities':
+        return {};
+
+      default:
+        console.warn('[capacitorShim] Unhandled invoke channel:', channel, args);
+        return null;
+    }
+  },
+};

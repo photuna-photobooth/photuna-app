@@ -1484,10 +1484,7 @@ export default function FrameFilterScreen({
 
   return (
     <div
-      className={isPortrait
-        ? "flex flex-col w-full h-screen overflow-hidden"
-        : "grid grid-cols-[.8fr_.8fr] gap-8 w-full h-screen overflow-hidden relative items-center justify-center py-[50px]"
-      }
+      className="w-full h-screen overflow-hidden flex flex-col p-3"
       style={{
         backgroundColor: bgColor,
         fontFamily: generalFont,
@@ -1495,48 +1492,43 @@ export default function FrameFilterScreen({
       }}
     >
 
-      {/* Portrait: inline header row replaces absolute overlay */}
-      {isPortrait && (
-        <div className="shrink-0 flex items-center justify-between" style={{ padding: '2vh 4vw' }}>
-          {logoPath
-            ? <img src={logoPath} alt="logo" style={{ maxHeight: '6vh' }} className="w-auto object-contain" />
-            : <span className="font-bold" style={{ fontFamily: headerFont, color: headerFontColor, fontSize: 'clamp(18px, 2.5vw, 46px)' }}>{boothName}</span>
-          }
-          <div className="px-5 py-2 rounded-full font-bold shadow-sm" style={{ backgroundColor: buttonBgColor, color: buttonFontColor, fontFamily: generalFont, fontSize: 'clamp(16px, 2vw, 38px)' }} aria-live="polite">
-            {Math.max(0, timeLeft)}s
-          </div>
-        </div>
-      )}
-
-      {/* Landscape: absolute header / timer */}
-      {!isPortrait && (<>
-        <div className="absolute top-6 left-6 z-20">
+      {/* ── Header: logo + timer — always in flow so scroll never overlaps ── */}
+      <div className="shrink-0 flex items-center" style={{ padding: isPortrait ? '2vh 4vw' : '6px 24px 4px' }}>
+        <div style={{ flex: 1 }}>
           {logoPath ? (
-            <img src={logoPath} alt="logo" className="max-w-[300px] md:max-w-[400px]" />
+            isPortrait
+              ? <img src={logoPath} alt="logo" style={{ maxHeight: '6vh' }} className="w-auto object-contain" />
+              : <img src={logoPath} alt="logo" className="max-w-[300px] md:max-w-[400px]" />
+          ) : isPortrait ? (
+            <span className="font-bold" style={{ fontFamily: headerFont, color: headerFontColor, fontSize: 'clamp(18px, 2.5vw, 46px)' }}>{boothName}</span>
           ) : (
-            <>
+            <div>
               <h1 className="font-bold" style={{ fontFamily: headerFont, color: headerFontColor, fontSize: 'clamp(22px, 3.5vw, 56px)' }}>{boothName}</h1>
               {!!tagline && <p style={{ color: generalFontColor, fontSize: 'clamp(12px, 1.4vw, 22px)' }}>{tagline}</p>}
-            </>
+            </div>
           )}
         </div>
-        <div className="absolute top-6 left-1/2 -translate-x-1/2 z-30">
-          <div className="rounded-full font-bold shadow-sm" style={{ fontFamily: generalFont, backgroundColor: buttonBgColor, color: buttonFontColor, fontSize: 'clamp(14px, 1.8vw, 26px)', padding: 'clamp(6px, 0.8vh, 12px) clamp(14px, 1.8vw, 28px)' }} aria-live="polite">
-            {Math.max(0, timeLeft)}s
-          </div>
+        <div className="rounded-full font-bold shadow-sm px-5 py-2" style={{
+          backgroundColor: buttonBgColor,
+          color: buttonFontColor,
+          fontFamily: generalFont,
+          fontSize: isPortrait ? 'clamp(16px, 2vw, 38px)' : 'clamp(14px, 1.8vw, 26px)',
+        }} aria-live="polite">
+          {Math.max(0, timeLeft)}s
         </div>
-      </>)}
+        {!isPortrait && <div style={{ flex: 1 }} />}
+      </div>
+
+      {/* ── Body: 2-column (landscape) or reordered stack (portrait) ── */}
+      <div className={`flex-1 min-h-0 ${isPortrait ? "flex flex-col" : "grid grid-cols-[.8fr_.8fr] gap-8 pb-[50px]"}`}>
 
       {/* Controls column — portrait: Row 3 (h-[45vh] shrink-0), landscape: left column */}
       <div
         className={isPortrait ? "shrink-0 flex flex-col" : "col-span-1 h-full min-h-0 flex flex-col"}
         style={isPortrait ? { height: '45vh', order: 2 } : undefined}
       >
-        {/* Landscape-only sticky spacer for the absolute logo */}
-        {!isPortrait && <div className="shrink-0 h-28" />}
-
         <div
-          className={`flex-1 min-h-0 overflow-y-auto light-scroll ${isPortrait ? "" : "px-16 pb-4"}`}
+          className={`flex-1 min-h-0 overflow-y-auto light-scroll ${isPortrait ? "" : "px-16 pt-4 pb-4"}`}
           style={isPortrait ? { padding: '2vh 4vw 1vh' } : undefined}
         >
           {/* Tone */}
@@ -1833,7 +1825,7 @@ export default function FrameFilterScreen({
       <div
         className={isPortrait
           ? "flex-1 min-h-0 flex items-center justify-center overflow-hidden"
-          : "col-span-1 h-full overflow-y-auto px-10 py-32 light-scroll"
+          : "col-span-1 h-full overflow-y-auto px-10 pt-4 pb-16 light-scroll"
         }
         style={isPortrait ? { padding: '1vh 4vw', order: 1 } : undefined}
       >
@@ -1996,6 +1988,8 @@ export default function FrameFilterScreen({
           );
         })()}
       </div>
+
+      </div>{/* ── end body ── */}
 
       {/* ---------------- Simple Pop-up Invoice ---------------- */}
       {

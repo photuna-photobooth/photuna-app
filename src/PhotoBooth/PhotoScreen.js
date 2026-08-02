@@ -326,10 +326,13 @@ export default function PhotoScreen({
   // Prefer per-event countdown; for retake, keep retakeIndices.length
   const cfgCountdown = event?.settings?.countdown ?? countdownSeconds;
 
-  // If retake, shots equal to retakeIndices length, otherwise normal
+  // Always take enough shots to fill all template slots.
+  // event.settings.numberOfShots is the operator's configured count, but if the
+  // selected template has more slots, we must capture at least that many.
+  const templateSlotCount = Array.isArray(guide?.slots) ? guide.slots.length : 0;
   const cfgShots = retakeIndices
     ? retakeIndices.length
-    : event?.settings?.numberOfShots ?? numberOfShots;
+    : Math.max(event?.settings?.numberOfShots ?? numberOfShots, templateSlotCount);
 
 
 

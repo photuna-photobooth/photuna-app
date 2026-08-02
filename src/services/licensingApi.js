@@ -54,59 +54,17 @@ async function request(path, { method = 'GET', body, auth = true, headers = {} }
 }
 
 /* =========================
-   Billing
+   Billing — PayMongo
 ========================= */
 
-export const listInvoices = () => request('/billing/invoices');
-export const downloadInvoice = (invoiceId) => request(`/billing/invoices/${invoiceId}/download`);
-export const listPaymentMethods = () => request('/billing/payment-methods');
-
-export const createSetupIntent = () =>
-  request('/billing/create-setup-intent', { method: 'POST' });
-
-export const setDefaultPaymentMethod = (paymentMethodId) =>
-  request('/billing/default-payment-method', {
+export const createPayMongoLink = (planType, plan) =>
+  request('/billing/create-paymongo-link', {
     method: 'POST',
-    body: { paymentMethodId },
+    body: { planType, plan },
   });
 
-export const detachPaymentMethod = (paymentMethodId) =>
-  request('/billing/detach-payment-method', {
-    method: 'POST',
-    body: { paymentMethodId },
-  });
-
-export const getSubscription = () => request('/billing/subscription');
-
-export const cancelSubscription = (atPeriodEnd = true) =>
-  request('/billing/cancel-subscription', {
-    method: 'POST',
-    body: { atPeriodEnd },
-  });
-
-export const resumeSubscription = () =>
-  request('/billing/resume-subscription', { method: 'POST' });
-
-export const createCheckoutSession = (plan) =>
-  request('/billing/create-checkout-session', {
-    method: 'POST',
-    body: { plan },
-  });
-
-export const createGalleryAddonCheckoutSession = () =>
-  request('/billing/create-gallery-addon-session', {
-    method: 'POST',
-  });
-
-// Call this after Stripe checkout redirects back to pull live subscription state
-// from Stripe directly and write it to Supabase — does not depend on webhooks.
-export const billingSync = () => request('/billing/sync', { method: 'POST' });
-
-export const customerPortal = () =>
-  request('/billing/customer-portal', { method: 'POST' });
-
-export const getDisplayPrices = () =>
-  request('/billing/prices', { auth: false });
+export const getPayMongoLinkStatus = (linkId, planType, plan) =>
+  request(`/billing/paymongo-link-status?linkId=${encodeURIComponent(linkId)}&planType=${encodeURIComponent(planType)}&plan=${encodeURIComponent(plan)}`);
 
 /* =========================
    License
@@ -132,8 +90,7 @@ export const redeemTrial = () =>
   request('/license/redeem-trial', { method: 'POST' });
 
 /**
- * Test/dev only. Production upgrades should go through createCheckoutSession().
- * This now points to the Supabase license route, not the removed SQLite route.
+ * Test/dev only. Production upgrades should go through createPayMongoLink().
  */
 export const setPlan = (plan) =>
   request('/license/set-plan', {
@@ -156,13 +113,16 @@ export const updateUserProfile = (profile) =>
 // Upload a raw image file as the user's avatar; returns { ok, avatar_url }.
 export async function uploadAvatar(file) {
   const token = await getAccessToken();
+  // Read as ArrayBuffer first — sending a File object directly through Electron's
+  // fetch stack can produce an empty body at the Express layer.
+  const arrayBuffer = await file.arrayBuffer();
   const res = await fetch(`${API}/me/avatar`, {
     method: 'POST',
     headers: {
       'Content-Type': file.type || 'image/jpeg',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
-    body: file,
+    body: arrayBuffer,
   });
   if (!res.ok) {
     let message = `HTTP ${res.status}`;

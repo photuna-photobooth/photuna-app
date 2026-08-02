@@ -153,6 +153,14 @@ export default function PaymentScreen({
   const appMode = currentEvent?.settings?.appMode ?? globalSettings?.appMode ?? "business";
   const business = currentEvent?.settings?.business ?? globalSettings?.business ?? {};
   const paymentEnabled = business?.paymentEnabled ?? (appMode === "business");
+  const activeGateway = business?.activeProvider ?? null; // "paymongo" | "stripe" | "xendit" | "paypal" | null
+
+  const gatewayLabel = {
+    paymongo: "PayMongo",
+    stripe:   "Stripe",
+    xendit:   "Xendit",
+    paypal:   "PayPal",
+  }[activeGateway] ?? activeGateway ?? "";
 
   /* ------------------------------- Language ------------------------------- */
   const langRaw = currentEvent?.settings?.language ?? globalSettings?.language ?? "en";
@@ -203,15 +211,11 @@ export default function PaymentScreen({
   };
 
   const providers = {
-    gcash: !!business?.payment?.providers?.gcash,
-    maya: !!business?.payment?.providers?.maya,
-    grabpay: !!business?.payment?.providers?.grabpay,
-    card: !!(business?.payment?.providers?.card || business?.payment?.providers?.stripe),
-    cash: !!business?.payment?.providers?.cash,
+    gateway: !!(activeGateway && paymentEnabled),
+    cash:    !!business?.payment?.providers?.cash,
   };
   const cashMode = business?.payment?.cashMode ?? "manual"; // "manual" | "hardware"
-  const gcashStaticQrDataUrl = business?.payment?.gcashStaticQrDataUrl ?? "";
-  const noProviders = !providers.cash && !providers.gcash && !providers.maya && !providers.grabpay && !providers.card;
+  const noProviders = !providers.gateway && !providers.cash;
 
   // If payment is enabled but there's nothing to pick, auto-skip with a notice
   useEffect(() => {
@@ -302,20 +306,17 @@ export default function PaymentScreen({
   const [processing, setProcessing] = useState(false);
   const [message, setMessage] = useState(null);
 
-  // QR payment state (PayMongo)
+  // QR payment state (PayMongo / Stripe / Xendit / PayPal)
   const [qrDataUrl, setQrDataUrl] = useState(null);
-  const [qrLoading, setQrLoading] = useState(false);
+  const [qrLoading, setQrLoading] = useState(() => providers.gateway);
   const [qrError, setQrError] = useState(null);
   const [qrSourceId, setQrSourceId] = useState(null);
   const [paymentConfirmed, setPaymentConfirmed] = useState(false);
   const activeQrProvider = useRef(null);
 
   const paymentSlides = [
-    providers.gcash && { key: "qr-gcash", label: "GCash", provider: "gcash" },
-    providers.maya && { key: "qr-maya", label: "Maya", provider: "maya" },
-    providers.grabpay && { key: "qr-grabpay", label: "GrabPay", provider: "grabpay" },
-    providers.card && { key: "card", label: "Card", provider: "card" },
-    providers.cash && { key: "cash", label: "Cash", provider: "cash" },
+    providers.gateway && { key: "gateway-qr", label: `Pay via ${gatewayLabel}`, provider: "gateway" },
+    providers.cash    && { key: "cash",        label: "Cash",                    provider: "cash"    },
   ].filter(Boolean);
 
   const [paymentIndex, setPaymentIndex] = useState(0);
@@ -327,18 +328,16 @@ export default function PaymentScreen({
   }, [paymentSlides.length, paymentIndex]);
 
   const activePayment = paymentSlides[paymentIndex]?.key ?? null;
+  const isOnlinePaymentSlide = activePayment === "gateway-qr";
 
-  const isQrSlide = activePayment?.startsWith("qr-");
-  const activeProvider = paymentSlides[paymentIndex]?.provider ?? null;
-
-  // Start QR payment when a QR tab becomes active
+  // Start payment session whenever an online-payment slide becomes active
   useEffect(() => {
-    if (!isQrSlide || !activeProvider || paymentConfirmed) return;
-    // Skip re-fetching only if we already have a PayMongo QR (has sourceId); always re-run for static QR
-    if (activeQrProvider.current === activeProvider && qrDataUrl && qrSourceId) return;
+    if (!isOnlinePaymentSlide || paymentConfirmed) return;
+    // Skip if we already have an active session for this exact slide
+    if (activeQrProvider.current === activePayment && qrDataUrl && qrSourceId) return;
 
     let cancelled = false;
-    activeQrProvider.current = activeProvider;
+    activeQrProvider.current = activePayment;
     setQrLoading(true);
     setQrError(null);
     setQrDataUrl(null);
@@ -347,22 +346,15 @@ export default function PaymentScreen({
     (async () => {
       try {
         const bridge = getBridge();
-        const res = await bridge?.startQrPayment?.({
-          amount: total,
-          currency: business?.pricing?.currency || "PHP",
-          provider: activeProvider,
-          eventId: event?.id || "default",
-        });
+        const currency = business?.pricing?.currency || "PHP";
+        const eventId = event?.id || "default";
+        const res = await bridge?.startGatewayPayment?.({ amount: total, currency, eventId });
         if (cancelled) return;
         if (res?.ok && res.qrDataUrl) {
           setQrDataUrl(res.qrDataUrl);
-          setQrSourceId(res.sourceId);
-        } else if (!res?.configured && activeProvider === "gcash" && gcashStaticQrDataUrl) {
-          // PayMongo not set up — fall back to the operator's uploaded static QR
-          setQrDataUrl(gcashStaticQrDataUrl);
-          setQrSourceId(null); // no polling; operator confirms manually
+          setQrSourceId(res.sessionId ?? res.orderId ?? null);
         } else {
-          setQrError(res?.error || "Failed to create payment");
+          setQrError(res?.error || "Failed to create payment session");
         }
       } catch (err) {
         if (!cancelled) setQrError(err?.message || "Payment error");
@@ -372,7 +364,7 @@ export default function PaymentScreen({
     })();
 
     return () => { cancelled = true; };
-  }, [isQrSlide, activeProvider, paymentConfirmed, total, gcashStaticQrDataUrl, qrSourceId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isOnlinePaymentSlide, activePayment, activeGateway, paymentConfirmed, total, qrSourceId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Listen for payment confirmation from main process
   useEffect(() => {
@@ -403,15 +395,14 @@ export default function PaymentScreen({
   // Cancel active payment poll on unmount
   useEffect(() => {
     return () => {
-      if (qrSourceId) getBridge()?.cancelPayment?.({ sourceId: qrSourceId });
+      if (qrSourceId) getBridge()?.cancelPayment?.({ sourceId: qrSourceId, sessionId: qrSourceId });
     };
   }, [qrSourceId]);
 
   const goToPayment = (index) => {
     if (index < 0 || index >= paymentSlides.length) return;
-    // Cancel previous QR poll when switching tabs
     if (qrSourceId) {
-      getBridge()?.cancelPayment?.({ sourceId: qrSourceId });
+      getBridge()?.cancelPayment?.({ sourceId: qrSourceId, sessionId: qrSourceId });
       setQrSourceId(null);
       setQrDataUrl(null);
       activeQrProvider.current = null;
@@ -544,18 +535,6 @@ export default function PaymentScreen({
     setTimeout(() => onNext(), 600);
   };
 
-  const handleQrProceed = async () => {
-    await confirmManualPayment("gcash");
-  };
-
-  const handlePayPalProceed = async () => {
-    await confirmManualPayment("paypal");
-  };
-
-  const handleCardProceed = async () => {
-    await confirmManualPayment("card");
-  };
-
   /* ------------------------------- Buttons ------------------------------- */
   const baseButtonStyle = useMemo(
     () => ({
@@ -636,13 +615,15 @@ export default function PaymentScreen({
           <div className="flex flex-col items-center text-center">
 
             <div className="w-full bg-white shadow-xl border border-black/5 rounded-[20px] max-w-[650px] min-h-[470px] flex items-start justify-center">
-              {isQrSlide && (
+
+              {/* ── Gateway QR slide ── */}
+              {activePayment === "gateway-qr" && (
                 <div className="w-full m-4 flex flex-col items-center text-center">
                   <h3
                     className="text-3xl md:text-5xl font-bold"
                     style={{ fontFamily: headerFont, color: headerFontColor }}
                   >
-                    {activeProvider === "gcash" ? "GCash" : activeProvider === "maya" ? "Maya" : "GrabPay"} Payment
+                    {isTagalog ? `Bayad gamit ang ${gatewayLabel}` : `Pay using ${gatewayLabel}`}
                   </h3>
 
                   <p
@@ -650,16 +631,13 @@ export default function PaymentScreen({
                     style={{ fontFamily: generalFont, color: generalFontColor }}
                   >
                     {isTagalog
-                      ? "I-scan ang QR code gamit ang iyong app para awtomatikong magsimula ang session."
-                      : `Scan the QR code with your ${activeProvider === "gcash" ? "GCash" : activeProvider === "maya" ? "Maya" : "GrabPay"} app. Session starts automatically once payment is confirmed.`}
+                      ? "I-scan ang QR code gamit ang iyong phone para kumpletuhin ang bayad. Awtomatikong magsisimula ang session."
+                      : `Scan the QR code with your phone to complete payment. Your session starts automatically once confirmed.`}
                   </p>
 
                   <div
                     className="mt-6 w-[240px] h-[240px] md:w-[300px] md:h-[300px] rounded-[18px] shadow-inner flex items-center justify-center"
-                    style={{
-                      backgroundColor: "#ffffff",
-                      border: "1px solid rgba(0,0,0,0.08)",
-                    }}
+                    style={{ backgroundColor: "#ffffff", border: "1px solid rgba(0,0,0,0.08)" }}
                   >
                     {paymentConfirmed ? (
                       <div className="flex flex-col items-center gap-2">
@@ -696,33 +674,8 @@ export default function PaymentScreen({
                     </div>
                   )}
 
-                  {/* Static QR mode — operator confirms after customer pays */}
-                  {!paymentConfirmed && qrDataUrl && qrSourceId === null && (
-                    <div className="mt-4 flex flex-col items-center gap-3">
-                      <p className="text-sm" style={{ fontFamily: generalFont, color: "#6b7280" }}>
-                        {isTagalog
-                          ? "Hayaan ang customer na mag-scan at bayaran. Kumpirmahin kapag natanggap na ang bayad."
-                          : "Have the customer scan and pay. Confirm below once payment is received."}
-                      </p>
-                      <button
-                        type="button"
-                        onClick={handleCashProceed}
-                        disabled={processing}
-                        className="px-8 py-3 text-lg font-bold rounded-xl disabled:opacity-60"
-                        style={baseButtonStyle}
-                        onMouseEnter={(e) => applyHover(e, true)}
-                        onMouseLeave={(e) => applyHover(e, false)}
-                      >
-                        {processing ? t.processing : (isTagalog ? "Kumpirmahin ang Bayad" : "Confirm Payment Received")}
-                      </button>
-                    </div>
-                  )}
-
-                  <div
-                    className="mt-2 text-sm md:text-base"
-                    style={{ fontFamily: generalFont, color: "#6b7280" }}
-                  >
-                    {t.tipQR}
+                  <div className="mt-3 text-sm" style={{ fontFamily: generalFont, color: "#6b7280" }}>
+                    {fmt(price)}
                   </div>
                 </div>
               )}
@@ -827,105 +780,6 @@ export default function PaymentScreen({
                 </div>
               )}
 
-              {activePayment === "paypal" && (
-                <div className="w-full m-4 flex flex-col items-center text-center">
-                  <h3
-                    className="text-3xl md:text-5xl font-bold"
-                    style={{ fontFamily: headerFont, color: headerFontColor }}
-                  >
-                    PayPal
-                  </h3>
-
-                  <p
-                    className="mt-3 text-base md:text-xl max-w-[520px]"
-                    style={{ fontFamily: generalFont, color: generalFontColor }}
-                  >
-                    {isTagalog
-                      ? "Kumpletuhin ang bayad gamit ang PayPal. Magsisimula ang session kapag nakumpirma ang bayad."
-                      : "Complete payment with PayPal. The session starts once the payment is confirmed."}
-                  </p>
-
-                  <div
-                    className="mt-8 w-full max-w-[420px] rounded-[18px] px-6 py-8"
-                    style={{ backgroundColor: "rgba(0,0,0,0.03)" }}
-                  >
-                    <div
-                      className="text-2xl md:text-3xl font-semibold"
-                      style={{ fontFamily: generalFont, color: generalFontColor }}
-                    >
-                      {fmt(price)}
-                    </div>
-                    <div
-                      className="mt-2 text-sm"
-                      style={{ fontFamily: generalFont, color: "#6b7280" }}
-                    >
-                      {isTagalog ? "Kumpirmahin sa PayPal Business app" : "Confirm in the PayPal Business app"}
-                    </div>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={handlePayPalProceed}
-                    disabled={processing}
-                    className="mt-6 px-8 py-3 text-xl md:text-2xl font-bold disabled:opacity-60"
-                    style={baseButtonStyle}
-                    onMouseEnter={(e) => applyHover(e, true)}
-                    onMouseLeave={(e) => applyHover(e, false)}
-                  >
-                    {processing ? t.processing : t.externalConfirm}
-                  </button>
-                </div>
-              )}
-
-              {activePayment === "card" && (
-                <div className="w-full m-4 flex flex-col items-center text-center">
-                  <h3
-                    className="text-3xl md:text-5xl font-bold"
-                    style={{ fontFamily: headerFont, color: headerFontColor }}
-                  >
-                    {isTagalog ? "Card Payment" : "Card Payment"}
-                  </h3>
-
-                  <p
-                    className="mt-3 text-base md:text-xl max-w-[520px]"
-                    style={{ fontFamily: generalFont, color: generalFontColor }}
-                  >
-                    {isTagalog
-                      ? "I-tap, i-insert, o i-swipe ang iyong card sa terminal. Awtomatikong magsisimula ang session kapag nakumpirma ang bayad."
-                      : "Tap, insert, or swipe your card on the terminal. The session will automatically start once payment is confirmed."}
-                  </p>
-
-                  <div
-                    className="mt-8 w-full max-w-[420px] rounded-[18px] px-6 py-8"
-                    style={{ backgroundColor: "rgba(0,0,0,0.03)" }}
-                  >
-                    <div
-                      className="text-2xl md:text-3xl font-semibold"
-                      style={{ fontFamily: generalFont, color: generalFontColor }}
-                    >
-                      {isTagalog ? "Terminal Ready" : "Terminal Ready"}
-                    </div>
-                    <div
-                      className="mt-2 text-sm"
-                      style={{ fontFamily: generalFont, color: "#6b7280" }}
-                    >
-                      {isTagalog ? "Kumpirmahin sa POS, Maya, o Stripe terminal." : "Confirm on the POS, Maya, or Stripe terminal."}
-                    </div>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={handleCardProceed}
-                    disabled={processing}
-                    className="mt-6 px-8 py-3 text-xl md:text-2xl font-bold disabled:opacity-60"
-                    style={baseButtonStyle}
-                    onMouseEnter={(e) => applyHover(e, true)}
-                    onMouseLeave={(e) => applyHover(e, false)}
-                  >
-                    {processing ? t.processing : t.externalConfirm}
-                  </button>
-                </div>
-              )}
             </div>
 
             {paymentSlides.length > 1 && (
@@ -979,9 +833,6 @@ export default function PaymentScreen({
       </div>
     );
   };
-
-  /* ------------------------------- Provider options ------------------------------- */
-  const hasPrimaryCenterPayment = providers.gcash || providers.cash;
 
   const resetMessages = () => {
     setMessage(null);
