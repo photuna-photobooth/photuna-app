@@ -7562,115 +7562,104 @@ This cannot be undone.`
               )}
 
               {activeMain === "dashboard" && currentEvent && (
-                <div className="mb-6 space-y-4">
-                  {/* Breadcrumb + event actions */}
-                  <div className={`${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_SOFT} flex flex-col gap-4 px-5 py-5 lg:flex-row lg:items-start lg:justify-between`}>
-                    <div className="min-w-0 space-y-2">
-                      <div className="flex flex-wrap items-center gap-2 text-xs text-gray-400">
-                        <button
-                          type="button"
-                          onClick={() => { setCurrentEvent(null); setActiveMain("events"); }}
-                          className="hover:text-gray-600 transition-colors active:scale-[0.98]"
-                        >
-                          Events
-                        </button>
-                        <span>{'>'}</span>
-                        <button
-                          type="button"
-                          onClick={() => setActiveMain("dashboard")}
-                          className="max-w-[220px] truncate font-medium text-gray-600 hover:text-gray-800 transition-colors active:scale-[0.98]"
-                        >
-                          {currentEvent?.name || "Untitled event"}
-                        </button>
-                        <span>{'>'}</span>
-                        <button
-                          type="button"
-                          onClick={() => setActiveSub(activeSub)}
-                          className="font-medium text-blue-600 hover:text-blue-700 transition-colors active:scale-[0.98]"
-                        >
-                          {activeSub === "background color"
-                            ? "Background Color"
-                            : activeSub === "controls"
-                              ? "Session"
-                              : activeSub === "analytics"
-                                ? "Business"
-                                : activeSub === "sharing"
-                                  ? "Live Preview"
-                                  : String(activeSub || "Branding").charAt(0).toUpperCase() + String(activeSub || "Branding").slice(1)}
-                        </button>
-                      </div>
+                <div className="mb-4">
+                  {/* Breadcrumb */}
+                  <div className="flex items-center gap-1.5 mb-3 px-0.5">
+                    <button
+                      type="button"
+                      onClick={() => { setCurrentEvent(null); setActiveMain("events"); }}
+                      className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
+                    >
+                      Events
+                    </button>
+                    <svg className="h-3 w-3 text-gray-300 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                    <span className="text-xs font-medium text-gray-600 truncate max-w-[260px]">
+                      {currentEvent?.name || "Untitled event"}
+                    </span>
+                  </div>
 
-                      <div className="flex flex-wrap items-center gap-3 min-w-0">
-                        <h3 className="text-sm font-semibold text-gray-900 truncate">
-                          {currentEvent?.name || "Untitled event"}
-                        </h3>
-                        <span className="flex-shrink-0 rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-600 border border-blue-100">
-                          {currentEvent?.settings?.appMode ?? appMode ?? DEFAULT_APP_MODE}
-                        </span>
-                        <div className="hidden md:flex items-center gap-3 text-[11px] text-gray-400">
-                          <span>{Array.isArray(currentEvent?.appliedTemplates) ? currentEvent.appliedTemplates.length : 0} templates</span>
-                          <span>·</span>
-                          <span>{Array.isArray(currentEvent?.appliedFrames) ? currentEvent.appliedFrames.length : 0} frames</span>
-                          <span>·</span>
-                          <span>{currentEvent?.settings?.numberOfShots ?? numberOfShots ?? "—"} shots</span>
+                  {/* Event header card */}
+                  <div className={`${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_SOFT} px-6 py-5`}>
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                      {/* Left: identity */}
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2.5">
+                          <h2 className="text-xl font-bold text-gray-900 tracking-tight truncate max-w-[360px]">
+                            {currentEvent?.name || "Untitled event"}
+                          </h2>
+                          <span className="flex-shrink-0 rounded-full bg-blue-50 border border-blue-100 px-2.5 py-0.5 text-[11px] font-semibold text-blue-600 uppercase tracking-wide">
+                            {currentEvent?.settings?.appMode ?? appMode ?? DEFAULT_APP_MODE}
+                          </span>
+                        </div>
+                        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-400">
+                          <span>{Array.isArray(currentEvent?.appliedTemplates) ? currentEvent.appliedTemplates.length : 0} template{(Array.isArray(currentEvent?.appliedTemplates) ? currentEvent.appliedTemplates.length : 0) !== 1 ? "s" : ""}</span>
+                          <span className="text-gray-200">·</span>
+                          <span>{Array.isArray(currentEvent?.appliedFrames) ? currentEvent.appliedFrames.length : 0} frame{(Array.isArray(currentEvent?.appliedFrames) ? currentEvent.appliedFrames.length : 0) !== 1 ? "s" : ""}</span>
+                          <span className="text-gray-200">·</span>
+                          <span>{currentEvent?.settings?.numberOfShots ?? numberOfShots ?? "—"} shots per session</span>
                         </div>
                       </div>
-                    </div>
 
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer select-none">
-                        <input
-                          type="checkbox"
-                          checked={autosaveEnabled}
-                          onChange={(e) => setAutosaveEnabled(e.target.checked)}
-                          className="w-3.5 h-3.5 rounded accent-blue-600"
-                        />
-                        Autosave
-                      </label>
+                      {/* Right: actions */}
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <label className="flex items-center gap-1.5 text-xs text-gray-400 cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={autosaveEnabled}
+                            onChange={(e) => setAutosaveEnabled(e.target.checked)}
+                            className="w-3.5 h-3.5 rounded accent-blue-600"
+                          />
+                          Autosave
+                        </label>
+                        <div className="w-px h-5 bg-slate-200 mx-0.5" />
+                        <button
+                          type="button"
+                          onClick={saveCurrentEvent}
+                          className={BTN_GHOST}
+                        >
+                          Save
+                        </button>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              const evCopy = JSON.parse(JSON.stringify(currentEvent));
 
-                      <button
-                        type="button"
-                        onClick={saveCurrentEvent}
-                        className={BTN_GHOST}
-                      >
-                        Save
-                      </button>
+                              const hasTemplates = Array.isArray(evCopy.appliedTemplates) && evCopy.appliedTemplates.length > 0;
+                              if (!hasTemplates) {
+                                showToast?.("This event has no templates. Create and apply at least one template before starting the booth.");
+                                setActiveSub("templates");
+                                return;
+                              }
 
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          try {
-                            const evCopy = JSON.parse(JSON.stringify(currentEvent));
-
-                            const hasTemplates = Array.isArray(evCopy.appliedTemplates) && evCopy.appliedTemplates.length > 0;
-                            if (!hasTemplates) {
-                              showToast?.("This event has no templates. Create and apply at least one template before starting the booth.");
-                              setActiveSub("templates");
-                              return;
+                              const mergedEvent = {
+                                ...evCopy,
+                                settings: { ...(evCopy.settings || {}), ...settingsToSave },
+                              };
+                              const updatedEvents = events.map((item) =>
+                                item.id === mergedEvent.id ? mergedEvent : item
+                              );
+                              setCurrentEvent(mergedEvent);
+                              setEvents(updatedEvents);
+                              await native?.setEvents?.(updatedEvents, ctx);
+                              await native?.setCurrentEventId?.(mergedEvent.id);
+                              if (typeof onStartPhotobooth === "function") {
+                                onStartPhotobooth(mergedEvent);
+                              }
+                            } catch (e) {
+                              console.error("Start Photo booth failed:", e);
                             }
-
-                            const mergedEvent = {
-                              ...evCopy,
-                              settings: { ...(evCopy.settings || {}), ...settingsToSave },
-                            };
-                            const updatedEvents = events.map((item) =>
-                              item.id === mergedEvent.id ? mergedEvent : item
-                            );
-                            setCurrentEvent(mergedEvent);
-                            setEvents(updatedEvents);
-                            await native?.setEvents?.(updatedEvents, ctx);
-                            await native?.setCurrentEventId?.(mergedEvent.id);
-                            if (typeof onStartPhotobooth === "function") {
-                              onStartPhotobooth(mergedEvent);
-                            }
-                          } catch (e) {
-                            console.error("Start Photo booth failed:", e);
-                          }
-                        }}
-                        className={BTN_PRIMARY}
-                      >
-                        Start booth
-                      </button>
+                          }}
+                          className={BTN_PRIMARY}
+                        >
+                          <svg className="mr-1.5 h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M8 5v14l11-7z" />
+                          </svg>
+                          Start Booth
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -7678,29 +7667,29 @@ This cannot be undone.`
 
               {/* DASHBOARD SUB-TABS */}
               {activeMain === "dashboard" && currentEvent && (
-                <div className={`${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_SOFT} mb-6 p-1.5`}>
-                  <div className="flex flex-wrap gap-1">
+                <div className="mb-5 overflow-x-auto">
+                  <div className="flex border-b border-slate-200 min-w-max">
                     {[
-                      ["branding", "Branding", "M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"],
-                      ["templates", "Templates", "M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zm0 8a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zm10 0a1 1 0 011-1h4a1 1 0 011 1v6a1 1 0 01-1 1h-4a1 1 0 01-1-1v-6z"],
-                      ["frames", "Frames", "M4 16V4a2 2 0 012-2h8a2 2 0 012 2v12m-6 4h.01M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"],
-                      ["samples", "Samples", "M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"],
-                      ["tones", "Tones", "M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2z"],
-                      ["background color", "Colors", "M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485"],
-                      ["controls", "Controls", "M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"],
-                      ["analytics", "Analytics", "M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"],
-                      ["sharing", "Sharing", "M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"],
-                    ].map(([tab, label, icon]) => (
+                      ["branding", "Appearance"],
+                      ["templates", "Templates"],
+                      ["frames", "Frames"],
+                      ["samples", "Samples"],
+                      ["tones", "Tones"],
+                      ["background color", "Colors"],
+                      ["controls", "Session"],
+                      ["analytics", "Analytics"],
+                      ["sharing", "Preview"],
+                    ].map(([tab, label]) => (
                       <button
                         key={tab}
                         type="button"
                         onClick={() => setActiveSub(tab)}
-                        className={`inline-flex items-center gap-1.5 px-3.5 py-2 text-sm font-medium rounded-md transition-all active:scale-[0.98] ${activeSub === tab
-                          ? "bg-blue-600 text-white shadow-sm"
-                          : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-                          }`}
+                        className={`relative px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-colors border-b-2 -mb-px ${
+                          activeSub === tab
+                            ? "text-blue-600 border-blue-600"
+                            : "text-gray-500 border-transparent hover:text-gray-900 hover:border-gray-300"
+                        }`}
                       >
-                        <svg className="h-3.5 w-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d={icon} /></svg>
                         {label}
                       </button>
                     ))}
@@ -8993,6 +8982,55 @@ This cannot be undone.`
                                 <option value="fil">Filipino</option>
                               </select>
                             </label>
+
+                            <label className="block text-xs text-gray-700">
+                              Currency
+                              <select
+                                value={currency}
+                                onChange={(e) => setCurrency(e.target.value)}
+                                className={`${SURFACE_BG} ${SURFACE_BORDER} ${INPUT_RADIUS} px-3 py-2 mt-1 w-full`}
+                              >
+                                <optgroup label="Southeast Asia">
+                                  <option value="PHP">PHP — Philippine Peso</option>
+                                  <option value="SGD">SGD — Singapore Dollar</option>
+                                  <option value="MYR">MYR — Malaysian Ringgit</option>
+                                  <option value="THB">THB — Thai Baht</option>
+                                  <option value="IDR">IDR — Indonesian Rupiah</option>
+                                </optgroup>
+                                <optgroup label="East Asia">
+                                  <option value="JPY">JPY — Japanese Yen</option>
+                                  <option value="KRW">KRW — South Korean Won</option>
+                                  <option value="HKD">HKD — Hong Kong Dollar</option>
+                                  <option value="TWD">TWD — New Taiwan Dollar</option>
+                                  <option value="CNY">CNY — Chinese Yuan</option>
+                                </optgroup>
+                                <optgroup label="South Asia">
+                                  <option value="INR">INR — Indian Rupee</option>
+                                </optgroup>
+                                <optgroup label="Americas">
+                                  <option value="USD">USD — US Dollar</option>
+                                  <option value="CAD">CAD — Canadian Dollar</option>
+                                </optgroup>
+                                <optgroup label="Europe">
+                                  <option value="EUR">EUR — Euro</option>
+                                  <option value="GBP">GBP — British Pound</option>
+                                  <option value="CHF">CHF — Swiss Franc</option>
+                                  <option value="SEK">SEK — Swedish Krona</option>
+                                  <option value="NOK">NOK — Norwegian Krone</option>
+                                  <option value="DKK">DKK — Danish Krone</option>
+                                  <option value="PLN">PLN — Polish Zloty</option>
+                                  <option value="CZK">CZK — Czech Koruna</option>
+                                  <option value="HUF">HUF — Hungarian Forint</option>
+                                  <option value="RON">RON — Romanian Leu</option>
+                                  <option value="BGN">BGN — Bulgarian Lev</option>
+                                  <option value="TRY">TRY — Turkish Lira</option>
+                                </optgroup>
+                                <optgroup label="Oceania">
+                                  <option value="AUD">AUD — Australian Dollar</option>
+                                  <option value="NZD">NZD — New Zealand Dollar</option>
+                                </optgroup>
+                              </select>
+                            </label>
                           </div>
                         </div>
 
@@ -9857,17 +9895,10 @@ This cannot be undone.`
 
               {/* ===== DASHBOARD CONTENT AREA ===== */}
               {activeMain === "dashboard" && currentEvent && (
-                <div className={`${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_SOFT} p-5`}>
-                  {/* Slim section title */}
-                  <div className="flex items-center justify-between mb-5">
-                    <div>
-                      <h4 className="text-sm font-semibold text-gray-900">{getDashboardSectionMeta().title}</h4>
-                      <p className="text-xs text-gray-400 mt-0.5">{getDashboardSectionMeta().description}</p>
-                    </div>
-                  </div>
+                <div>
                   {/* ==== APPEARANCE (unchanged behavior, only visual polish) ==== */}
                   {activeMain === "dashboard" && currentEvent && activeSub === "branding" && (
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-1">
 
                       {/* Logo */}
                       <div className={cardClass}>
@@ -10101,66 +10132,47 @@ This cannot be undone.`
                         )}
                       </div>
 
-                      {/* Colors */}
+                      {/* Identity: Colors · Texts · Fonts */}
                       <div className={cardClass}>
-                        <div className="text-sm font-semibold text-slate-800">Colors</div>
+                        <div className="text-sm font-semibold text-slate-800">Identity</div>
 
-                        <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mt-4">
+                        <div className="grid grid-cols-3 gap-3 mt-3">
                           {[
                             ["Header", headerFontColor, setHeaderFontColor],
-                            ["General", generalFontColor, setGeneralFontColor],
+                            ["Body", generalFontColor, setGeneralFontColor],
                             ["Background", bgColor, setBgColor],
                           ].map(([label, value, setter]) => (
                             <label key={label} className="text-xs text-gray-700">
                               {label}
-                              <input
-                                type="color"
-                                value={value}
-                                onChange={(e) => setter(e.target.value)}
-                                className="block mt-1 w-10 h-8 rounded"
-                              />
+                              <input type="color" value={value} onChange={(e) => setter(e.target.value)} className="block mt-1 w-full h-7 rounded cursor-pointer" />
                             </label>
                           ))}
                         </div>
-                      </div>
 
-                      {/* Booth Texts */}
-                      <div className={cardClass}>
-                        <div className="text-sm font-semibold text-slate-800">Booth Texts</div>
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
+                        <div className="mt-3 border-t border-slate-100 pt-3 grid grid-cols-1 gap-2">
                           <input
                             value={boothName}
                             onChange={(e) => setBoothName(e.target.value)}
                             placeholder="Booth name"
-                            className={`${SURFACE_BG} ${SURFACE_BORDER} ${INPUT_RADIUS} px-3 py-2 text-sm transition-all hover:bg-gray-50 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed`}
+                            className={`${SURFACE_BG} ${SURFACE_BORDER} ${INPUT_RADIUS} px-3 py-2 text-sm`}
                           />
-
                           <input
                             value={boothSlogan}
                             onChange={(e) => setBoothSlogan(e.target.value)}
                             placeholder="Booth slogan"
-                            className={`${SURFACE_BG} ${SURFACE_BORDER} ${INPUT_RADIUS} px-3 py-2 text-sm transition-all hover:bg-gray-50 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed`}
+                            className={`${SURFACE_BG} ${SURFACE_BORDER} ${INPUT_RADIUS} px-3 py-2 text-sm`}
                           />
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
+                        <div className="mt-3 border-t border-slate-100 pt-3 grid grid-cols-2 gap-3">
                           {[
                             ["Header font", headerFont, setHeaderFont],
                             ["Body font", generalFont, setGeneralFont],
                           ].map(([label, value, setter]) => (
                             <label key={label} className="text-xs font-medium text-slate-600">
                               {label}
-                              <select
-                                value={value}
-                                onChange={(e) => setter(e.target.value)}
-                                className={`${SURFACE_BG} ${SURFACE_BORDER} ${INPUT_RADIUS} px-3 py-2 mt-1 w-full text-sm transition-all hover:bg-gray-50 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed`}
-                              >
-                                {GOOGLE_FONTS.map((f) => (
-                                  <option key={f} value={f}>
-                                    {f}
-                                  </option>
-                                ))}
+                              <select value={value} onChange={(e) => setter(e.target.value)} className={`${SURFACE_BG} ${SURFACE_BORDER} ${INPUT_RADIUS} px-2 py-1.5 mt-1 w-full text-sm`}>
+                                {GOOGLE_FONTS.map((f) => <option key={f} value={f}>{f}</option>)}
                               </select>
                             </label>
                           ))}
@@ -10830,7 +10842,7 @@ This cannot be undone.`
                             ))}
                           </div>
                         </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                        <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1 snap-x snap-mandatory scroll-smooth">
                           {DEFAULT_TEMPLATES.filter((tpl) => {
                             if (sampleFormatFilter === "all") return true;
                             return (tpl.previewMeta?.layout ?? "4x6") === sampleFormatFilter;
@@ -10838,51 +10850,38 @@ This cannot be undone.`
                             const inLibrary = templates.some(t => t.id === tpl.id);
                             const alreadyApplied = currentEvent?.appliedTemplates?.some(t => t.id === tpl.id) ?? false;
                             const layout = tpl.previewMeta?.layout ?? "4x6";
-                            const sampleAspectMap = { "4x6": "aspect-[4/6]", "2x6": "aspect-[2/6]", "6x4": "aspect-[6/4]", "6x2": "aspect-[6/2]" };
-                            const aspectClass = sampleAspectMap[layout] ?? "aspect-[4/6]";
                             const thumbSrc = tpl.previewMeta?.thumbnailDataUrl;
-                            const isTall = layout === "4x6" || layout === "2x6";
                             return (
-                              <div key={tpl.id} className="rounded-lg border border-slate-200 bg-white p-4 flex flex-col gap-3">
-                                <div>
-                                  <div className="text-sm font-medium text-slate-800">{tpl.name}</div>
-                                  <div className="text-xs text-slate-400">
-                                    {(tpl.previewMeta?.slots?.length ?? 0)} slots · {layout}
+                              <div key={tpl.id} className="w-44 flex-shrink-0 snap-start rounded-xl border border-slate-200 bg-white p-3 flex flex-col gap-2">
+                                {thumbSrc ? (
+                                  <div className="h-36 w-full overflow-hidden rounded-lg border border-slate-100 bg-slate-50 flex items-center justify-center">
+                                    <img src={thumbSrc} alt={tpl.name} className="h-full w-full object-contain" loading="lazy" />
                                   </div>
-                                </div>
-                                {thumbSrc && (
-                                  <div className="flex justify-center">
-                                    <div className={`${aspectClass} ${isTall ? "h-48" : "w-48"} overflow-hidden rounded border`}>
-                                      <img src={thumbSrc} alt={tpl.name} className="w-full h-full object-contain" loading="lazy" />
-                                    </div>
-                                  </div>
+                                ) : (
+                                  <div className="h-36 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-center text-[10px] text-slate-400">No preview</div>
                                 )}
-                                <div className="flex items-center gap-2 flex-wrap pt-1">
+                                <div>
+                                  <div className="text-xs font-semibold text-slate-800 truncate">{tpl.name}</div>
+                                  <div className="text-[10px] text-slate-400">{(tpl.previewMeta?.slots?.length ?? 0)} slots · {layout}</div>
+                                </div>
+                                <div className="mt-auto flex flex-col gap-1.5">
                                   {alreadyApplied ? (
-                                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
+                                    <span className="inline-flex items-center gap-1 justify-center rounded-lg bg-emerald-50 px-2 py-1.5 text-[10px] font-semibold text-emerald-700">
                                       <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>
                                       Applied
                                     </span>
                                   ) : (
-                                    <button
-                                      type="button"
-                                      onClick={() => handleApplySampleTemplate(tpl)}
-                                      className={BTN_PRIMARY + " text-xs px-3 py-1.5"}
-                                    >
-                                      Apply to event
+                                    <button type="button" onClick={() => handleApplySampleTemplate(tpl)} className="w-full rounded-lg bg-blue-600 px-2 py-1.5 text-[10px] font-semibold text-white hover:bg-blue-700 transition">
+                                      Apply
                                     </button>
                                   )}
                                   {!inLibrary && !alreadyApplied && (
-                                    <button
-                                      type="button"
-                                      onClick={() => handleAddSampleTemplate(tpl)}
-                                      className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 active:scale-[0.98]"
-                                    >
+                                    <button type="button" onClick={() => handleAddSampleTemplate(tpl)} className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[10px] font-semibold text-slate-600 hover:bg-slate-50 transition">
                                       Save to library
                                     </button>
                                   )}
                                   {inLibrary && !alreadyApplied && (
-                                    <span className="text-[11px] text-slate-400">In library</span>
+                                    <span className="text-center text-[10px] text-slate-400">In library</span>
                                   )}
                                 </div>
                               </div>
@@ -10912,53 +10911,46 @@ This cannot be undone.`
                             ))}
                           </div>
                         </div>
-                        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
+                        <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1 snap-x snap-mandatory scroll-smooth">
                           {DEFAULT_FRAMES.filter((frame) => {
                             if (sampleFrameFilter === "all") return true;
                             return !!frame.previews?.[sampleFrameFilter]?.originalDataUrl;
                           }).map((frame) => {
                             const inLibrary = frames.some(f => f.id === frame.id);
                             const alreadyApplied = currentEvent?.appliedFrames?.some(f => f.id === frame.id) ?? false;
-                            // Use selected format's preview; fall back to first available
                             const sampleFrameOrder = ["4x6", "2x6", "6x4", "6x2"];
                             const preferredKey = sampleFrameFilter !== "all" && frame.previews?.[sampleFrameFilter]?.originalDataUrl
                               ? sampleFrameFilter
                               : sampleFrameOrder.find(k => frame.previews?.[k]?.originalDataUrl) ?? null;
                             const thumbSrc = preferredKey ? frame.previews[preferredKey].originalDataUrl : null;
                             return (
-                              <div key={frame.id} className="rounded-lg border border-slate-200 bg-white p-3 flex flex-col gap-3">
-                                <div className="text-sm font-medium text-slate-800 truncate">{frame.name}</div>
+                              <div key={frame.id} className="w-44 flex-shrink-0 snap-start rounded-xl border border-slate-200 bg-white p-3 flex flex-col gap-2">
                                 {thumbSrc ? (
-                                  <img src={thumbSrc} alt={frame.name} className="w-full h-40 object-contain border rounded" loading="lazy" />
+                                  <div className="h-36 w-full overflow-hidden rounded-lg border border-slate-100 bg-slate-50 flex items-center justify-center">
+                                    <img src={thumbSrc} alt={frame.name} className="h-full w-full object-contain" loading="lazy" />
+                                  </div>
                                 ) : (
-                                  <div className="h-40 border rounded bg-slate-50 flex items-center justify-center text-xs text-slate-400">No preview</div>
+                                  <div className="h-36 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-center text-[10px] text-slate-400">No preview</div>
                                 )}
-                                <div className="flex items-center gap-2 flex-wrap">
+                                <div className="text-xs font-semibold text-slate-800 truncate">{frame.name}</div>
+                                <div className="mt-auto flex flex-col gap-1.5">
                                   {alreadyApplied ? (
-                                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
+                                    <span className="inline-flex items-center gap-1 justify-center rounded-lg bg-emerald-50 px-2 py-1.5 text-[10px] font-semibold text-emerald-700">
                                       <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>
                                       Applied
                                     </span>
                                   ) : (
-                                    <button
-                                      type="button"
-                                      onClick={() => handleApplySampleFrame(frame)}
-                                      className={BTN_PRIMARY + " text-xs px-3 py-1.5"}
-                                    >
-                                      Apply to event
+                                    <button type="button" onClick={() => handleApplySampleFrame(frame)} className="w-full rounded-lg bg-blue-600 px-2 py-1.5 text-[10px] font-semibold text-white hover:bg-blue-700 transition">
+                                      Apply
                                     </button>
                                   )}
                                   {!inLibrary && !alreadyApplied && (
-                                    <button
-                                      type="button"
-                                      onClick={() => handleAddSampleFrame(frame)}
-                                      className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 active:scale-[0.98]"
-                                    >
+                                    <button type="button" onClick={() => handleAddSampleFrame(frame)} className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[10px] font-semibold text-slate-600 hover:bg-slate-50 transition">
                                       Save to library
                                     </button>
                                   )}
                                   {inLibrary && !alreadyApplied && (
-                                    <span className="text-[11px] text-slate-400">In library</span>
+                                    <span className="text-center text-[10px] text-slate-400">In library</span>
                                   )}
                                 </div>
                               </div>
@@ -11410,7 +11402,7 @@ This cannot be undone.`
                       {/* Rental options */}
                       {appMode === "rental" && (
                         <>
-                          <div className={cardClass}>
+                          <div className="mt-4 rounded-lg bg-slate-50 border border-slate-100 p-4">
                             <div className="text-sm font-semibold text-slate-800">Rental timer</div>
                             <div className="mt-2">
                               <label className="inline-flex items-center gap-2 text-sm">
@@ -11460,45 +11452,45 @@ This cannot be undone.`
                                 Photobooth will stop accepting sessions after this count.
                               </p>
                             </div>
-                          </div>
 
-                          <div className={cardClass}>
-                            <div className="text-sm font-semibold text-slate-800">Offline & saving</div>
-                            {!storagePath && (
-                              <p className="mt-1 text-xs text-amber-600">
-                                A storage path must be configured in Settings → Storage before offline mode can be enabled.
-                              </p>
-                            )}
-                            <div className="mt-2 grid grid-cols-2 gap-2">
-                              <label className={`inline-flex items-center gap-2 text-sm ${!storagePath ? "opacity-40 cursor-not-allowed" : ""}`}>
-                                <input
-                                  type="checkbox"
-                                  checked={offlineModeEnabled}
-                                  disabled={!storagePath}
-                                  onChange={(e) => setOfflineModeEnabled(e.target.checked)}
-                                />
-                                Offline mode
-                              </label>
-                              <label className={`text-xs text-gray-700 ${!offlineModeEnabled ? "opacity-40" : ""}`}>
-                                Auto-save target
-                                <select
-                                  value={autoSaveTarget}
-                                  disabled={!offlineModeEnabled}
-                                  onChange={(e) => setAutoSaveTarget(e.target.value)}
-                                  className={`${SURFACE_BG} ${SURFACE_BORDER} w-full ${INPUT_RADIUS} px-3 py-2 text-sm outline-none mt-1`}
-                                >
-                                  <option value="local">Local storage</option>
-                                  <option value="usb">USB drive</option>
-                                </select>
-                              </label>
-                              <label className="inline-flex items-center gap-2 text-sm col-span-2">
-                                <input
-                                  type="checkbox"
-                                  checked={endSessionSummaryEnabled}
-                                  onChange={(e) => setEndSessionSummaryEnabled(e.target.checked)}
-                                />
-                                Show end-of-session summary
-                              </label>
+                            <div className="mt-4 pt-4 border-t border-slate-200">
+                              <div className="text-sm font-semibold text-slate-800">Offline &amp; saving</div>
+                              {!storagePath && (
+                                <p className="mt-1 text-xs text-amber-600">
+                                  A storage path must be configured in Settings → Storage before offline mode can be enabled.
+                                </p>
+                              )}
+                              <div className="mt-2 grid grid-cols-2 gap-2">
+                                <label className={`inline-flex items-center gap-2 text-sm ${!storagePath ? "opacity-40 cursor-not-allowed" : ""}`}>
+                                  <input
+                                    type="checkbox"
+                                    checked={offlineModeEnabled}
+                                    disabled={!storagePath}
+                                    onChange={(e) => setOfflineModeEnabled(e.target.checked)}
+                                  />
+                                  Offline mode
+                                </label>
+                                <label className={`text-xs text-gray-700 ${!offlineModeEnabled ? "opacity-40" : ""}`}>
+                                  Auto-save target
+                                  <select
+                                    value={autoSaveTarget}
+                                    disabled={!offlineModeEnabled}
+                                    onChange={(e) => setAutoSaveTarget(e.target.value)}
+                                    className={`${SURFACE_BG} ${SURFACE_BORDER} w-full ${INPUT_RADIUS} px-3 py-2 text-sm outline-none mt-1`}
+                                  >
+                                    <option value="local">Local storage</option>
+                                    <option value="usb">USB drive</option>
+                                  </select>
+                                </label>
+                                <label className="inline-flex items-center gap-2 text-sm col-span-2">
+                                  <input
+                                    type="checkbox"
+                                    checked={endSessionSummaryEnabled}
+                                    onChange={(e) => setEndSessionSummaryEnabled(e.target.checked)}
+                                  />
+                                  Show end-of-session summary
+                                </label>
+                              </div>
                             </div>
                           </div>
                         </>
@@ -11507,7 +11499,7 @@ This cannot be undone.`
                       {/* Business options */}
                       {activeMain === "dashboard" && currentEvent && appMode === "business" && (
                         <>
-                          <div className={cardClass}>
+                          <div className="mt-4 rounded-lg bg-slate-50 border border-slate-100 p-4">
                             <div className="text-sm font-semibold text-slate-800">Payment</div>
                             <div className="mt-2">
                               <label className="inline-flex items-center gap-2 text-sm">
@@ -11567,7 +11559,7 @@ This cannot be undone.`
                             <div className="mt-2 grid grid-cols-2 gap-3">
                               {/* Per session price */}
                               <label className="text-xs text-gray-700 col-span-2">
-                                ₱ Per session
+                                {currency} per session
                                 <input
                                   type="number"
                                   value={pricePerSession}
@@ -11581,7 +11573,7 @@ This cannot be undone.`
 
                               {/* Additional print price (new input) */}
                               <label className="text-xs text-gray-700 col-span-2">
-                                ₱ Additional print price
+                                {currency} additional print price
                                 <input
                                   type="number"
                                   value={additionalPrintPrice}
@@ -11591,56 +11583,6 @@ This cannot be undone.`
                                   step="0.01"
                                   inputMode="decimal"
                                 />
-                              </label>
-
-                              {/* Currency */}
-                              <label className="text-xs text-gray-700">
-                                Currency
-                                <select
-                                  value={currency}
-                                  onChange={(e) => setCurrency(e.target.value)}
-                                  className={`${SURFACE_BG} ${SURFACE_BORDER} w-full ${INPUT_RADIUS} px-3 py-2 text-sm outline-none mt-1`}
-                                >
-                                  <optgroup label="Southeast Asia">
-                                    <option value="PHP">PHP — Philippine Peso</option>
-                                    <option value="SGD">SGD — Singapore Dollar</option>
-                                    <option value="MYR">MYR — Malaysian Ringgit</option>
-                                    <option value="THB">THB — Thai Baht</option>
-                                    <option value="IDR">IDR — Indonesian Rupiah</option>
-                                  </optgroup>
-                                  <optgroup label="East Asia">
-                                    <option value="JPY">JPY — Japanese Yen</option>
-                                    <option value="KRW">KRW — South Korean Won</option>
-                                    <option value="HKD">HKD — Hong Kong Dollar</option>
-                                    <option value="TWD">TWD — New Taiwan Dollar</option>
-                                    <option value="CNY">CNY — Chinese Yuan</option>
-                                  </optgroup>
-                                  <optgroup label="South Asia">
-                                    <option value="INR">INR — Indian Rupee</option>
-                                  </optgroup>
-                                  <optgroup label="Americas">
-                                    <option value="USD">USD — US Dollar</option>
-                                    <option value="CAD">CAD — Canadian Dollar</option>
-                                  </optgroup>
-                                  <optgroup label="Europe">
-                                    <option value="EUR">EUR — Euro</option>
-                                    <option value="GBP">GBP — British Pound</option>
-                                    <option value="CHF">CHF — Swiss Franc</option>
-                                    <option value="SEK">SEK — Swedish Krona</option>
-                                    <option value="NOK">NOK — Norwegian Krone</option>
-                                    <option value="DKK">DKK — Danish Krone</option>
-                                    <option value="PLN">PLN — Polish Zloty</option>
-                                    <option value="CZK">CZK — Czech Koruna</option>
-                                    <option value="HUF">HUF — Hungarian Forint</option>
-                                    <option value="RON">RON — Romanian Leu</option>
-                                    <option value="BGN">BGN — Bulgarian Lev</option>
-                                    <option value="TRY">TRY — Turkish Lira</option>
-                                  </optgroup>
-                                  <optgroup label="Oceania">
-                                    <option value="AUD">AUD — Australian Dollar</option>
-                                    <option value="NZD">NZD — New Zealand Dollar</option>
-                                  </optgroup>
-                                </select>
                               </label>
 
                               {/* Apply tax */}
@@ -11892,45 +11834,23 @@ This cannot be undone.`
                   {activeMain === "dashboard" && currentEvent && activeSub === "analytics" && (
                     <div className="space-y-5">
 
-                      {/* ── Row 1: Session KPIs ── */}
-                      <div>
-                        <div className={`${EYEBROW} mb-2`}>Sessions</div>
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                          {[
-                            { label: "Today", value: evDayCount, badge: "D" },
-                            { label: "This Week", value: evWeekCount, badge: "W" },
-                            { label: "This Month", value: evMonthCount, badge: "M" },
-                            { label: "YTD", value: evYtdCount, badge: "Y" },
-                          ].map(({ label, value, badge }) => (
-                            <div key={label} className={`${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_SOFT} p-4`}>
-                              <div className="flex items-center justify-between">
-                                <div className="text-xs font-medium text-gray-500">{label}</div>
-                                <span className="text-[10px] font-bold text-blue-500 bg-blue-50 rounded-full px-1.5 py-0.5">{badge}</span>
-                              </div>
-                              <div className="mt-2 text-3xl font-bold text-gray-900 tabular-nums">{value}</div>
-                              <div className="text-[11px] text-gray-400 mt-0.5">sessions</div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* ── Row 2: Revenue KPIs ── */}
-                      <div>
-                        <div className={`${EYEBROW} mb-2`}>Revenue</div>
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                          {[
-                            { label: "Today", value: evDayRevenue },
-                            { label: "This Week", value: evWeekRevenue },
-                            { label: "This Month", value: evMonthRevenue },
-                            { label: "YTD", value: evYtdRevenue },
-                          ].map(({ label, value }) => (
-                            <div key={label + "rev"} className={`${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_SOFT} p-4`}>
-                              <div className="text-xs font-medium text-gray-500">{label}</div>
-                              <div className="mt-2 text-2xl font-bold text-blue-600 tabular-nums">{fmtAmt(value, evCurrency)}</div>
-                              <div className="text-[11px] text-gray-400 mt-0.5">gross revenue</div>
-                            </div>
-                          ))}
-                        </div>
+                      {/* ── KPI Overview ── */}
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        {[
+                          { label: "Today", count: evDayCount, revenue: evDayRevenue },
+                          { label: "This Week", count: evWeekCount, revenue: evWeekRevenue },
+                          { label: "This Month", count: evMonthCount, revenue: evMonthRevenue },
+                          { label: "Year to Date", count: evYtdCount, revenue: evYtdRevenue },
+                        ].map(({ label, count, revenue }) => (
+                          <div key={label} className={`${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_SOFT} p-4`}>
+                            <div className="text-xs font-medium text-gray-500 mb-2">{label}</div>
+                            <div className="text-2xl font-bold text-gray-900 tabular-nums leading-none">{count}</div>
+                            <div className="text-[11px] text-gray-400 mt-0.5 mb-3">sessions</div>
+                            <div className="h-px bg-slate-100 mb-3" />
+                            <div className="text-base font-semibold text-blue-600 tabular-nums leading-none">{fmtAmt(revenue, evCurrency)}</div>
+                            <div className="text-[11px] text-gray-400 mt-0.5">revenue</div>
+                          </div>
+                        ))}
                       </div>
 
                       {/* ── Row 3: Charts ── */}

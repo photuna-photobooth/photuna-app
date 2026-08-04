@@ -375,6 +375,7 @@ export default function PrintPreviewScreen({
 
   /* ---------------------------- PRINT: single-shot, robust ---------------------------- */
   const printedRef = useRef(false);
+  const ipadPrintedRef = useRef(false);
 
   const sendPrintJob = useCallback(async () => {
     if (printedRef.current) return; // avoid duplicates
@@ -500,6 +501,19 @@ export default function PrintPreviewScreen({
       sendPrintJob();
     }
   }, [composedImage, sendPrintJob]);
+
+  // On iPad (no Electron API), auto-print for print-only mode
+  useEffect(() => {
+    if (
+      isTablet &&
+      uploadMode === "none" &&
+      !ipadPrintedRef.current &&
+      (composedImage || composedImageUrl)
+    ) {
+      ipadPrintedRef.current = true;
+      handleIpadPrint();
+    }
+  }, [isTablet, uploadMode, composedImage, composedImageUrl, handleIpadPrint]);
 
   // Navigate to next page once the page timer hits zero (do NOT print again here)
   useEffect(() => {
@@ -696,8 +710,8 @@ export default function PrintPreviewScreen({
           {galleryEnabled && !offlineMode && uploadMode === "system" ? i18n.thanksTail : ` ${isTablet ? i18n.tabletSaved : i18n.localSaved}`}
         </p>
 
-        {/* iPad: AirPrint button via window.print() */}
-        {isTablet && (composedImage || composedImageUrl) && (
+        {/* iPad: AirPrint button via window.print() — hidden in print-only (auto-triggered instead) */}
+        {isTablet && uploadMode !== "none" && (composedImage || composedImageUrl) && (
           <button
             onClick={handleIpadPrint}
             className="mt-6 flex items-center gap-2 rounded-full font-semibold shadow-sm"
