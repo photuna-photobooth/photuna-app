@@ -7102,9 +7102,7 @@ This cannot be undone.`
   // Live Preview & Template Editor blocks are untouched in behavior—only re-positioned.
 
   return (
-    <div className={`${BODY_BG} ${BODY_TEXT} h-screen overflow-hidden antialiased`} style={{ fontFamily: '"Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif' }}>
-      {/* Google Fonts */}
-      <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" />
+    <div className={`${BODY_BG} ${BODY_TEXT} h-screen overflow-hidden antialiased`} style={{ fontFamily: 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif' }}>
       {/* ===== Shell: Sidebar + Main ===== */}
       <div className="flex h-screen bg-[radial-gradient(circle_at_top,_rgba(37,99,235,0.06),_transparent_32%),linear-gradient(180deg,_#f8faff_0%,_#f1f5f9_100%)]">
         {/* Mobile sidebar backdrop */}
@@ -9812,7 +9810,8 @@ This cannot be undone.`
                                       const ext = (file.name || '').split('.').pop() || 'png';
                                       const storagePath = `${uid}/appearance/logo.${ext}`;
                                       await supabase.storage.from('studiophotuna').upload(storagePath, file, { contentType: file.type || 'image/png', upsert: true });
-                                      httpsUrl = supabase.storage.from('studiophotuna').getPublicUrl(storagePath).data?.publicUrl ?? null;
+                                      const { data: _logoSign } = await supabase.storage.from('studiophotuna').createSignedUrl(storagePath, 365 * 24 * 60 * 60);
+                                      httpsUrl = _logoSign?.signedUrl ?? null;
                                     } catch (_) {}
                                   }
                                   // savedUrl is what gets persisted; previewUrl is local rendering
@@ -9960,7 +9959,8 @@ This cannot be undone.`
                                       const ext = (file.name || '').split('.').pop() || 'png';
                                       const storagePath = `${uid}/appearance/background.${ext}`;
                                       await supabase.storage.from('studiophotuna').upload(storagePath, file, { contentType: file.type, upsert: true });
-                                      httpsUrl = supabase.storage.from('studiophotuna').getPublicUrl(storagePath).data?.publicUrl ?? null;
+                                      const { data: _bgSign } = await supabase.storage.from('studiophotuna').createSignedUrl(storagePath, 365 * 24 * 60 * 60);
+                                      httpsUrl = _bgSign?.signedUrl ?? null;
                                     } catch (_) {}
                                   }
                                   const savedUrl = httpsUrl ?? localUrl;

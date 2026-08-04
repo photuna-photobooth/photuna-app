@@ -1,6 +1,6 @@
 {
   "name": "photuna-app",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "private": true,
   "homepage": ".",
   "main": "electron/main.js",
@@ -16,6 +16,7 @@
     "@heroicons/react": "^2.2.0",
     "@supabase/supabase-js": "^2.104.1",
     "browser-image-compression": "^2.0.2",
+    "capacitor-secure-storage-plugin": "^0.13.0",
     "chart.js": "^4.5.0",
     "cors": "^2.8.6",
     "dayjs": "^1.11.19",
@@ -25,7 +26,6 @@
     "express": "^5.2.1",
     "ffmpeg-static": "^5.3.0",
     "file-saver": "^2.0.5",
-    "firebase": "^12.3.0",
     "fluent-ffmpeg": "^2.1.3",
     "framer-motion": "^12.23.24",
     "fs-extra": "^11.3.3",
@@ -85,10 +85,6 @@
       {
         "from": "electron/bin/photo-print-helper.exe",
         "to": "bin/photo-print-helper.exe"
-      },
-      {
-        "from": ".env",
-        "to": ".env"
       }
     ],
     "directories": {

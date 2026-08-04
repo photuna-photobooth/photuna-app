@@ -25,8 +25,8 @@ function Footer() {
     <footer className="mt-8 text-center text-xs text-slate-400">
       <nav className="flex items-center justify-center gap-4">
         <a href="mailto:support@photuna.app" className="hover:text-slate-700 transition-colors">Contact Us</a>
-        <a href="mailto:support@photuna.app?subject=Studio%20Photuna%20Terms" className="hover:text-slate-700 transition-colors">Terms &amp; Conditions</a>
-        <a href="mailto:support@photuna.app?subject=Studio%20Photuna%20Privacy" className="hover:text-slate-700 transition-colors">Privacy Policy</a>
+        <a href="https://www.studiophotuna.com/operator-agreement" target="_blank" rel="noopener noreferrer" className="hover:text-slate-700 transition-colors">Terms &amp; Conditions</a>
+        <a href="https://www.studiophotuna.com/privacy-framework" target="_blank" rel="noopener noreferrer" className="hover:text-slate-700 transition-colors">Privacy Policy</a>
       </nav>
       <p className="mt-2">&copy; {new Date().getFullYear()} Studio Photuna. All Rights Reserved.</p>
     </footer>
@@ -157,6 +157,7 @@ export default function AuthGate({ children }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
+  const [termsAccepted, setTermsAccepted] = useState(false);
   const [msg, setMsg] = useState('');
   const [loading, setLoading] = useState(false);
   const [planLoading, setPlanLoading] = useState(false);
@@ -233,7 +234,11 @@ export default function AuthGate({ children }) {
         await login(email, password);
         setMsg('Signed in successfully.');
       } else {
-        await register(email, password, name);
+        if (!termsAccepted) {
+          setMsg('Please accept the Privacy Policy and Terms to create an account.');
+          return;
+        }
+        await register(email, password, name, { termsAccepted: true });
         setMsg('Account created successfully.');
       }
     } catch (err) {
@@ -414,9 +419,27 @@ export default function AuthGate({ children }) {
                     </div>
                   )}
 
+                  {mode === 'register' && (
+                    <label className="flex items-start gap-3 cursor-pointer text-sm text-[#5f6678]">
+                      <input
+                        type="checkbox"
+                        checked={termsAccepted}
+                        onChange={(e) => setTermsAccepted(e.target.checked)}
+                        className="mt-0.5 h-4 w-4 shrink-0 rounded accent-blue-600 cursor-pointer"
+                        required
+                      />
+                      <span>
+                        I have read and agree to the{' '}
+                        <a href="https://www.studiophotuna.com/privacy-framework" target="_blank" rel="noopener noreferrer" className="font-semibold text-[#2563eb] underline underline-offset-2 hover:text-[#1d4ed8]">Privacy Policy</a>
+                        {' '}and{' '}
+                        <a href="https://www.studiophotuna.com/operator-agreement" target="_blank" rel="noopener noreferrer" className="font-semibold text-[#2563eb] underline underline-offset-2 hover:text-[#1d4ed8]">Terms of Service</a>.
+                      </span>
+                    </label>
+                  )}
+
                   <button
                     type="submit"
-                    disabled={loading}
+                    disabled={loading || (mode === 'register' && !termsAccepted)}
                     className="inline-flex min-h-[54px] w-full items-center justify-center rounded-full bg-[#2563eb] px-6 text-[15px] font-black text-white transition hover:-translate-y-0.5 hover:bg-[#1d4ed8] disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {viewCopy.submitLabel}

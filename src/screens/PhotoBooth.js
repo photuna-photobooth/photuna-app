@@ -5,6 +5,7 @@ import { AnimatePresence } from "framer-motion";
 
 // Screens
 import WelcomeScreen from "../PhotoBooth/WelcomeScreen";
+import ConsentScreen from "../PhotoBooth/ConsentScreen";
 import TemplateScreen from "../PhotoBooth/TemplateScreen";
 import PaymentScreen from "../PhotoBooth/PaymentScreen";
 import PhotoScreen from "../PhotoBooth/PhotoScreen";
@@ -15,6 +16,7 @@ import PrintPreviewScreen from "../PhotoBooth/PrintPreviewScreen";
 import ThankYouScreen from "../PhotoBooth/ThankYouScreen";
 import { useLicense } from "../context/LicenseContext";
 import { DEFAULT_TEMPLATES } from "../data/defaultTemplates";
+import { supabase } from "../services/supabase";
 
 /** Local defaults matching AdminDashboard */
 const DEFAULT_SCREEN_TIMERS = {
@@ -117,7 +119,7 @@ export default function PhotoBooth({ frames = [], onShortcut, initialEvent = nul
   }, []);
 
   useEffect(() => {
-    if (!dimEnabled || screen !== "WELCOME") {
+    if (!dimEnabled || (screen !== "WELCOME" && screen !== "CONSENT")) {
       clearTimeout(idleTimerRef.current);
       setIdleDimmed(false);
       return;
@@ -525,7 +527,7 @@ export default function PhotoBooth({ frames = [], onShortcut, initialEvent = nul
               key="welcome"
               event={selectedEvent}
               eventConfig={eventConfig}
-              onNext={boothLocked ? undefined : () => setScreen("TEMPLATE")}
+              onNext={boothLocked ? undefined : () => setScreen("CONSENT")}
             />
             {boothLocked && (
               <div className="absolute inset-0 z-40 bg-black/70 backdrop-blur-sm flex items-center justify-center">
@@ -548,6 +550,28 @@ export default function PhotoBooth({ frames = [], onShortcut, initialEvent = nul
               </div>
             )}
           </>
+        )}
+
+        {screen === "CONSENT" && (
+          <ConsentScreen
+            key="consent"
+            event={selectedEvent}
+            eventConfig={eventConfig}
+            onDecline={() => setScreen("WELCOME")}
+            onAccept={async ({ consentVersion, consentedAt }) => {
+              const pendingSessionId = `pre-${Date.now()}`;
+              try {
+                await supabase.from("booth_consent_logs").insert({
+                  session_id: pendingSessionId,
+                  event_id: selectedEvent?.id || "unknown",
+                  booth_id: selectedEvent?.boothId || null,
+                  consent_version: consentVersion,
+                  consented_at: consentedAt,
+                });
+              } catch {}
+              setScreen("TEMPLATE");
+            }}
+          />
         )}
 
         {screen === "TEMPLATE" && (

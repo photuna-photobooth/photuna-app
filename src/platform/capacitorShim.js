@@ -13,6 +13,7 @@
  */
 
 import { Preferences } from '@capacitor/preferences';
+import { SecureStoragePlugin } from 'capacitor-secure-storage-plugin';
 import { supabase } from '../services/supabase';
 import { changePassword } from '../services/licensingApi';
 import { uploadSessionImages } from '../services/uploadSessionImages';
@@ -60,6 +61,64 @@ async function prefRemove(name, userId) {
   }
 }
 
+// ── Keychain helpers (iOS Keychain via SecureStoragePlugin) ──────────────────
+// Used only for payment gateway secrets. On iOS these go to the Keychain
+// (encrypted, excluded from iCloud backup by default). On web/Electron the
+// plugin falls back gracefully to localStorage — in those environments the
+// Electron keytar module handles secrets instead, so this path is iPad-only.
+
+const SECURE_PAYMENT_KEYS = ['paymongo', 'xendit', 'paypal'];
+
+async function secureGet(key, fallback = null) {
+  try {
+    const { value } = await SecureStoragePlugin.get({ key });
+    return value != null ? JSON.parse(value) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+async function secureSet(key, value) {
+  try {
+    await SecureStoragePlugin.set({ key, value: JSON.stringify(value) });
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err?.message };
+  }
+}
+
+async function secureRemove(key) {
+  try {
+    await SecureStoragePlugin.remove({ key });
+    return { ok: true };
+  } catch {
+    return { ok: true };
+  }
+}
+
+// One-time migration: move any payment keys previously stored in NSUserDefaults
+// (Preferences) into the Keychain. Runs once on first launch after this update.
+async function migratePaymentKeysToKeychain() {
+  const MIGRATION_FLAG = 'paymentKeysMigratedToKeychainV1';
+  try {
+    const already = await prefGet(MIGRATION_FLAG, null, false);
+    if (already) return;
+    for (const key of SECURE_PAYMENT_KEYS) {
+      const existing = await prefGet(key, null, null);
+      if (existing) {
+        await secureSet(key, existing);
+        await prefRemove(key, null);
+      }
+    }
+    await prefSet(MIGRATION_FLAG, true, null);
+  } catch {
+    // Non-fatal — old data stays in Preferences until next successful run
+  }
+}
+
+// Run migration asynchronously on module load (non-blocking)
+migratePaymentKeysToKeychain();
+
 // ── Camera helpers ───────────────────────────────────────────────────────────
 
 function stripWindowsCameraId(settings) {
@@ -81,8 +140,11 @@ async function uploadAppearanceAsset(file, userId, slot) {
     .from('studiophotuna')
     .upload(path, file, { contentType: file.type || 'image/png', upsert: true });
   if (error) throw new Error(error.message);
-  const { data } = supabase.storage.from('studiophotuna').getPublicUrl(path);
-  return data?.publicUrl ?? null;
+  const { data, error: signErr } = await supabase.storage
+    .from('studiophotuna')
+    .createSignedUrl(path, 365 * 24 * 60 * 60);
+  if (signErr) throw new Error(signErr.message);
+  return data?.signedUrl ?? null;
 }
 
 // ── Stubs ────────────────────────────────────────────────────────────────────
@@ -163,27 +225,29 @@ export const capacitorShim = {
     return changePassword(currentPassword, newPassword);
   },
 
-  // ── Payment keys (stored locally in Preferences) ───────────────────────────
+  // ── Payment keys (iOS Keychain via SecureStoragePlugin) ───────────────────
+  // These were previously in NSUserDefaults (Preferences). migratePaymentKeysToKeychain()
+  // above moves any existing values to the Keychain on first run.
   getPayMongoStatus: async () => {
-    const keys = await prefGet('paymongo', null, null);
+    const keys = await secureGet('paymongo', null);
     return { configured: !!(keys?.secretKey), ...(keys ?? {}) };
   },
-  savePayMongoKeys: async (payload) => prefSet('paymongo', payload, null),
-  clearPayMongoKeys: async () => prefRemove('paymongo', null),
+  savePayMongoKeys: async (payload) => secureSet('paymongo', payload),
+  clearPayMongoKeys: async () => secureRemove('paymongo'),
 
   getXenditStatus: async () => {
-    const keys = await prefGet('xendit', null, null);
+    const keys = await secureGet('xendit', null);
     return { configured: !!(keys?.apiKey), ...(keys ?? {}) };
   },
-  saveXenditKeys: async (payload) => prefSet('xendit', payload, null),
-  clearXenditKeys: async () => prefRemove('xendit', null),
+  saveXenditKeys: async (payload) => secureSet('xendit', payload),
+  clearXenditKeys: async () => secureRemove('xendit'),
 
   getPaypalStatus: async () => {
-    const keys = await prefGet('paypal', null, null);
+    const keys = await secureGet('paypal', null);
     return { configured: !!(keys?.clientId), ...(keys ?? {}) };
   },
-  savePaypalKeys: async (payload) => prefSet('paypal', payload, null),
-  clearPaypalKeys: async () => prefRemove('paypal', null),
+  savePaypalKeys: async (payload) => secureSet('paypal', payload),
+  clearPaypalKeys: async () => secureRemove('paypal'),
 
   // ── Gallery — Supabase direct ───────────────────────────────────────────────
   getEventGallerySessions: async ({ eventId } = {}) => {
@@ -459,8 +523,11 @@ export const capacitorShim = {
         .from('studiophotuna')
         .upload(path, blob, { contentType: 'image/png', upsert: true });
       if (error) return { ok: false, error: error.message };
-      const { data } = supabase.storage.from('studiophotuna').getPublicUrl(path);
-      return { ok: true, fileUrl: data?.publicUrl ?? null };
+      const { data: signedData, error: signErr } = await supabase.storage
+        .from('studiophotuna')
+        .createSignedUrl(path, 365 * 24 * 60 * 60);
+      if (signErr) return { ok: false, error: signErr.message };
+      return { ok: true, fileUrl: signedData?.signedUrl ?? null };
     } catch (err) {
       return { ok: false, error: err?.message };
     }

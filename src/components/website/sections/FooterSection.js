@@ -36,8 +36,9 @@ export default function FooterSection() {
           <div>
             <h3 className="font-bold text-white mb-4">Legal</h3>
             <ul className="space-y-2 text-sm">
-              <li><a href="#" className="hover:text-white transition">Privacy Policy</a></li>
-              <li><a href="#" className="hover:text-white transition">Terms of Service</a></li>
+              <li><a href="https://www.studiophotuna.com/privacy-framework" target="_blank" rel="noopener noreferrer" className="hover:text-white transition">Privacy Policy</a></li>
+              <li><a href="https://www.studiophotuna.com/operator-agreement" target="_blank" rel="noopener noreferrer" className="hover:text-white transition">Terms of Service</a></li>
+              <li><a href="https://www.studiophotuna.com/privacy-request" target="_blank" rel="noopener noreferrer" className="hover:text-white transition">Data & Privacy Request</a></li>
             </ul>
           </div>
         </div>

@@ -1723,10 +1723,12 @@ ipcMain.handle("print-photo", async (event, {
       });
     } catch (helperErr) {
       clearInterval(interval);
+      try { fs.unlinkSync(samplePath); } catch {}
       throw helperErr;
     }
 
     clearInterval(interval);
+    try { fs.unlinkSync(samplePath); } catch {}
     win.webContents.send('print-progress', 1);
 
     console.log("Native helper result:", nativeResult);
@@ -3793,6 +3795,20 @@ ipcMain.handle("cash:stopHardwarePayment", async () => {
  * 🚀 App Lifecycle
  * -----------------------------------------------------*/
 app.whenReady().then(async () => {
+
+  // Clean up orphaned print temp files older than 24 hours (GDPR storage limitation)
+  try {
+    const printTempDir = path.join(app.getPath("temp"), "photuna-prints");
+    if (fs.existsSync(printTempDir)) {
+      const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+      fs.readdirSync(printTempDir).forEach((f) => {
+        try {
+          const fp = path.join(printTempDir, f);
+          if (fs.statSync(fp).mtimeMs < cutoff) fs.unlinkSync(fp);
+        } catch {}
+      });
+    }
+  } catch {}
 
   const uid = getUserIdFromStore();
   if (uid) {

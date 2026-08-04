@@ -7,6 +7,11 @@ export async function saveGalleryRecord({
   finalUrl,
   finalVideoUrl = null,
   photoUrls = [],
+  // Storage paths for signed-URL refresh
+  finalPath = null,
+  finalVideoPath = null,
+  photoPaths = [],
+  urlsExpireAt = null,
 }) {
   const payload = {
     slug,
@@ -16,15 +21,18 @@ export async function saveGalleryRecord({
     final_video_url: finalVideoUrl,
     photo_urls: Array.isArray(photoUrls) ? photoUrls : [],
     expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+    // Paths allow the server to regenerate signed URLs when they expire
+    final_path: finalPath,
+    final_video_path: finalVideoPath,
+    photo_paths: Array.isArray(photoPaths) ? photoPaths : [],
+    urls_expire_at: urlsExpireAt,
   };
 
   console.log("[saveGalleryRecord] payload:", payload);
 
   const { data, error } = await supabase
     .from("galleries")
-    .upsert(payload, {
-      onConflict: "slug",
-    })
+    .upsert(payload, { onConflict: "slug" })
     .select()
     .single();
 

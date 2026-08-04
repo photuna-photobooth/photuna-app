@@ -164,7 +164,7 @@ export function AuthProvider({ children }) {
     if (error) throw error;
   }, []);
 
-  const register = useCallback(async (email, password, name) => {
+  const register = useCallback(async (email, password, name, { termsAccepted = false } = {}) => {
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
@@ -175,16 +175,25 @@ export function AuthProvider({ children }) {
 
     if (data?.user?.id) {
       await supabase.from('profiles').upsert(
-        { id: data.user.id, full_name: name, email, subscription_plan: 'free' },
+        {
+          id: data.user.id,
+          full_name: name,
+          email,
+          subscription_plan: 'free',
+          terms_accepted_at: termsAccepted ? new Date().toISOString() : null,
+        },
         { onConflict: 'id' }
       );
 
-      // Track registration analytics
-      const source = new URLSearchParams(window.location.search).get('source') || 'website';
-      const utmSource = new URLSearchParams(window.location.search).get('utm_source');
-      trackRegistration(data.user.id, source, utmSource).catch(err =>
-        console.warn('[AuthContext] Analytics tracking failed:', err)
-      );
+      // Only track registration analytics when the operator has explicitly
+      // accepted the Terms of Service and Privacy Policy (GDPR Art. 6/7).
+      if (termsAccepted) {
+        const source = new URLSearchParams(window.location.search).get('source') || 'website';
+        const utmSource = new URLSearchParams(window.location.search).get('utm_source');
+        trackRegistration(data.user.id, source, utmSource).catch(err =>
+          console.warn('[AuthContext] Analytics tracking failed:', err)
+        );
+      }
     }
   }, []);
 
