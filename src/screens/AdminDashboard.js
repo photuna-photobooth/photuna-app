@@ -536,6 +536,11 @@ export default function AdminDashboard({ onLogout, onStartPhotobooth, jumpToUpda
   const [screenTimers, setScreenTimers] = useState(DEFAULT_SCREEN_TIMERS);
   const [timersEnabled, setTimersEnabled] = useState(false);
   const [consentEnabled, setConsentEnabled] = useState(true);
+  const [storageChoiceEnabled, setStorageChoiceEnabled] = useState(false);
+  const [operatorStorageEnabled, setOperatorStorageEnabled] = useState(false);
+  const [operatorStorageLabel, setOperatorStorageLabel] = useState("Our Storage");
+  const [operatorStorageUrl, setOperatorStorageUrl] = useState("");
+  const [operatorStorageApiKey, setOperatorStorageApiKey] = useState("");
   const [numberOfShots, setNumberOfShots] = useState(3);
   const [retakeLimit, setRetakeLimit] = useState(0);
 
@@ -2126,6 +2131,11 @@ This cannot be undone.`
         appMode,
         timersEnabled,
         consentEnabled,
+        storageChoiceEnabled,
+        operatorStorageEnabled,
+        operatorStorageLabel,
+        operatorStorageUrl,
+        operatorStorageApiKey,
         rental: {
           timerEnabled: rentalTimerEnabled,
           timerHours: rentalTimerHours,
@@ -2475,6 +2485,11 @@ This cannot be undone.`
       setAppMode(s.appMode ?? DEFAULT_APP_MODE);
       setTimersEnabled(s.timersEnabled ?? false);
       setConsentEnabled(s.consentEnabled ?? true);
+      setStorageChoiceEnabled(s.storageChoiceEnabled ?? false);
+      setOperatorStorageEnabled(s.operatorStorageEnabled ?? false);
+      setOperatorStorageLabel(s.operatorStorageLabel ?? "Our Storage");
+      setOperatorStorageUrl(s.operatorStorageUrl ?? "");
+      setOperatorStorageApiKey(s.operatorStorageApiKey ?? "");
 
       // RENTAL
       setRentalTimerEnabled(s.rental?.timerEnabled ?? DEFAULT_RENTAL.timerEnabled);
@@ -2618,6 +2633,11 @@ This cannot be undone.`
     appMode,
     timersEnabled,
     consentEnabled,
+    storageChoiceEnabled,
+    operatorStorageEnabled,
+    operatorStorageLabel,
+    operatorStorageUrl,
+    operatorStorageApiKey,
     rental: {
       timerEnabled: rentalTimerEnabled,
       timerHours: rentalTimerHours,
@@ -2796,6 +2816,11 @@ This cannot be undone.`
         setAppMode(settings.appMode ?? DEFAULT_APP_MODE);
         setTimersEnabled(settings.timersEnabled ?? false);
         setConsentEnabled(settings.consentEnabled ?? true);
+        setStorageChoiceEnabled(settings.storageChoiceEnabled ?? false);
+        setOperatorStorageEnabled(settings.operatorStorageEnabled ?? false);
+        setOperatorStorageLabel(settings.operatorStorageLabel ?? "Our Storage");
+        setOperatorStorageUrl(settings.operatorStorageUrl ?? "");
+        setOperatorStorageApiKey(settings.operatorStorageApiKey ?? "");
 
         // Rental
         const rental = settings.rental ?? {};
@@ -4967,6 +4992,11 @@ This cannot be undone.`
       appMode,
       timersEnabled,
       consentEnabled,
+      storageChoiceEnabled,
+      operatorStorageEnabled,
+      operatorStorageLabel,
+      operatorStorageUrl,
+      operatorStorageApiKey,
       rental,
       business,
       selectedCameraId,
@@ -5040,6 +5070,11 @@ This cannot be undone.`
       appMode: appMode ?? DEFAULT_APP_MODE,
       timersEnabled: timersEnabled ?? false,
       consentEnabled: consentEnabled ?? true,
+      storageChoiceEnabled: storageChoiceEnabled ?? false,
+      operatorStorageEnabled: operatorStorageEnabled ?? false,
+      operatorStorageLabel: typeof operatorStorageLabel === "string" ? operatorStorageLabel.trim().slice(0, 60) || "Our Storage" : "Our Storage",
+      operatorStorageUrl: typeof operatorStorageUrl === "string" ? operatorStorageUrl.trim().slice(0, 500) : "",
+      operatorStorageApiKey: typeof operatorStorageApiKey === "string" ? operatorStorageApiKey.trim().slice(0, 200) : "",
 
       selectedCameraId: selectedCameraId ?? "",
       mirrorCamera: mirrorCamera ?? false,
@@ -5735,6 +5770,11 @@ This cannot be undone.`
         appMode,
         timersEnabled,
         consentEnabled,
+        storageChoiceEnabled,
+        operatorStorageEnabled,
+        operatorStorageLabel,
+        operatorStorageUrl,
+        operatorStorageApiKey,
         rental: {
           timerEnabled: rentalTimerEnabled,
           timerHours: rentalTimerHours,
@@ -5910,6 +5950,11 @@ This cannot be undone.`
       appMode,
       timersEnabled,
       consentEnabled,
+      storageChoiceEnabled,
+      operatorStorageEnabled,
+      operatorStorageLabel,
+      operatorStorageUrl,
+      operatorStorageApiKey,
       rental: {
         timerEnabled: rentalTimerEnabled,
         timerHours: rentalTimerHours,
@@ -5975,6 +6020,11 @@ This cannot be undone.`
     appMode,
     timersEnabled,
     consentEnabled,
+    storageChoiceEnabled,
+    operatorStorageEnabled,
+    operatorStorageLabel,
+    operatorStorageUrl,
+    operatorStorageApiKey,
     rentalTimerEnabled,
     rentalTimerHours,
     rentalSessionLimitEnabled,
@@ -6026,6 +6076,11 @@ This cannot be undone.`
     setNumberOfShots(s.numberOfShots ?? 3);
     setTimersEnabled(s.timersEnabled ?? false);
     setConsentEnabled(s.consentEnabled ?? true);
+    setStorageChoiceEnabled(s.storageChoiceEnabled ?? false);
+    setOperatorStorageEnabled(s.operatorStorageEnabled ?? false);
+    setOperatorStorageLabel(s.operatorStorageLabel ?? "Our Storage");
+    setOperatorStorageUrl(s.operatorStorageUrl ?? "");
+    setOperatorStorageApiKey(s.operatorStorageApiKey ?? "");
     setFlashEnabled(s.flashEnabled ?? true);
     setSoundEnabled(s.soundEnabled ?? true);
     setLanguage(s.language ?? 'en');
@@ -6292,6 +6347,11 @@ This cannot be undone.`
     price,
     timersEnabled,
     consentEnabled,
+    storageChoiceEnabled,
+    operatorStorageEnabled,
+    operatorStorageLabel,
+    operatorStorageUrl,
+    operatorStorageApiKey,
     logoPath,
     backgroundMediaPath,
     boothName,
@@ -8969,6 +9029,16 @@ This cannot be undone.`
                               <span className="text-gray-900">{consentEnabled ? "On" : "Off"}</span>
                             </div>
                             <div className="flex justify-between gap-2">
+                              <span className="text-gray-500">Storage choice</span>
+                              <span className="text-gray-900">{storageChoiceEnabled ? "Guest selects" : "Auto (gallery)"}</span>
+                            </div>
+                            {operatorStorageEnabled && (
+                              <div className="flex justify-between gap-2">
+                                <span className="text-gray-500">Operator storage</span>
+                                <span className="text-gray-900 truncate max-w-[120px]">{operatorStorageLabel || "Configured"}</span>
+                              </div>
+                            )}
+                            <div className="flex justify-between gap-2">
                               <span className="text-gray-500">Idle dimming</span>
                               <span className="text-gray-900">{dimWhenIdle ? `${idleTimeout}s` : "Off"}</span>
                             </div>
@@ -11193,6 +11263,73 @@ This cannot be undone.`
                             Disable only for private or pre-consented events.
                           </p>
                         </div>
+
+                        {/* Photo storage choice */}
+                        <div className="text-sm font-semibold text-slate-800 mt-4">Photo Storage</div>
+                        <div className="mt-3">
+                          <label className="inline-flex items-center gap-2 text-sm cursor-pointer select-none">
+                            <input
+                              type="checkbox"
+                              checked={storageChoiceEnabled}
+                              onChange={(e) => setStorageChoiceEnabled(e.target.checked)}
+                            />
+                            Let guests choose where to save their photos
+                          </label>
+                          <p className="mt-1 text-xs text-gray-500">
+                            A storage choice screen appears after composition. Guests can pick the
+                            studio gallery, your own storage (if configured), or print only.
+                          </p>
+                        </div>
+                        <div className="mt-3">
+                          <label className="inline-flex items-center gap-2 text-sm cursor-pointer select-none">
+                            <input
+                              type="checkbox"
+                              checked={operatorStorageEnabled}
+                              onChange={(e) => setOperatorStorageEnabled(e.target.checked)}
+                            />
+                            Send photos to your own cloud / server
+                          </label>
+                          <p className="mt-1 text-xs text-gray-500">
+                            Provide a webhook URL that receives photos via multipart POST.
+                            Works with any HTTP endpoint — your own server, Make, Zapier, etc.
+                          </p>
+                        </div>
+                        {operatorStorageEnabled && (
+                          <div className="mt-3 grid grid-cols-1 gap-3">
+                            <label className="text-xs text-gray-700">
+                              Label shown to guests
+                              <input
+                                type="text"
+                                value={operatorStorageLabel}
+                                onChange={(e) => setOperatorStorageLabel(e.target.value)}
+                                placeholder="Our Gallery"
+                                maxLength={60}
+                                className={`${SURFACE_BG} ${SURFACE_BORDER} w-full ${INPUT_RADIUS} px-3 py-2 text-sm outline-none mt-1`}
+                              />
+                            </label>
+                            <label className="text-xs text-gray-700">
+                              Webhook URL (HTTPS)
+                              <input
+                                type="url"
+                                value={operatorStorageUrl}
+                                onChange={(e) => setOperatorStorageUrl(e.target.value)}
+                                placeholder="https://your-server.com/photobooth-upload"
+                                className={`${SURFACE_BG} ${SURFACE_BORDER} w-full ${INPUT_RADIUS} px-3 py-2 text-sm outline-none mt-1`}
+                              />
+                            </label>
+                            <label className="text-xs text-gray-700">
+                              API Key / Bearer token (optional)
+                              <input
+                                type="password"
+                                value={operatorStorageApiKey}
+                                onChange={(e) => setOperatorStorageApiKey(e.target.value)}
+                                placeholder="sk-..."
+                                className={`${SURFACE_BG} ${SURFACE_BORDER} w-full ${INPUT_RADIUS} px-3 py-2 text-sm outline-none mt-1`}
+                              />
+                              <span className="text-[10px] text-gray-400">Sent as Authorization: Bearer &lt;key&gt;</span>
+                            </label>
+                          </div>
+                        )}
 
                         {/* Session settings */}
                         <div className="text-sm font-semibold text-slate-800 mt-4">Session Settings</div>

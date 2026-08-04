@@ -84,6 +84,8 @@ export default function PrintPreviewScreen({
   galleryEnabled = false,
   offlineMode = false,
   autoSaveTarget = "local",
+  uploadMode = "system",
+  operatorStorage = {},
 }) {
   // IMPORTANT: prefer window.api (preload exposes printPhoto here). Fall back to window.electron only if needed.
   const api =
@@ -121,11 +123,10 @@ export default function PrintPreviewScreen({
     let mounted = true;
 
     async function prepareGallery() {
-      if (!galleryEnabled || offlineMode) {
+      // uploadMode="none" or offline → skip all uploads
+      if (!galleryEnabled || offlineMode || uploadMode === "none") {
         setResolvedQrUrl(null);
         setGalleryError("");
-        // composedImagePath is already saved to storage by FrameFilterScreen
-        // before this screen mounts — no extra IPC write needed.
         if (offlineMode && composedImagePath) {
           setLocalSavedPath(composedImagePath);
         }
@@ -133,6 +134,39 @@ export default function PrintPreviewScreen({
         return;
       }
 
+      // uploadMode="operator" → POST to operator webhook
+      if (uploadMode === "operator") {
+        const { webhookUrl, apiKey } = operatorStorage;
+        if (!webhookUrl) {
+          setGalleryError("Operator storage URL is not configured.");
+          setIsPreparing(false);
+          return;
+        }
+        try {
+          setIsPreparing(true);
+          setGalleryError("");
+          const src = composedImage || composedImageUrl || composedImagePath;
+          const blob = src ? await fetch(src).then((r) => r.blob()) : null;
+          if (!blob) throw new Error("No composed image available for upload.");
+          const form = new FormData();
+          form.append("image", blob, `photo-${sessionId}.png`);
+          form.append("eventId", eventId);
+          form.append("sessionId", sessionId);
+          const headers = {};
+          if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+          const res = await fetch(webhookUrl, { method: "POST", headers, body: form });
+          if (!res.ok) throw new Error(`Upload failed: HTTP ${res.status}`);
+          if (mounted) setResolvedQrUrl(null);
+        } catch (err) {
+          console.error("[StorageChoice] operator upload failed:", err);
+          if (mounted) setGalleryError(err?.message || "Upload to your storage failed.");
+        } finally {
+          if (mounted) setIsPreparing(false);
+        }
+        return;
+      }
+
+      // uploadMode="system" (default) → Photuna Supabase gallery
       try {
         setIsPreparing(true);
         setGalleryError("");
@@ -142,8 +176,8 @@ export default function PrintPreviewScreen({
           composedImagePath,
           composedImageUrl,
           photos,
-          layout,              // normalizedLayout string
-          layoutConfig,        // full resolved layout object with slots
+          layout,
+          layoutConfig,
           slotVideoMap,
           frameOverlayDataUrl,
           motionBackgroundColor,
@@ -193,6 +227,8 @@ export default function PrintPreviewScreen({
     galleryEnabled,
     sessionId,
     eventId,
+    uploadMode,
+    operatorStorage,
   ]);
 
   useEffect(() => {
@@ -513,7 +549,14 @@ export default function PrintPreviewScreen({
     );
   }
 
-  if (galleryEnabled && isPreparing) {
+  if ((galleryEnabled || uploadMode === "operator") && isPreparing) {
+    const preparingLabel = uploadMode === "operator"
+      ? `Sending to ${operatorStorage?.label || "your storage"}…`
+      : "Preparing your gallery";
+    const preparingSub = uploadMode === "operator"
+      ? "Uploading your photos to your storage destination."
+      : "Generating your QR code and getting your photos ready.";
+
     return (
       <div
         className="w-full h-full flex items-center justify-center overflow-hidden px-10"
@@ -532,11 +575,11 @@ export default function PrintPreviewScreen({
               fontSize: 'clamp(28px, 5vw, 80px)',
             }}
           >
-            Preparing your gallery
+            {preparingLabel}
           </p>
 
           <p className="mt-5 leading-relaxed max-w-2xl" style={{ fontSize: 'clamp(14px, 2vw, 28px)' }}>
-            Generating your QR code and getting your photos ready.
+            {preparingSub}
           </p>
 
           <div className="mt-10 flex items-center gap-3">
@@ -608,8 +651,8 @@ export default function PrintPreviewScreen({
           </p>
         </div>
 
-        {/* QR code — online + gallery mode only */}
-        {galleryEnabled && !offlineMode && (
+        {/* QR code — system gallery mode only */}
+        {galleryEnabled && !offlineMode && uploadMode === "system" && (
           <div className="mt-6 border rounded-xl p-4 bg-white text-black border-black">
             {resolvedQrUrl ? (
               <div className="bg-white p-2 rounded-lg">
@@ -628,6 +671,19 @@ export default function PrintPreviewScreen({
           </div>
         )}
 
+        {/* Operator storage result */}
+        {uploadMode === "operator" && !isPreparing && (
+          <div className="mt-6 rounded-xl p-4 text-center" style={{ background: `rgba(255,255,255,0.08)` }}>
+            {galleryError ? (
+              <p className="text-sm" style={{ color: "#ef4444" }}>{galleryError}</p>
+            ) : (
+              <p className="text-sm font-medium" style={{ color: generalFontColor }}>
+                ✓ Saved to {operatorStorage?.label || "your storage"}
+              </p>
+            )}
+          </div>
+        )}
+
         {/* Thank you copy */}
         <p
           className="text-center mt-6 leading-relaxed"
@@ -637,7 +693,7 @@ export default function PrintPreviewScreen({
           <span className="font-semibold" style={{ color: headerFontColor }}>
             {boothName ?? i18n.thanksBold}
           </span>
-          {galleryEnabled && !offlineMode ? i18n.thanksTail : ` ${isTablet ? i18n.tabletSaved : i18n.localSaved}`}
+          {galleryEnabled && !offlineMode && uploadMode === "system" ? i18n.thanksTail : ` ${isTablet ? i18n.tabletSaved : i18n.localSaved}`}
         </p>
 
         {/* iPad: AirPrint button via window.print() */}

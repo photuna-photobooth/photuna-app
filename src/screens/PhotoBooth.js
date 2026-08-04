@@ -13,6 +13,7 @@ import TemplateSelectionScreen from "../PhotoBooth/TemplateSelectionScreen";
 import SelectRetakeScreen from "../PhotoBooth/SelectRetakeScreen";
 import FrameFilterScreen from "../PhotoBooth/FrameFilterScreen";
 import PrintPreviewScreen from "../PhotoBooth/PrintPreviewScreen";
+import StorageChoiceScreen from "../PhotoBooth/StorageChoiceScreen";
 import ThankYouScreen from "../PhotoBooth/ThankYouScreen";
 import { useLicense } from "../context/LicenseContext";
 import { DEFAULT_TEMPLATES } from "../data/defaultTemplates";
@@ -99,6 +100,7 @@ export default function PhotoBooth({ frames = [], onShortcut, initialEvent = nul
   const [sessionQuantity, setSessionQuantity] = useState(1);
   const [sessionTone, setSessionTone] = useState(null);
   const [sessionFrameStyle, setSessionFrameStyle] = useState(null);
+  const [galleryUploadMode, setGalleryUploadMode] = useState("system");
 
   // ---- Idle dimming ----
   const [idleDimmed, setIdleDimmed] = useState(false);
@@ -861,9 +863,27 @@ export default function PhotoBooth({ frames = [], onShortcut, initialEvent = nul
               if (payload?.selectedFrameStyleId) setSessionFrameStyle(payload.selectedFrameStyleId);
 
               setGalleryQrUrl(null);
-              setScreen("PRINT");
+              setGalleryUploadMode("system");
+              const skipStorageChoice = selectedEvent?.settings?.storageChoiceEnabled !== true;
+              setScreen(skipStorageChoice ? "PRINT" : "STORAGE_CHOICE");
             }}
             onCancel={() => setScreen("TEMPLATE_SELECT")}
+          />
+        )}
+
+        {screen === "STORAGE_CHOICE" && (
+          <StorageChoiceScreen
+            key="storagechoice"
+            event={selectedEvent}
+            eventConfig={eventConfig}
+            operatorStorage={{
+              enabled: selectedEvent?.settings?.operatorStorageEnabled,
+              label: selectedEvent?.settings?.operatorStorageLabel || "Our Storage",
+            }}
+            onSelect={(mode) => {
+              setGalleryUploadMode(mode);
+              setScreen("PRINT");
+            }}
           />
         )}
 
@@ -897,6 +917,12 @@ export default function PhotoBooth({ frames = [], onShortcut, initialEvent = nul
             galleryEnabled={!offlineMode && Boolean(gating?.galleryEnabled || gating?.galleryAddon)}
             offlineMode={offlineMode}
             autoSaveTarget={autoSaveTarget}
+            uploadMode={galleryUploadMode}
+            operatorStorage={{
+              webhookUrl: selectedEvent?.settings?.operatorStorageUrl || "",
+              apiKey: selectedEvent?.settings?.operatorStorageApiKey || "",
+              label: selectedEvent?.settings?.operatorStorageLabel || "Our Storage",
+            }}
             onPrintComplete={() => { }}
             onNextPage={() => { recordSession(true); setScreen("THANK_YOU"); }}
           />
