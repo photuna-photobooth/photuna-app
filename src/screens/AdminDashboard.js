@@ -8126,36 +8126,28 @@ This cannot be undone.`
               )}
 
               {activeMain === "settings" && (
-                <div className="space-y-6">
+                <div className="space-y-5">
                   {/* ================= Header ================= */}
-                  <div className="relative overflow-hidden rounded-xl border border-white/20 bg-gradient-to-br from-blue-500 via-blue-600 to-blue-800 px-6 py-6 text-white shadow-[0_24px_64px_rgba(37,99,235,0.25)]">
-                    <WavePattern />
-                    <div className="relative z-10 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                  <div className={`${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_SOFT} px-5 py-4`}>
+                    <div className="flex items-center justify-between gap-4">
                       <div>
-                        <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/15 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white">
-                          Settings
-                        </div>
-                        <h2 className="mt-3 text-2xl font-bold tracking-tight" style={{ fontFamily: '"Fraunces", ui-serif, Georgia, serif' }}>
-                          Booth Configuration
-                        </h2>
-                        <p className="mt-1.5 text-sm text-white/80">
-                          Configure devices, storage, recovery, and booth behavior.
-                        </p>
+                        <div className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">Configuration</div>
+                        <h2 className="mt-1 text-xl font-bold text-slate-900 tracking-tight">Booth Settings</h2>
                       </div>
-                      <div className="flex flex-wrap gap-3">
-                        <button
-                          type="button"
-                          onClick={saveSettings}
-                          className="inline-flex items-center justify-center rounded-lg bg-white px-5 py-2.5 text-sm font-semibold text-blue-700 shadow-md transition hover:-translate-y-0.5 hover:shadow-lg active:scale-[0.98]"
-                        >
-                          Save settings
-                        </button>
+                      <div className="flex items-center gap-2">
                         <button
                           type="button"
                           onClick={resetSettingsToDefault}
-                          className="inline-flex items-center justify-center rounded-lg border border-white/25 bg-white/15 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-white/25 active:scale-[0.98]"
+                          className={`${BTN_GHOST} px-4 py-2 text-sm`}
                         >
-                          Reset to defaults
+                          Reset defaults
+                        </button>
+                        <button
+                          type="button"
+                          onClick={saveSettings}
+                          className={`${BTN_PRIMARY} px-4 py-2 text-sm`}
+                        >
+                          Save settings
                         </button>
                       </div>
                     </div>
@@ -8219,8 +8211,8 @@ This cannot be undone.`
                   </div>
 
                   {/* ================= Settings Tabs ================= */}
-                  <div className={`${SURFACE_BG} ${SURFACE_BORDER} ${TOOLBAR_RADIUS} ${SHADOW_SOFT} p-2`}>
-                    <div className="flex flex-wrap items-center gap-2">
+                  <div className="overflow-x-auto">
+                    <div className="flex border-b border-slate-200 min-w-max">
                       {[
                         { id: "camera", label: "Camera" },
                         { id: "printing", label: "Printing" },
@@ -8233,10 +8225,11 @@ This cannot be undone.`
                           key={tab.id}
                           type="button"
                           onClick={() => setActiveSettingsTab(tab.id)}
-                          className={`px-4 py-2 text-sm font-semibold transition-all active:scale-[0.98] rounded-lg ${activeSettingsTab === tab.id
-                            ? "bg-blue-600 text-white shadow-md shadow-blue-200"
-                            : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-                            }`}
+                          className={`relative px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-colors border-b-2 -mb-px ${
+                            activeSettingsTab === tab.id
+                              ? "text-blue-600 border-blue-600"
+                              : "text-gray-500 border-transparent hover:text-gray-900 hover:border-gray-300"
+                          }`}
                         >
                           {tab.label}
                         </button>
@@ -8245,11 +8238,7 @@ This cannot be undone.`
                   </div>
 
                   {/* ================= Active tab content ================= */}
-                  <div className="space-y-6">
-                    <div className="mb-6">
-                      <h3 className="text-sm font-semibold text-gray-800">{getSettingsSectionMeta(activeSettingsTab).title}</h3>
-                      <p className="text-xs text-gray-400 mt-0.5">{getSettingsSectionMeta(activeSettingsTab).description}</p>
-                    </div>
+                  <div className="space-y-4">
                     {activeSettingsTab === "camera" && (
                       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
                         <div className={`xl:col-span-2 ${SURFACE_BG} ${SURFACE_BORDER} ${SMALL_CARD_RADIUS} p-4`}>
@@ -8441,7 +8430,7 @@ This cannot be undone.`
                     )}
 
                     {activeSettingsTab === "printing" && (
-                      <div className="mt-0 grid grid-cols-1 xl:grid-cols-3 gap-4">
+                      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
                         <div className={`xl:col-span-2 ${SURFACE_BG} ${SURFACE_BORDER} ${SMALL_CARD_RADIUS} p-4`}>
                           <div className="flex items-center justify-between gap-3">
                             <div>
@@ -8773,7 +8762,7 @@ This cannot be undone.`
                     )}
 
                     {activeSettingsTab === "storage" && (
-                      <div className="mt-0 grid grid-cols-1 xl:grid-cols-3 gap-4">
+                      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
                         <div className={`xl:col-span-2 ${SURFACE_BG} ${SURFACE_BORDER} ${SMALL_CARD_RADIUS} p-4`}>
                           <div className="flex items-center justify-between gap-3">
                             <div>
@@ -8892,7 +8881,7 @@ This cannot be undone.`
                     )}
 
                     {activeSettingsTab === "general" && (
-                      <div className="mt-0 space-y-4">
+                      <div className="space-y-4">
                         {/* Booth Identity */}
                         <div className={`${SURFACE_BG} ${SURFACE_BORDER} ${SMALL_CARD_RADIUS} p-4`}>
                           <div className="text-sm font-medium text-gray-900">Booth identity</div>
@@ -9090,7 +9079,7 @@ This cannot be undone.`
                     )}
 
                     {activeSettingsTab === "logs" && (
-                      <div className="mt-0 grid grid-cols-1 xl:grid-cols-3 gap-4">
+                      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
                         <div className={`xl:col-span-2 ${SURFACE_BG} ${SURFACE_BORDER} ${SMALL_CARD_RADIUS} p-4`}>
                           <div>
                             <div className="text-sm font-medium text-gray-900">Audit & logs</div>
@@ -9159,7 +9148,7 @@ This cannot be undone.`
                     )}
 
                     {activeSettingsTab === "system" && (
-                      <div className="mt-0 grid grid-cols-1 xl:grid-cols-3 gap-4">
+                      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
                         <div className={`xl:col-span-2 ${SURFACE_BG} ${SURFACE_BORDER} ${SMALL_CARD_RADIUS} p-4`}>
                           <div>
                             <div className="text-sm font-medium text-gray-900">Startup & recovery</div>
