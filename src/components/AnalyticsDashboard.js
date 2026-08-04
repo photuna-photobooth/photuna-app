@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { supabase } from '../services/supabase';
 
-export default function AnalyticsDashboard({ userId }) {
+export default function AnalyticsDashboard({ userId, currency = "USD" }) {
   const [metrics, setMetrics] = useState({
     totalRegistrations: 0,
     monthRegistrations: 0,
@@ -133,8 +133,8 @@ export default function AnalyticsDashboard({ userId }) {
         />
         <KPICard
           label="Revenue"
-          value={`$${metrics.totalRevenue.toLocaleString()}`}
-          change={`$${metrics.monthRevenue.toLocaleString()}`}
+          value={new Intl.NumberFormat(undefined, { style: "currency", currency, currencyDisplay: "narrowSymbol" }).format(metrics.totalRevenue)}
+          change={new Intl.NumberFormat(undefined, { style: "currency", currency, currencyDisplay: "narrowSymbol" }).format(metrics.monthRevenue)}
           suffix=" this month"
         />
         <KPICard
@@ -145,7 +145,7 @@ export default function AnalyticsDashboard({ userId }) {
         />
         <KPICard
           label="Monthly Recurring Revenue"
-          value={`$${Math.round(metrics.mrr).toLocaleString()}`}
+          value={new Intl.NumberFormat(undefined, { style: "currency", currency, currencyDisplay: "narrowSymbol" }).format(metrics.mrr)}
           change={`+${Math.max(0, Math.round(metrics.mrr - metrics.monthRevenue))}`}
           suffix=" projected"
         />
@@ -162,7 +162,7 @@ export default function AnalyticsDashboard({ userId }) {
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="date" />
                 <YAxis />
-                <Tooltip formatter={(value) => `$${value}`} />
+                <Tooltip formatter={(value) => new Intl.NumberFormat(undefined, { style: "currency", currency, currencyDisplay: "narrowSymbol" }).format(value)} />
                 <Line
                   type="monotone"
                   dataKey="amount"

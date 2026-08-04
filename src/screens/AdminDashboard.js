@@ -535,6 +535,7 @@ export default function AdminDashboard({ onLogout, onStartPhotobooth, jumpToUpda
   const [countdown, setCountdown] = useState(5);
   const [screenTimers, setScreenTimers] = useState(DEFAULT_SCREEN_TIMERS);
   const [timersEnabled, setTimersEnabled] = useState(false);
+  const [consentEnabled, setConsentEnabled] = useState(true);
   const [numberOfShots, setNumberOfShots] = useState(3);
   const [retakeLimit, setRetakeLimit] = useState(0);
 
@@ -2124,6 +2125,7 @@ This cannot be undone.`
         price,
         appMode,
         timersEnabled,
+        consentEnabled,
         rental: {
           timerEnabled: rentalTimerEnabled,
           timerHours: rentalTimerHours,
@@ -2326,6 +2328,7 @@ This cannot be undone.`
       price,
       appMode,
       timersEnabled,
+      consentEnabled,
       rental: {
         timerEnabled: rentalTimerEnabled,
         timerHours: rentalTimerHours,
@@ -2471,6 +2474,7 @@ This cannot be undone.`
       setPrice(s.price ?? 0);
       setAppMode(s.appMode ?? DEFAULT_APP_MODE);
       setTimersEnabled(s.timersEnabled ?? false);
+      setConsentEnabled(s.consentEnabled ?? true);
 
       // RENTAL
       setRentalTimerEnabled(s.rental?.timerEnabled ?? DEFAULT_RENTAL.timerEnabled);
@@ -2613,6 +2617,7 @@ This cannot be undone.`
     price,
     appMode,
     timersEnabled,
+    consentEnabled,
     rental: {
       timerEnabled: rentalTimerEnabled,
       timerHours: rentalTimerHours,
@@ -2666,8 +2671,8 @@ This cannot be undone.`
     const ctx = { userId };
 
     // Fast path: show events immediately from the local file before any network calls.
-    // This way the Events Library is populated instantly even when pullSettings is
-    // slow or the Supabase session hasn't fully settled yet after a fresh login.
+    // The events section UI checks `!hydrated && events.length === 0` so events render
+    // immediately even while hydrated is still false (Supabase pull still in progress).
     try {
       const quickEvs = await native.getEvents?.(ctx);
       if (Array.isArray(quickEvs) && quickEvs.length > 0) setEvents(quickEvs);
@@ -2790,6 +2795,7 @@ This cannot be undone.`
         setPrice(settings.price ?? 0);
         setAppMode(settings.appMode ?? DEFAULT_APP_MODE);
         setTimersEnabled(settings.timersEnabled ?? false);
+        setConsentEnabled(settings.consentEnabled ?? true);
 
         // Rental
         const rental = settings.rental ?? {};
@@ -2890,6 +2896,8 @@ This cannot be undone.`
       setHydrated(true);
     } catch (err) {
       console.error('loadPersisted error', err);
+      // Always mark hydrated so the skeleton doesn't get stuck permanently.
+      setHydrated(true);
     }
   }, [native]);
 
@@ -4710,7 +4718,15 @@ This cannot be undone.`
                 </button>
               ))}
 
-              {events.length === 0 && (
+              {!hydrated && events.length === 0 && (
+                <div className="space-y-2">
+                  {Array.from({ length: 3 }).map((_, i) => (
+                    <div key={`home-ev-skel-${i}`} className="animate-pulse bg-slate-100 rounded-lg h-12 w-full" />
+                  ))}
+                </div>
+              )}
+
+              {hydrated && events.length === 0 && (
                 <div className="rounded-lg border border-dashed border-slate-200 p-6 text-center">
                   <div className="text-sm text-slate-400">No events yet.</div>
                   <button
@@ -4950,6 +4966,7 @@ This cannot be undone.`
       price,
       appMode,
       timersEnabled,
+      consentEnabled,
       rental,
       business,
       selectedCameraId,
@@ -5022,6 +5039,7 @@ This cannot be undone.`
       price: clampNum(price, 0, 999999, 0),
       appMode: appMode ?? DEFAULT_APP_MODE,
       timersEnabled: timersEnabled ?? false,
+      consentEnabled: consentEnabled ?? true,
 
       selectedCameraId: selectedCameraId ?? "",
       mirrorCamera: mirrorCamera ?? false,
@@ -5123,7 +5141,7 @@ This cannot be undone.`
             999999,
             0
           ),
-          currency: ["PHP", "USD", "EUR"].includes(business?.pricing?.currency)
+          currency: ["PHP","USD","EUR","GBP","CHF","SEK","NOK","DKK","PLN","CZK","HUF","RON","BGN","TRY","SGD","MYR","THB","IDR","JPY","KRW","INR","HKD","TWD","CNY","AUD","CAD","NZD"].includes(business?.pricing?.currency)
             ? business.pricing.currency
             : "PHP",
           taxEnabled: !!business?.pricing?.taxEnabled,
@@ -5175,8 +5193,17 @@ This cannot be undone.`
 
   // ---------- Analytics helpers ----------
 
-  const peso = (n = 0) =>
-    `₱${Number(n).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+  const fmtAmt = (n = 0, cur = "PHP") => {
+    try {
+      return new Intl.NumberFormat(undefined, {
+        style: "currency",
+        currency: cur,
+        currencyDisplay: "narrowSymbol",
+      }).format(Number(n));
+    } catch {
+      return `${cur} ${Number(n).toFixed(2)}`;
+    }
+  };
 
   // Assumptions:
   // ev.sessions = [{ createdAt, photosCount }]
@@ -5233,6 +5260,9 @@ This cannot be undone.`
     reportEventId === "all"
       ? events
       : events.filter(ev => ev.id === reportEventId);
+
+  const reportCurrency =
+    reportEvents[0]?.settings?.business?.pricing?.currency ?? "PHP";
 
   const reportSessions = reportEvents.flatMap(
     ev => ev.sessions ?? []
@@ -5527,6 +5557,7 @@ This cannot be undone.`
         name: ev.name || "Untitled",
         date: ev.date || ev.created || "—",
         mode: evMode,
+        currency: ev.settings?.business?.pricing?.currency ?? "PHP",
         sessions: s.length,
         completed,
         abandoned: s.length - completed,
@@ -5703,6 +5734,7 @@ This cannot be undone.`
         price,
         appMode,
         timersEnabled,
+        consentEnabled,
         rental: {
           timerEnabled: rentalTimerEnabled,
           timerHours: rentalTimerHours,
@@ -5877,6 +5909,7 @@ This cannot be undone.`
       price,
       appMode,
       timersEnabled,
+      consentEnabled,
       rental: {
         timerEnabled: rentalTimerEnabled,
         timerHours: rentalTimerHours,
@@ -5941,6 +5974,7 @@ This cannot be undone.`
     price,
     appMode,
     timersEnabled,
+    consentEnabled,
     rentalTimerEnabled,
     rentalTimerHours,
     rentalSessionLimitEnabled,
@@ -5991,6 +6025,7 @@ This cannot be undone.`
     setScreenTimers(s.screenTimers ?? DEFAULT_SCREEN_TIMERS);
     setNumberOfShots(s.numberOfShots ?? 3);
     setTimersEnabled(s.timersEnabled ?? false);
+    setConsentEnabled(s.consentEnabled ?? true);
     setFlashEnabled(s.flashEnabled ?? true);
     setSoundEnabled(s.soundEnabled ?? true);
     setLanguage(s.language ?? 'en');
@@ -6256,6 +6291,7 @@ This cannot be undone.`
     language,
     price,
     timersEnabled,
+    consentEnabled,
     logoPath,
     backgroundMediaPath,
     boothName,
@@ -7734,7 +7770,7 @@ This cannot be undone.`
                         <div className={EYEBROW}>{label}</div>
                         <div className="mt-2 text-xl font-bold tabular-nums text-slate-900">{sessions}</div>
                         <div className="text-xs text-slate-400">sessions</div>
-                        <div className="mt-1 text-lg font-semibold tabular-nums text-blue-600">{peso(revenue)}</div>
+                        <div className="mt-1 text-lg font-semibold tabular-nums text-blue-600">{fmtAmt(revenue, reportCurrency)}</div>
                         <div className="text-xs text-slate-400">revenue</div>
                       </div>
                     ))}
@@ -7777,8 +7813,8 @@ This cannot be undone.`
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                       {[
                         { label: "Additional Prints Sold", value: reportTotalAdditionalPrints.toString(), sub: "extra prints" },
-                        { label: "Add-On Revenue", value: peso(reportTotalAdditionalFee), sub: "from extra prints" },
-                        { label: "Tax Collected", value: peso(reportTotalTaxCollected), sub: "total tax" },
+                        { label: "Add-On Revenue", value: fmtAmt(reportTotalAdditionalFee, reportCurrency), sub: "from extra prints" },
+                        { label: "Tax Collected", value: fmtAmt(reportTotalTaxCollected, reportCurrency), sub: "total tax" },
                       ].map(({ label, value, sub }) => (
                         <div key={label} className={`${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_SOFT} p-4`}>
                           <div className="text-[11px] font-medium text-slate-400 uppercase tracking-wide">{label}</div>
@@ -7851,10 +7887,10 @@ This cannot be undone.`
                           <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                           <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#94a3b8" }} tickLine={false} axisLine={{ stroke: "#e2e8f0" }} interval={4} />
                           <YAxis yAxisId="sessions" tick={{ fontSize: 11, fill: "#94a3b8" }} tickLine={false} axisLine={false} />
-                          <YAxis yAxisId="revenue" orientation="right" tick={{ fontSize: 11, fill: "#94a3b8" }} tickLine={false} axisLine={false} tickFormatter={(v) => `₱${v}`} />
+                          <YAxis yAxisId="revenue" orientation="right" tick={{ fontSize: 11, fill: "#94a3b8" }} tickLine={false} axisLine={false} tickFormatter={(v) => fmtAmt(v, reportCurrency)} />
                           <Tooltip
                             contentStyle={{ borderRadius: 12, border: "1px solid #e2e8f0", boxShadow: "0 4px 12px rgba(0,0,0,0.08)", fontSize: 13 }}
-                            formatter={(value, name) => [name === "revenue" ? peso(value) : value, name === "revenue" ? "Revenue" : "Sessions"]}
+                            formatter={(value, name) => [name === "revenue" ? fmtAmt(value, reportCurrency) : value, name === "revenue" ? "Revenue" : "Sessions"]}
                           />
                           <Legend verticalAlign="top" height={30} iconType="circle" wrapperStyle={{ fontSize: 12, color: "#64748b" }} />
                           <Line yAxisId="sessions" type="monotone" dataKey="sessions" stroke="#2563eb" strokeWidth={2.5} dot={false} activeDot={{ r: 5, fill: "#2563eb" }} name="Sessions" />
@@ -7992,8 +8028,8 @@ This cannot be undone.`
                                 <td className="text-right px-4 py-3 font-medium tabular-nums text-slate-700">{ev.sessions}</td>
                                 <td className="text-right px-4 py-3 tabular-nums text-slate-600">{ev.completed}</td>
                                 <td className="text-right px-4 py-3 tabular-nums text-slate-600">{ev.photos.toLocaleString()}</td>
-                                <td className="text-right px-4 py-3 font-medium tabular-nums text-blue-600">{ev.mode === "rental" ? <span className="text-slate-400">—</span> : peso(ev.revenue)}</td>
-                                <td className="text-right px-4 py-3 tabular-nums text-slate-500">{ev.mode === "rental" ? <span className="text-slate-300">—</span> : ev.taxCollected > 0 ? peso(ev.taxCollected) : <span className="text-slate-300">—</span>}</td>
+                                <td className="text-right px-4 py-3 font-medium tabular-nums text-blue-600">{ev.mode === "rental" ? <span className="text-slate-400">—</span> : fmtAmt(ev.revenue, ev.currency)}</td>
+                                <td className="text-right px-4 py-3 tabular-nums text-slate-500">{ev.mode === "rental" ? <span className="text-slate-300">—</span> : ev.taxCollected > 0 ? fmtAmt(ev.taxCollected, ev.currency) : <span className="text-slate-300">—</span>}</td>
                                 <td className="text-right px-4 py-3 tabular-nums text-slate-500">{ev.mode === "rental" ? <span className="text-slate-300">—</span> : ev.additionalPrints > 0 ? ev.additionalPrints : <span className="text-slate-300">—</span>}</td>
                                 <td className="text-right px-4 py-3">
                                   <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums ${ev.rate >= 80 ? "bg-emerald-50 text-emerald-700" :
@@ -8016,8 +8052,8 @@ This cannot be undone.`
                                 <td className="text-right px-4 py-3 font-semibold tabular-nums text-slate-800">{reportSessions.length}</td>
                                 <td className="text-right px-4 py-3 font-semibold tabular-nums text-slate-700">{reportTotalCompleted}</td>
                                 <td className="text-right px-4 py-3 font-semibold tabular-nums text-slate-700">{reportPhotos.toLocaleString()}</td>
-                                <td className="text-right px-4 py-3 font-semibold tabular-nums text-blue-600">{peso(reportGross)}</td>
-                                <td className="text-right px-4 py-3 font-semibold tabular-nums text-slate-600">{reportTotalTaxCollected > 0 ? peso(reportTotalTaxCollected) : "—"}</td>
+                                <td className="text-right px-4 py-3 font-semibold tabular-nums text-blue-600">{fmtAmt(reportGross, reportCurrency)}</td>
+                                <td className="text-right px-4 py-3 font-semibold tabular-nums text-slate-600">{reportTotalTaxCollected > 0 ? fmtAmt(reportTotalTaxCollected, reportCurrency) : "—"}</td>
                                 <td className="text-right px-4 py-3 font-semibold tabular-nums text-slate-600">{reportTotalAdditionalPrints > 0 ? reportTotalAdditionalPrints : "—"}</td>
                                 <td className="text-right px-4 py-3">
                                   <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums ${reportConversionRate >= 80 ? "bg-emerald-50 text-emerald-700" :
@@ -8929,6 +8965,10 @@ This cannot be undone.`
                               <span className="text-gray-900">{retakeLimit === 0 ? "Unlimited" : retakeLimit}</span>
                             </div>
                             <div className="flex justify-between gap-2">
+                              <span className="text-gray-500">Consent screen</span>
+                              <span className="text-gray-900">{consentEnabled ? "On" : "Off"}</span>
+                            </div>
+                            <div className="flex justify-between gap-2">
                               <span className="text-gray-500">Idle dimming</span>
                               <span className="text-gray-900">{dimWhenIdle ? `${idleTimeout}s` : "Off"}</span>
                             </div>
@@ -9547,7 +9587,7 @@ This cannot be undone.`
                       </div>
                     </div>
 
-                    {!hydrated ? (
+                    {!hydrated && events.length === 0 ? (
                       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
                         {Array.from({ length: 6 }).map((_, index) => (
                           <div key={`event-skeleton-${index}`} className="animate-pulse bg-slate-100 rounded-lg h-20 w-full" />
@@ -9577,6 +9617,9 @@ This cannot be undone.`
                           const sessionPrice = isActive
                             ? pricePerSession
                             : (ev.settings?.business?.pricing?.pricePerSession ?? ev.settings?.price ?? 0);
+                          const evCardCurrency = isActive
+                            ? currency
+                            : (ev.settings?.business?.pricing?.currency ?? "PHP");
                           const cardShots = isActive
                             ? numberOfShots
                             : (ev.settings?.numberOfShots ?? "—");
@@ -9610,7 +9653,7 @@ This cannot be undone.`
                               {/* Stats strip */}
                               <div className="mt-3 grid grid-cols-4 gap-1.5">
                                 {[
-                                  { label: "Price", value: peso(sessionPrice) },
+                                  { label: "Price", value: fmtAmt(sessionPrice, evCardCurrency) },
                                   { label: "Shots", value: cardShots },
                                   { label: "Today", value: todaySessions },
                                   { label: "Total", value: totalSessions },
@@ -9637,7 +9680,7 @@ This cannot be undone.`
                                 )}
                                 {totalSessions > 0 && (
                                   <span className="rounded-full bg-emerald-50 border border-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-600">
-                                    {peso(totalSessions * sessionPrice)} gross
+                                    {fmtAmt(totalSessions * sessionPrice, evCardCurrency)} gross
                                   </span>
                                 )}
                               </div>
@@ -11134,6 +11177,23 @@ This cannot be undone.`
                           </label>
                         </div>
 
+                        {/* Guest consent */}
+                        <div className="text-sm font-semibold text-slate-800 mt-4">Guest Flow</div>
+                        <div className="mt-3">
+                          <label className="inline-flex items-center gap-2 text-sm cursor-pointer select-none">
+                            <input
+                              type="checkbox"
+                              checked={consentEnabled}
+                              onChange={(e) => setConsentEnabled(e.target.checked)}
+                            />
+                            Show consent screen before each session
+                          </label>
+                          <p className="mt-1 text-xs text-gray-500">
+                            When disabled, guests go straight from the welcome screen to template selection.
+                            Disable only for private or pre-consented events.
+                          </p>
+                        </div>
+
                         {/* Session settings */}
                         <div className="text-sm font-semibold text-slate-800 mt-4">Session Settings</div>
                         <div className="mt-3 grid grid-cols-2 gap-3">
@@ -11404,9 +11464,45 @@ This cannot be undone.`
                                   onChange={(e) => setCurrency(e.target.value)}
                                   className={`${SURFACE_BG} ${SURFACE_BORDER} w-full ${INPUT_RADIUS} px-3 py-2 text-sm outline-none mt-1`}
                                 >
-                                  <option>PHP</option>
-                                  <option>USD</option>
-                                  <option>EUR</option>
+                                  <optgroup label="Southeast Asia">
+                                    <option value="PHP">PHP — Philippine Peso</option>
+                                    <option value="SGD">SGD — Singapore Dollar</option>
+                                    <option value="MYR">MYR — Malaysian Ringgit</option>
+                                    <option value="THB">THB — Thai Baht</option>
+                                    <option value="IDR">IDR — Indonesian Rupiah</option>
+                                  </optgroup>
+                                  <optgroup label="East Asia">
+                                    <option value="JPY">JPY — Japanese Yen</option>
+                                    <option value="KRW">KRW — South Korean Won</option>
+                                    <option value="HKD">HKD — Hong Kong Dollar</option>
+                                    <option value="TWD">TWD — New Taiwan Dollar</option>
+                                    <option value="CNY">CNY — Chinese Yuan</option>
+                                  </optgroup>
+                                  <optgroup label="South Asia">
+                                    <option value="INR">INR — Indian Rupee</option>
+                                  </optgroup>
+                                  <optgroup label="Americas">
+                                    <option value="USD">USD — US Dollar</option>
+                                    <option value="CAD">CAD — Canadian Dollar</option>
+                                  </optgroup>
+                                  <optgroup label="Europe">
+                                    <option value="EUR">EUR — Euro</option>
+                                    <option value="GBP">GBP — British Pound</option>
+                                    <option value="CHF">CHF — Swiss Franc</option>
+                                    <option value="SEK">SEK — Swedish Krona</option>
+                                    <option value="NOK">NOK — Norwegian Krone</option>
+                                    <option value="DKK">DKK — Danish Krone</option>
+                                    <option value="PLN">PLN — Polish Zloty</option>
+                                    <option value="CZK">CZK — Czech Koruna</option>
+                                    <option value="HUF">HUF — Hungarian Forint</option>
+                                    <option value="RON">RON — Romanian Leu</option>
+                                    <option value="BGN">BGN — Bulgarian Lev</option>
+                                    <option value="TRY">TRY — Turkish Lira</option>
+                                  </optgroup>
+                                  <optgroup label="Oceania">
+                                    <option value="AUD">AUD — Australian Dollar</option>
+                                    <option value="NZD">NZD — New Zealand Dollar</option>
+                                  </optgroup>
                                 </select>
                               </label>
 
@@ -11693,7 +11789,7 @@ This cannot be undone.`
                           ].map(({ label, value }) => (
                             <div key={label + "rev"} className={`${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_SOFT} p-4`}>
                               <div className="text-xs font-medium text-gray-500">{label}</div>
-                              <div className="mt-2 text-2xl font-bold text-blue-600 tabular-nums">{peso(value)}</div>
+                              <div className="mt-2 text-2xl font-bold text-blue-600 tabular-nums">{fmtAmt(value, evCurrency)}</div>
                               <div className="text-[11px] text-gray-400 mt-0.5">gross revenue</div>
                             </div>
                           ))}
@@ -11773,9 +11869,9 @@ This cannot be undone.`
                           <div className="grid grid-cols-2 gap-3">
                             {[
                               { label: "Total Sessions", value: evTotalCount },
-                              { label: "Total Revenue", value: peso(evTotalRevenue) },
+                              { label: "Total Revenue", value: fmtAmt(evTotalRevenue, evCurrency) },
                               { label: "Total Photos Taken", value: evTotalPhotos },
-                              { label: "Avg Rev / Session", value: peso(evAvgRevPerSession) },
+                              { label: "Avg Rev / Session", value: fmtAmt(evAvgRevPerSession, evCurrency) },
                               { label: "Avg Photos / Session", value: evAvgPhotosPerSession },
                               { label: "Completion Rate", value: `${evCompletionRate}%` },
                             ].map(({ label, value }) => (
@@ -11912,9 +12008,9 @@ This cannot be undone.`
                           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                             {[
                               { label: "Additional Prints", value: evTotalAdditionalPrints, sub: "total prints sold" },
-                              { label: "Add-On Revenue", value: peso(evAdditionalPrintRevenue), sub: "from extra prints" },
-                              { label: "Tax Collected", value: peso(evTotalTaxCollected), sub: "total tax" },
-                              { label: "Avg Rev / Session", value: peso(evAvgRevPerSession), sub: "across all sessions" },
+                              { label: "Add-On Revenue", value: fmtAmt(evAdditionalPrintRevenue, evCurrency), sub: "from extra prints" },
+                              { label: "Tax Collected", value: fmtAmt(evTotalTaxCollected, evCurrency), sub: "total tax" },
+                              { label: "Avg Rev / Session", value: fmtAmt(evAvgRevPerSession, evCurrency), sub: "across all sessions" },
                             ].map(({ label, value, sub }) => (
                               <div key={label} className={`${SURFACE_BG} ${SURFACE_BORDER} ${CARD_RADIUS} ${SHADOW_SOFT} p-4`}>
                                 <div className="text-xs font-medium text-gray-500">{label}</div>

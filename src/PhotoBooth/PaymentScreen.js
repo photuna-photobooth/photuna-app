@@ -233,15 +233,16 @@ export default function PaymentScreen({
     20;
 
   /* ------------------------------- Currency ------------------------------- */
-  const currencySymbol = (cur) => (cur === "USD" ? "$" : cur === "EUR" ? "€" : "₱");
+  const currencySymbol = (cur) => {
+    const s = { USD:"$", EUR:"€", GBP:"£", CHF:"Fr", SEK:"kr", NOK:"kr", DKK:"kr", PLN:"zł", CZK:"Kč", HUF:"Ft", RON:"lei", BGN:"лв", TRY:"₺", SGD:"S$", MYR:"RM", THB:"฿", IDR:"Rp", JPY:"¥", KRW:"₩", INR:"₹", HKD:"HK$", TWD:"NT$", CNY:"¥", AUD:"A$", CAD:"C$", NZD:"NZ$" };
+    return s[cur] ?? "₱";
+  };
   const fmt = (amt) => {
     try {
       return new Intl.NumberFormat(undefined, {
         style: "currency",
-        currency: currency === "PHP" ? "PHP" : currency,
+        currency,
         currencyDisplay: "narrowSymbol",
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
       }).format(amt);
     } catch {
       return `${currencySymbol(currency)} ${Number(amt).toFixed(2)}`;

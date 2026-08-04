@@ -527,7 +527,10 @@ export default function PhotoBooth({ frames = [], onShortcut, initialEvent = nul
               key="welcome"
               event={selectedEvent}
               eventConfig={eventConfig}
-              onNext={boothLocked ? undefined : () => setScreen("CONSENT")}
+              onNext={boothLocked ? undefined : () => {
+                const skipConsent = selectedEvent?.settings?.consentEnabled === false;
+                setScreen(skipConsent ? "TEMPLATE" : "CONSENT");
+              }}
             />
             {boothLocked && (
               <div className="absolute inset-0 z-40 bg-black/70 backdrop-blur-sm flex items-center justify-center">

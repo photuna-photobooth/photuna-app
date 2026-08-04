@@ -13,9 +13,21 @@ supabase.auth.onAuthStateChange((_event, session) => {
 
 async function getAccessToken({ forceRefresh = false } = {}) {
   if (_cachedToken && !forceRefresh) return _cachedToken;
-  const { data, error } = await supabase.auth.getSession();
-  if (error) throw new Error(error.message || 'Unable to get Supabase session');
-  _cachedToken = data?.session?.access_token ?? null;
+  if (forceRefresh) {
+    // refreshSession() explicitly asks the auth server for a new access token —
+    // getSession() can return the stale cached token if auto-refresh hasn't fired.
+    const { data, error } = await supabase.auth.refreshSession();
+    if (error) {
+      // Refresh token itself is expired — session is gone, sign out cleanly.
+      await supabase.auth.signOut({ scope: 'local' });
+      throw new Error('Session expired. Please sign in again.');
+    }
+    _cachedToken = data?.session?.access_token ?? null;
+  } else {
+    const { data, error } = await supabase.auth.getSession();
+    if (error) throw new Error(error.message || 'Unable to get Supabase session');
+    _cachedToken = data?.session?.access_token ?? null;
+  }
   return _cachedToken;
 }
 
