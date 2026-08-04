@@ -2389,10 +2389,14 @@ async function requireSupabaseUser(req, res, next) {
     const { data, error } = await getSupabaseAdmin().auth.getUser(token);
 
     if (error || !data?.user) {
-      console.error("[requireSupabaseUser] getUser failed:", error?.message || "no user returned");
-      return res.status(401).json({
-        error: error?.message || "Invalid authorization token",
-      });
+      const msg = error?.message || "no user returned";
+      // "token is expired" is recoverable — the renderer will refresh and retry.
+      if (msg.includes("expired")) {
+        console.warn("[requireSupabaseUser] token expired — client will refresh and retry");
+      } else {
+        console.error("[requireSupabaseUser] getUser failed:", msg);
+      }
+      return res.status(401).json({ error: msg });
     }
 
     req.supabaseUser = data.user;
