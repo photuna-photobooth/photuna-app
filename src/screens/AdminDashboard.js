@@ -1340,12 +1340,13 @@ This cannot be undone.`
   const [editingFrameId, setEditingFrameId] = useState(null);
   const [editingName, setEditingName] = useState("");
 
-  // Photo-lab printer cut detection state (DNP + HiTi)
+  // Photo-lab strip profile management (DNP + HiTi)
   const [cutScanning, setCutScanning] = useState(false);
   const [cutPrinters, setCutPrinters] = useState([]);
   const [cutAllPrinters, setCutAllPrinters] = useState([]);
   const [cutScanError, setCutScanError] = useState("");
   const [cutScanned, setCutScanned] = useState(false);
+  const [cutCreating, setCutCreating] = useState(null); // printerName being created
 
   // helper: choose proper frame preview given layout
   const getFramePreviewForLayout = (frame, layout) =>
@@ -1457,6 +1458,27 @@ This cannot be undone.`
     } finally {
       setCutScanning(false);
       setCutScanned(true);
+    }
+  };
+
+  const handleCreateStripProfile = async (printerName) => {
+    setCutCreating(printerName);
+    try {
+      const res = await safeInvoke("printer:createStripProfile", printerName);
+      if (res?.ok) {
+        // Re-scan to reflect the new profile
+        const scanRes = await safeInvoke("printer:dnpScan");
+        if (scanRes?.ok) {
+          setCutPrinters(scanRes.printers ?? []);
+          setCutAllPrinters(scanRes.allPrinters ?? []);
+        }
+      } else {
+        setCutScanError(res?.error ?? "Failed to create STRIP profile.");
+      }
+    } catch (err) {
+      setCutScanError(err?.message ?? "Unknown error creating STRIP profile.");
+    } finally {
+      setCutCreating(null);
     }
   };
 
@@ -8700,22 +8722,19 @@ This cannot be undone.`
                           {cutScanned && !cutScanError && cutPrinters.length === 0 && (
                             <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 space-y-2">
                               <p className="font-semibold">No supported printer detected.</p>
-                              <p>The scan checks for DNP and HiTi by name, driver, and model number (DS620, DS820, DS-RX1, DS40, DS80, DP-S, P520L, P720L, etc.). If your printer is listed below but wasn&apos;t detected, please report the name so it can be added.</p>
+                              <p>Checks for DNP and HiTi by name and model (DS620, DS820, DS-RX1, DS40, DS80, DP-S, P520L, P720L, etc.).</p>
                               {cutAllPrinters.length > 0 && (
                                 <div className="mt-2 pt-2 border-t border-amber-200">
                                   <p className="font-semibold text-amber-800 mb-1">Printers found in Windows ({cutAllPrinters.length}):</p>
                                   <ul className="space-y-0.5">
                                     {cutAllPrinters.map((p, i) => (
-                                      <li key={i} className="text-amber-900">
-                                        <span className="font-medium">{p.name}</span>
-                                        {p.driver && p.driver !== p.name && <span className="text-amber-600"> — {p.driver}</span>}
-                                      </li>
+                                      <li key={i} className="text-amber-900 font-medium">{p.name}</li>
                                     ))}
                                   </ul>
                                 </div>
                               )}
                               {cutAllPrinters.length === 0 && (
-                                <p className="text-amber-600">No printers found in Windows at all — check that the driver is installed.</p>
+                                <p>No printers found in Windows at all — check that the driver is installed.</p>
                               )}
                             </div>
                           )}
@@ -8724,58 +8743,42 @@ This cannot be undone.`
                             <div className="mt-4 space-y-3">
                               {cutPrinters.map((printer) => (
                                 <div key={printer.name} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                                  <div className="flex items-start justify-between gap-3 flex-wrap">
+                                  <div className="flex items-center justify-between gap-3 flex-wrap">
                                     <div className="min-w-0">
-                                      <div className="flex items-center gap-2 flex-wrap">
-                                        <p className="text-sm font-semibold text-slate-900 truncate">{printer.name}</p>
+                                      <div className="flex items-center gap-2">
+                                        <p className="text-sm font-semibold text-slate-900">{printer.name}</p>
                                         <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${printer.brand === "HiTi" ? "bg-purple-100 text-purple-700" : "bg-blue-100 text-blue-700"}`}>{printer.brand}</span>
                                       </div>
-                                      <p className="text-xs text-slate-500 mt-0.5 truncate">{printer.driver}</p>
+                                      {printer.driver && <p className="text-xs text-slate-400 mt-0.5 truncate">{printer.driver}</p>}
                                     </div>
-                                    <span className={`flex-shrink-0 rounded-full px-2.5 py-1 text-[10px] font-bold ${printer.has2InchCut ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
-                                      {printer.has2InchCut ? "Strip cut active" : "Strip cut not set"}
-                                    </span>
+                                    {printer.hasStripProfile ? (
+                                      <div className="flex items-center gap-1.5 rounded-full bg-emerald-50 border border-emerald-200 px-3 py-1.5 text-xs font-semibold text-emerald-700 flex-shrink-0">
+                                        <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>
+                                        {printer.stripProfileName} · Ready
+                                      </div>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        disabled={cutCreating === printer.name}
+                                        onClick={() => handleCreateStripProfile(printer.name)}
+                                        className="flex-shrink-0 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 transition disabled:opacity-50"
+                                      >
+                                        {cutCreating === printer.name ? "Creating…" : "Create STRIP profile"}
+                                      </button>
+                                    )}
                                   </div>
 
-                                  {printer.cutMode && (
-                                    <p className="mt-2 text-xs text-slate-600">Current cut setting: <span className="font-semibold">{printer.cutMode}</span></p>
-                                  )}
-
-                                  {!printer.has2InchCut && (
-                                    <div className="mt-3 rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-xs text-slate-600 space-y-1">
-                                      {printer.brand === "HiTi" ? (
-                                        <>
-                                          <p className="font-semibold text-slate-700">HiTi — enable strip cut:</p>
-                                          <p>Open <strong>Windows Settings → Printers &amp; scanners</strong>, select your HiTi printer and open <strong>Printing preferences</strong>. Under <strong>Media Size</strong> choose <strong>2×6 Strip</strong> or enable <strong>Strip Print</strong> mode. Alternatively open <strong>HiTi Printer Manager</strong> and enable <strong>Auto Cut</strong>. On P520L / P720L models set <strong>CutPage</strong> to <strong>Enabled</strong>.</p>
-                                        </>
-                                      ) : (
-                                        <>
-                                          <p className="font-semibold text-slate-700">DNP — enable 2-inch cut:</p>
-                                          <p>Open <strong>Windows Settings → Printers &amp; scanners</strong>, select your DNP printer and open <strong>Printing preferences</strong>. In the <strong>Paper/Quality</strong> or <strong>Layout</strong> tab set <strong>Print Size</strong> to <strong>2×6 Strip</strong> or enable <strong>Auto Cut</strong>. On DS-series printers look for <strong>Cutter Control</strong> in the <strong>Advanced</strong> tab.</p>
-                                        </>
-                                      )}
-                                    </div>
-                                  )}
-
-                                  {printer.cutSupported && printer.properties.length > 0 && (
-                                    <div className="mt-3">
-                                      <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Driver properties</p>
-                                      <div className="space-y-1">
-                                        {printer.properties
-                                          .filter((p) => /cut|strip|cutter|pagesize|mediasize|printsize|printtype|mediatype|cutpage/i.test(p.PropertyName ?? ""))
-                                          .slice(0, 6)
-                                          .map((prop) => (
-                                            <div key={prop.PropertyName} className="flex items-center justify-between gap-2 rounded bg-white border border-slate-100 px-2.5 py-1.5 text-xs">
-                                              <span className="text-slate-400 font-mono truncate">{prop.PropertyName}</span>
-                                              <span className="text-slate-800 font-semibold flex-shrink-0">{prop.Value}</span>
-                                            </div>
-                                          ))}
-                                      </div>
-                                    </div>
+                                  {printer.hasStripProfile ? (
+                                    <p className="mt-2 text-xs text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-1.5">
+                                      2×6 and 6×2 strip jobs will automatically route to <strong>{printer.stripProfileName}</strong>. Make sure 2-inch cut is enabled in that printer&apos;s Windows driver preferences.
+                                    </p>
+                                  ) : (
+                                    <p className="mt-2 text-xs text-slate-500">
+                                      No STRIP profile yet. Click <strong>Create STRIP profile</strong> — Photuna will add <strong>{printer.stripProfileName}</strong> to Windows and automatically route strip layouts to it.
+                                    </p>
                                   )}
                                 </div>
                               ))}
-                              <p className="text-xs text-slate-400 mt-1">After changing cut settings in Windows, click <strong>Scan Printers</strong> again to verify.</p>
                             </div>
                           )}
                         </div>

@@ -118,9 +118,9 @@ const apiImpl = {
   /* Card terminal & cash hardware detection */
   detectCardTerminal: () => ipcRenderer.invoke("card:detectTerminal"),
 
-  /* DNP printer detection */
+  /* DNP/HiTi strip profile management */
   scanDnpPrinters: () => ipcRenderer.invoke("printer:dnpScan"),
-  setDnpCutMode: (payload) => ipcRenderer.invoke("printer:setCutMode", payload),
+  createStripProfile: (printerName) => ipcRenderer.invoke("printer:createStripProfile", { printerName }),
 
   /* Meta-flags (one-time injection markers) */
   getMetaFlag: (payload) => ipcRenderer.invoke("store:getMetaFlag", payload),

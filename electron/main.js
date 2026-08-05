@@ -4528,115 +4528,85 @@ app.whenReady().then(async () => {
     return win.webContents.getPrintersAsync();
   });
 
-  // ── Photo-lab printer cut-mode detection (DNP + HiTi) ────────────────────
+  // ── Photo-lab strip profile management (DNP + HiTi) ─────────────────────
   safeHandle("printer:dnpScan", async (event) => {
     try {
-      const { execSync } = require("child_process");
-
-      // Use Electron's own printer enumeration — same source as the Printer setup dropdown
       const win = BrowserWindow.fromWebContents(event.sender);
-      const electronPrinters = await win.webContents.getPrintersAsync();
-      // Normalise to { Name, DriverName } shape
-      const allPrinters = electronPrinters.map((p) => ({
-        Name: p.name ?? p.displayName ?? "",
-        DriverName: p.description ?? "",
-        PortName: "",
-        PrinterStatus: p.status ?? 0,
-      }));
+      const all = await win.webContents.getPrintersAsync();
+      const allNames = new Set(all.map((p) => p.name));
 
       // Match DNP (DS-series, Imagingcomm, Citizen DP-S) and HiTi (P-series)
       const BRAND_RE = /DNP|HiTi|Hi-Ti|HITI|DS620|DS820|DS-RX|DS40|DS80|DS23|DP-S|Imagingcomm|P510S|P520L|P525L|P528L|P720L|P728L|P750L/i;
-      const printers = allPrinters.filter(
-        (p) => BRAND_RE.test(p.Name) || BRAND_RE.test(p.DriverName)
-      );
 
-      const results = await Promise.all(
-        printers.map(async (p) => {
-          // Identify brand from name or driver string
-          const brandStr = (p.Name + " " + p.DriverName).toLowerCase();
-          const brand = /hiti|hi-ti|hi_ti/.test(brandStr) ? "HiTi" : "DNP";
+      const matched = all.filter((p) => {
+        const n = p.name ?? "";
+        const d = p.description ?? "";
+        // Exclude printers that are themselves STRIP profiles
+        if (/-STRIP$/i.test(n)) return false;
+        return BRAND_RE.test(n) || BRAND_RE.test(d);
+      });
 
-          let properties = [];
-          let cutMode = null;
-          let cutSupported = false;
+      const results = matched.map((p) => {
+        const brandStr = (p.name + " " + (p.description ?? "")).toLowerCase();
+        const brand = /hiti|hi-ti|hi_ti/.test(brandStr) ? "HiTi" : "DNP";
+        const stripProfileName = `${p.name}-STRIP`;
+        const hasStripProfile = allNames.has(stripProfileName);
+        return {
+          name: p.name,
+          driver: p.description ?? "",
+          brand,
+          stripProfileName,
+          hasStripProfile,
+        };
+      });
 
-          const safeName = p.Name.replace(/'/g, "''");
-
-          // 1️⃣ Try Get-PrinterProperty (requires PrintManagement module)
-          try {
-            const propsRaw = execSync(
-              `powershell -NoProfile -NonInteractive -Command ` +
-              `"Get-PrinterProperty -PrinterName '${safeName}' | ` +
-              `Select-Object PropertyName,Value | ConvertTo-Json -Depth 2"`,
-              { timeout: 6000, encoding: "utf8", windowsHide: true }
-            ).trim();
-            const parsed = JSON.parse(propsRaw || "null");
-            properties = Array.isArray(parsed) ? parsed : (parsed ? [parsed] : []);
-          } catch { /* PrintManagement not available */ }
-
-          // 2️⃣ Fallback: read from registry (DNP/HiTi store DEVMODE settings here)
-          if (properties.length === 0) {
-            try {
-              const regPaths = [
-                `HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Print\\Printers\\${safeName}\\PrinterDriverData`,
-                `HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Print\\Printers\\${safeName}\\PrinterDriverData`,
-              ];
-              for (const regPath of regPaths) {
-                try {
-                  const regRaw = execSync(
-                    `powershell -NoProfile -NonInteractive -Command ` +
-                    `"Get-ItemProperty -Path '${regPath}' -ErrorAction Stop | ` +
-                    `Select-Object -ExcludeProperty PS* | ConvertTo-Json -Depth 1"`,
-                    { timeout: 4000, encoding: "utf8", windowsHide: true }
-                  ).trim();
-                  const obj = JSON.parse(regRaw || "null");
-                  if (obj && typeof obj === "object") {
-                    properties = Object.entries(obj).map(([k, v]) => ({ PropertyName: k, Value: v }));
-                    break;
-                  }
-                } catch { /* try next path */ }
-              }
-            } catch { /* registry not accessible */ }
-          }
-
-          // Find the most relevant cut property
-          const cutPropPattern = brand === "HiTi"
-            ? /cut|strip|postcard|mediatype|printtype|pagesize|mediasize/i
-            : /cut|2inch|cutter|pagesize|mediasize|printsize/i;
-          const cutProp = properties.find((prop) => cutPropPattern.test(prop.PropertyName ?? ""));
-          if (cutProp) {
-            cutMode = cutProp.Value ?? null;
-            cutSupported = true;
-          }
-
-          // Determine whether strip/2-inch cut is currently active
-          // Match: explicit size values ("2x6", "strip") OR enabled-state on a cut key ("Enable", "1", "true")
-          const has2InchCut = properties.some((prop) => {
-            const val = String(prop.Value ?? "").toLowerCase();
-            const key = String(prop.PropertyName ?? "").toLowerCase();
-            if (/2x6|2inch|2-inch|strip|postcard/.test(val)) return true;
-            if (/cut|2inch/.test(key) && /^(enable|enabled|1|true|yes|on)$/.test(val.trim())) return true;
-            if (brand === "HiTi" && /cutpage|cutenabled/.test(key) && /1|true|yes|on/.test(val)) return true;
-            return false;
-          });
-
-          return {
-            name: p.Name,
-            driver: p.DriverName,
-            port: p.PortName,
-            status: p.PrinterStatus,
-            brand,
-            cutSupported,
-            cutMode,
-            has2InchCut,
-            properties: properties.slice(0, 20),
-          };
-        })
-      );
-
-      return { ok: true, printers: results, allPrinters: allPrinters.map((p) => ({ name: p.Name, driver: p.DriverName })) };
+      const allPrinters = all.map((p) => ({ name: p.name, driver: p.description ?? "" }));
+      return { ok: true, printers: results, allPrinters };
     } catch (err) {
       return { ok: false, printers: [], allPrinters: [], error: err.message };
+    }
+  });
+
+  safeHandle("printer:createStripProfile", async (event, { printerName } = {}) => {
+    if (!printerName) return { ok: false, error: "printerName required" };
+    const stripName = `${printerName}-STRIP`;
+    const { execSync } = require("child_process");
+    const safeSrc  = printerName.replace(/'/g, "''");
+    const safeDest = stripName.replace(/'/g, "''");
+
+    // Try WMI — available on all Windows without PrintManagement module
+    try {
+      const infoRaw = execSync(
+        `powershell -NoProfile -NonInteractive -Command ` +
+        `"$p=Get-WmiObject Win32_Printer -Filter \\"Name='${safeSrc}'\\" -ErrorAction Stop; $p.DriverName+'|'+$p.PortName"`,
+        { timeout: 6000, encoding: "utf8", windowsHide: true }
+      ).trim();
+      const [driverName, portName] = infoRaw.split("|");
+      if (!driverName || !portName) throw new Error("WMI returned incomplete info");
+
+      const safeDriver = driverName.replace(/'/g, "''");
+      const safePort   = portName.replace(/'/g, "''");
+      execSync(
+        `powershell -NoProfile -NonInteractive -Command ` +
+        `"$n=([WMIClass]'Win32_Printer').SpawnInstance(); ` +
+        `$n.DriverName='${safeDriver}'; $n.PortName='${safePort}'; ` +
+        `$n.Name='${safeDest}'; $n.Shared=$false; $n.Put()"`,
+        { timeout: 10000, encoding: "utf8", windowsHide: true }
+      );
+      return { ok: true, stripName };
+    } catch { /* fall through */ }
+
+    // Fallback: Add-Printer (requires PrintManagement module)
+    try {
+      execSync(
+        `powershell -NoProfile -NonInteractive -Command ` +
+        `"$p=Get-Printer -Name '${safeSrc}' -ErrorAction Stop; ` +
+        `Add-Printer -Name '${safeDest}' -DriverName $p.DriverName -PortName $p.PortName"`,
+        { timeout: 10000, encoding: "utf8", windowsHide: true }
+      );
+      return { ok: true, stripName };
+    } catch (err) {
+      return { ok: false, error: `Could not create STRIP profile. Try running Photuna as Administrator.\n${err.message}` };
     }
   });
 
