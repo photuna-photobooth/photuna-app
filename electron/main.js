@@ -4575,34 +4575,41 @@ app.whenReady().then(async () => {
     const safeSrc  = printerName.replace(/'/g, "''");
     const safeDest = stripName.replace(/'/g, "''");
 
-    // Try WMI — available on all Windows without PrintManagement module
+    // Step 1: Read source printer info via WMI (no PrintManagement module needed)
+    let driverName, portName;
     try {
       const infoRaw = execSync(
         `powershell -NoProfile -NonInteractive -Command ` +
         `"$p=Get-WmiObject Win32_Printer -Filter \\"Name='${safeSrc}'\\" -ErrorAction Stop; $p.DriverName+'|'+$p.PortName"`,
         { timeout: 6000, encoding: "utf8", windowsHide: true }
       ).trim();
-      const [driverName, portName] = infoRaw.split("|");
-      if (!driverName || !portName) throw new Error("WMI returned incomplete info");
+      [driverName, portName] = infoRaw.split("|");
+    } catch (err) {
+      return { ok: false, error: `Could not read printer info: ${err.message}` };
+    }
+    if (!driverName || !portName) {
+      return { ok: false, error: "Could not read driver/port from printer. Is the printer driver installed?" };
+    }
 
+    // Step 2: Create the STRIP printer via printui.exe (always available, no module needed)
+    // NOTE: SpawnInstance().Put() is intentionally avoided — it renames instead of creating.
+    try {
+      const { execFileSync } = require("child_process");
+      const printui = `${process.env.SystemRoot || "C:\\Windows"}\\System32\\printui.exe`;
+      execFileSync(printui, ["/if", "/b", stripName, "/r", portName, "/m", driverName, "/Z"], {
+        timeout: 15000,
+        windowsHide: true,
+      });
+      return { ok: true, stripName };
+    } catch { /* fall through to Add-Printer */ }
+
+    // Step 3: Fallback — Add-Printer (requires PrintManagement module)
+    try {
       const safeDriver = driverName.replace(/'/g, "''");
       const safePort   = portName.replace(/'/g, "''");
       execSync(
         `powershell -NoProfile -NonInteractive -Command ` +
-        `"$n=([WMIClass]'Win32_Printer').SpawnInstance(); ` +
-        `$n.DriverName='${safeDriver}'; $n.PortName='${safePort}'; ` +
-        `$n.Name='${safeDest}'; $n.Shared=$false; $n.Put()"`,
-        { timeout: 10000, encoding: "utf8", windowsHide: true }
-      );
-      return { ok: true, stripName };
-    } catch { /* fall through */ }
-
-    // Fallback: Add-Printer (requires PrintManagement module)
-    try {
-      execSync(
-        `powershell -NoProfile -NonInteractive -Command ` +
-        `"$p=Get-Printer -Name '${safeSrc}' -ErrorAction Stop; ` +
-        `Add-Printer -Name '${safeDest}' -DriverName $p.DriverName -PortName $p.PortName"`,
+        `"Add-Printer -Name '${safeDest}' -DriverName '${safeDriver}' -PortName '${safePort}' -ErrorAction Stop"`,
         { timeout: 10000, encoding: "utf8", windowsHide: true }
       );
       return { ok: true, stripName };
