@@ -4620,26 +4620,36 @@ app.whenReady().then(async () => {
       }
     }
 
-    // Step 3: Wait for Windows to register the new printer, then copy the DEVMODE binary
-    // directly from the registry. printui /Ss + /Sr does NOT transfer vendor-specific DEVMODE
-    // extensions (where DNP's 2inch cut is stored) — the registry copy does.
+    // Step 3: Wait for Windows to register the new printer, then copy the DEVMODE.
+    // The user's 2inch cut preference lives in HKCU\Printers\DevModes2 (per-user),
+    // NOT in HKLM Default DevMode (that's only the driver factory default = Disable).
     await new Promise((r) => setTimeout(r, 1500));
     try {
-      const pSrc = safeSrc.replace(/'/g, "\\'");
-      const pDst = safeDest.replace(/'/g, "\\'");
+      // Escape single-quotes for use inside a PowerShell single-quoted string
+      const pSrc = printerName.replace(/'/g, "''");
+      const pDst = stripName.replace(/'/g, "''");
+      const psScript = [
+        `$src='${pSrc}'; $dst='${pDst}'`,
+        // Locate the per-user DEVMODE (Windows may use DevModes2 or DevModePerUser)
+        `$dm=$null`,
+        `foreach($p in @('HKCU:\\Printers\\DevModes2','HKCU:\\Printers\\DevModePerUser')){`,
+        `  if(Test-Path $p){`,
+        `    $v=(Get-ItemProperty $p $src -EA SilentlyContinue).$src`,
+        `    if($v){$dm=$v;break}`,
+        `  }`,
+        `}`,
+        // If per-user DevMode found, write it to the same HKCU key for the STRIP printer
+        // and also push it to HKLM Default DevMode so it becomes the system default
+        `if($dm){`,
+        `  foreach($p in @('HKCU:\\Printers\\DevModes2','HKCU:\\Printers\\DevModePerUser')){`,
+        `    if(Test-Path $p){Set-ItemProperty $p $dst $dm -Type Binary -EA SilentlyContinue}`,
+        `  }`,
+        `  $hklm='HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Print\\Printers\\'+$dst`,
+        `  if(Test-Path $hklm){Set-ItemProperty $hklm 'Default DevMode' $dm -Type Binary -EA SilentlyContinue}`,
+        `}`,
+      ].join(";");
       execSync(
-        `powershell -NoProfile -NonInteractive -Command ` +
-        `"$s='HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Print\\Printers\\${pSrc}';` +
-        `$d='HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Print\\Printers\\${pDst}';` +
-        `if((Test-Path $s)-and(Test-Path $d)){` +
-        `  $dm=(Get-ItemProperty $s 'Default DevMode' -EA SilentlyContinue).'Default DevMode';` +
-        `  if($dm){Set-ItemProperty $d 'Default DevMode' $dm -Type Binary};` +
-        `};` +
-        `$u='HKCU:\\Printers\\DevModes2';` +
-        `if(Test-Path $u){` +
-        `  $udm=(Get-ItemProperty $u '${pSrc}' -EA SilentlyContinue).'${pSrc}';` +
-        `  if($udm){Set-ItemProperty $u '${pDst}' $udm -Type Binary}` +
-        `}"`,
+        `powershell -NoProfile -NonInteractive -Command "${psScript}"`,
         { timeout: 8000, encoding: "utf8", windowsHide: true }
       );
     } catch { /* non-fatal — printer created, DEVMODE copy failed */ }
