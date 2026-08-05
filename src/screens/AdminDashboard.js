@@ -25,6 +25,11 @@ const native =
     ? window.api || window.electron || null
     : null;
 
+// True when running inside the Capacitor iOS app (iPad). window.Capacitor is
+// injected by the Capacitor runtime and is absent in Electron.
+const isIpadApp =
+  typeof window !== "undefined" && typeof window.Capacitor !== "undefined";
+
 // A small, sensible starter list — add/remove as you like:
 const GOOGLE_FONTS = [
   "Inter",
@@ -1875,6 +1880,18 @@ This cannot be undone.`
     setPrinterLoading(true);
     setPrinterError("");
 
+    // On iPad (Capacitor/iOS) there is no API to enumerate printers.
+    // iOS presents its own AirPrint picker at print time. Inject a synthetic
+    // entry so the dropdown doesn't show "No printers found".
+    if (isIpadApp) {
+      setPrinters([{ name: "AirPrint", displayName: "AirPrint (iOS)", isDefault: true, status: null, options: {} }]);
+      setSelectedPrinter((prev) => prev || "AirPrint");
+      setPrinterOnline(true);
+      setPrinterStatusText("AirPrint ready — printer selected when you print");
+      setPrinterLoading(false);
+      return;
+    }
+
     try {
       let found = [];
 
@@ -1890,9 +1907,8 @@ This cannot be undone.`
       if (!normalized.length) {
         setSelectedPrinter("");
         setPrinterOnline(false);
-        const isIpad = !!window.electron?._capacitorPlaceholder;
-        setPrinterStatusText(isIpad ? "Printing not available on iPad — use a Windows booth" : "No printers detected");
-        if (!isIpad) showToast("No printers found");
+        setPrinterStatusText("No printers detected");
+        showToast("No printers found");
         return;
       }
 
@@ -8489,6 +8505,12 @@ This cannot be undone.`
                           {printerError && (
                             <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
                               {printerError}
+                            </div>
+                          )}
+
+                          {isIpadApp && (
+                            <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-700">
+                              Printing on iPad uses AirPrint. Your printer must be on the same Wi-Fi network. The iOS printer picker appears automatically when a session finishes.
                             </div>
                           )}
 
