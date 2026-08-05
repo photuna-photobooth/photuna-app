@@ -4567,7 +4567,8 @@ app.whenReady().then(async () => {
     }
   });
 
-  safeHandle("printer:createStripProfile", async (event, { printerName } = {}) => {
+  safeHandle("printer:createStripProfile", async (event, payload) => {
+    const printerName = typeof payload === "string" ? payload : payload?.printerName;
     if (!printerName) return { ok: false, error: "printerName required" };
     const stripName = `${printerName}-STRIP`;
     const { execSync } = require("child_process");

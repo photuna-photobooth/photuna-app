@@ -1464,7 +1464,9 @@ This cannot be undone.`
   const handleCreateStripProfile = async (printerName) => {
     setCutCreating(printerName);
     try {
-      const res = await safeInvoke("printer:createStripProfile", printerName);
+      const res = await (window.api?.createStripProfile
+        ? window.api.createStripProfile(printerName)
+        : safeInvoke("printer:createStripProfile", printerName));
       if (res?.ok) {
         // Re-scan to reflect the new profile
         const scanRes = await safeInvoke("printer:dnpScan");
