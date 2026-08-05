@@ -4576,10 +4576,7 @@ app.whenReady().then(async () => {
     const safeDest = stripName.replace(/'/g, "''");
 
     const { execFileSync } = require("child_process");
-    const fs   = require("fs");
-    const path = require("path");
     const printui = `${process.env.SystemRoot || "C:\\Windows"}\\System32\\printui.exe`;
-    const tempSettings = path.join(app.getPath("temp"), `photuna-printer-${Date.now()}.dat`);
 
     // Step 1: Read source printer driver + port via WMI (no PrintManagement needed)
     let driverName, portName;
@@ -4597,14 +4594,7 @@ app.whenReady().then(async () => {
       return { ok: false, error: "Could not read driver/port. Is the printer driver installed?" };
     }
 
-    // Step 2: Export source printer settings BEFORE creating the copy (captures 2inch cut state)
-    try {
-      execFileSync(printui, ["/Ss", "/n", printerName, "/a", tempSettings, "/7"], {
-        timeout: 10000, windowsHide: true,
-      });
-    } catch { /* settings export optional — continue */ }
-
-    // Step 3: Create the STRIP printer via printui.exe
+    // Step 2: Create the STRIP printer via printui.exe
     // NOTE: Win32_Printer.SpawnInstance().Put() is intentionally avoided — it renames the original.
     let created = false;
     try {
@@ -4626,23 +4616,33 @@ app.whenReady().then(async () => {
         );
         created = true;
       } catch (err) {
-        try { fs.unlinkSync(tempSettings); } catch { }
         return { ok: false, error: `Could not create STRIP profile. Try running Photuna as Administrator.\n${err.message}` };
       }
     }
 
-    // Step 4: Restore source settings onto the new STRIP printer (copies 2inch cut + DEVMODE)
-    await new Promise((r) => setTimeout(r, 1200)); // let Windows register the new printer
+    // Step 3: Wait for Windows to register the new printer, then copy the DEVMODE binary
+    // directly from the registry. printui /Ss + /Sr does NOT transfer vendor-specific DEVMODE
+    // extensions (where DNP's 2inch cut is stored) — the registry copy does.
+    await new Promise((r) => setTimeout(r, 1500));
     try {
-      if (fs.existsSync(tempSettings)) {
-        execFileSync(printui, ["/Sr", "/n", stripName, "/a", tempSettings, "/r"], {
-          timeout: 10000, windowsHide: true,
-        });
-      }
-    } catch { /* non-fatal — printer exists, settings copy failed */ }
-    finally {
-      try { fs.unlinkSync(tempSettings); } catch { }
-    }
+      const pSrc = safeSrc.replace(/'/g, "\\'");
+      const pDst = safeDest.replace(/'/g, "\\'");
+      execSync(
+        `powershell -NoProfile -NonInteractive -Command ` +
+        `"$s='HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Print\\Printers\\${pSrc}';` +
+        `$d='HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Print\\Printers\\${pDst}';` +
+        `if((Test-Path $s)-and(Test-Path $d)){` +
+        `  $dm=(Get-ItemProperty $s 'Default DevMode' -EA SilentlyContinue).'Default DevMode';` +
+        `  if($dm){Set-ItemProperty $d 'Default DevMode' $dm -Type Binary};` +
+        `};` +
+        `$u='HKCU:\\Printers\\DevModes2';` +
+        `if(Test-Path $u){` +
+        `  $udm=(Get-ItemProperty $u '${pSrc}' -EA SilentlyContinue).'${pSrc}';` +
+        `  if($udm){Set-ItemProperty $u '${pDst}' $udm -Type Binary}` +
+        `}"`,
+        { timeout: 8000, encoding: "utf8", windowsHide: true }
+      );
+    } catch { /* non-fatal — printer created, DEVMODE copy failed */ }
 
     return { ok: true, stripName };
   });
