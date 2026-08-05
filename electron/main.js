@@ -4560,42 +4560,64 @@ app.whenReady().then(async () => {
           let cutMode = null;
           let cutSupported = false;
 
+          const safeName = p.Name.replace(/'/g, "''");
+
+          // 1️⃣ Try Get-PrinterProperty (requires PrintManagement module)
           try {
             const propsRaw = execSync(
               `powershell -NoProfile -NonInteractive -Command ` +
-              `"Get-PrinterProperty -PrinterName '${p.Name.replace(/'/g, "''")}' | ` +
+              `"Get-PrinterProperty -PrinterName '${safeName}' | ` +
               `Select-Object PropertyName,Value | ConvertTo-Json -Depth 2"`,
               { timeout: 6000, encoding: "utf8", windowsHide: true }
             ).trim();
-
             const parsed = JSON.parse(propsRaw || "null");
             properties = Array.isArray(parsed) ? parsed : (parsed ? [parsed] : []);
+          } catch { /* PrintManagement not available */ }
 
-            // DNP: cut properties live under Cutter / CutterControl / PrintSize / MediaSize
-            // HiTi: cut properties surface as CutPage / CutEnabled / PageMediaType / PrintType / MediaSize
-            const cutPropPattern = brand === "HiTi"
-              ? /cut|strip|postcard|mediatype|printtype|pagesize|mediasize/i
-              : /cut|cutter|pagesize|mediasize|printsize/i;
+          // 2️⃣ Fallback: read from registry (DNP/HiTi store DEVMODE settings here)
+          if (properties.length === 0) {
+            try {
+              const regPaths = [
+                `HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Print\\Printers\\${safeName}\\PrinterDriverData`,
+                `HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Print\\Printers\\${safeName}\\PrinterDriverData`,
+              ];
+              for (const regPath of regPaths) {
+                try {
+                  const regRaw = execSync(
+                    `powershell -NoProfile -NonInteractive -Command ` +
+                    `"Get-ItemProperty -Path '${regPath}' -ErrorAction Stop | ` +
+                    `Select-Object -ExcludeProperty PS* | ConvertTo-Json -Depth 1"`,
+                    { timeout: 4000, encoding: "utf8", windowsHide: true }
+                  ).trim();
+                  const obj = JSON.parse(regRaw || "null");
+                  if (obj && typeof obj === "object") {
+                    properties = Object.entries(obj).map(([k, v]) => ({ PropertyName: k, Value: v }));
+                    break;
+                  }
+                } catch { /* try next path */ }
+              }
+            } catch { /* registry not accessible */ }
+          }
 
-            const cutProp = properties.find(
-              (prop) => cutPropPattern.test(prop.PropertyName ?? "")
-            );
-            if (cutProp) {
-              cutMode = cutProp.Value ?? null;
-              cutSupported = true;
-            }
-          } catch { /* driver properties not accessible */ }
+          // Find the most relevant cut property
+          const cutPropPattern = brand === "HiTi"
+            ? /cut|strip|postcard|mediatype|printtype|pagesize|mediasize/i
+            : /cut|2inch|cutter|pagesize|mediasize|printsize/i;
+          const cutProp = properties.find((prop) => cutPropPattern.test(prop.PropertyName ?? ""));
+          if (cutProp) {
+            cutMode = cutProp.Value ?? null;
+            cutSupported = true;
+          }
 
           // Determine whether strip/2-inch cut is currently active
-          // DNP: value contains "2x6", "2inch", "strip", "postcard"
-          // HiTi: value contains "strip", "2x6", "cut" (HiTi uses "Strip" media type for 2×6 cuts)
+          // Match: explicit size values ("2x6", "strip") OR enabled-state on a cut key ("Enable", "1", "true")
           const has2InchCut = properties.some((prop) => {
             const val = String(prop.Value ?? "").toLowerCase();
             const key = String(prop.PropertyName ?? "").toLowerCase();
-            return (
-              /2x6|2inch|2-inch|strip|postcard/.test(val) ||
-              (brand === "HiTi" && (/cutpage|cutenabled/.test(key) && /1|true|yes|on/.test(val)))
-            );
+            if (/2x6|2inch|2-inch|strip|postcard/.test(val)) return true;
+            if (/cut|2inch/.test(key) && /^(enable|enabled|1|true|yes|on)$/.test(val.trim())) return true;
+            if (brand === "HiTi" && /cutpage|cutenabled/.test(key) && /1|true|yes|on/.test(val)) return true;
+            return false;
           });
 
           return {
@@ -4627,12 +4649,36 @@ app.whenReady().then(async () => {
       const safeName = printerName.replace(/'/g, "''");
       const safeProp = propertyName.replace(/'/g, "''");
       const safeVal  = String(value).replace(/'/g, "''");
-      execSync(
-        `powershell -NoProfile -NonInteractive -Command ` +
-        `"Set-PrinterProperty -PrinterName '${safeName}' -PropertyName '${safeProp}' -Value '${safeVal}'"`,
-        { timeout: 8000, encoding: "utf8", windowsHide: true }
-      );
-      return { ok: true };
+
+      // Try Set-PrinterProperty first (requires PrintManagement)
+      try {
+        execSync(
+          `powershell -NoProfile -NonInteractive -Command ` +
+          `"Set-PrinterProperty -PrinterName '${safeName}' -PropertyName '${safeProp}' -Value '${safeVal}'"`,
+          { timeout: 8000, encoding: "utf8", windowsHide: true }
+        );
+        return { ok: true, method: "Set-PrinterProperty" };
+      } catch { /* fall through to registry */ }
+
+      // Fallback: write directly to the registry PrinterDriverData key
+      const regPaths = [
+        `HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Print\\Printers\\${safeName}\\PrinterDriverData`,
+        `HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Print\\Printers\\${safeName}\\PrinterDriverData`,
+      ];
+      let regOk = false;
+      for (const regPath of regPaths) {
+        try {
+          execSync(
+            `powershell -NoProfile -NonInteractive -Command ` +
+            `"Set-ItemProperty -Path '${regPath}' -Name '${safeProp}' -Value '${safeVal}' -ErrorAction Stop"`,
+            { timeout: 6000, encoding: "utf8", windowsHide: true }
+          );
+          regOk = true;
+          break;
+        } catch { /* try next path */ }
+      }
+      if (regOk) return { ok: true, method: "registry" };
+      return { ok: false, error: "Could not set property via Set-PrinterProperty or registry. Try running the app as Administrator." };
     } catch (err) {
       return { ok: false, error: err.message };
     }
