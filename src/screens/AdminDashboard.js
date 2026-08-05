@@ -1343,6 +1343,7 @@ This cannot be undone.`
   // Photo-lab printer cut detection state (DNP + HiTi)
   const [cutScanning, setCutScanning] = useState(false);
   const [cutPrinters, setCutPrinters] = useState([]);
+  const [cutAllPrinters, setCutAllPrinters] = useState([]);
   const [cutScanError, setCutScanError] = useState("");
   const [cutScanned, setCutScanned] = useState(false);
 
@@ -1443,13 +1444,16 @@ This cannot be undone.`
       const res = await safeInvoke("printer:dnpScan");
       if (res?.ok) {
         setCutPrinters(res.printers ?? []);
+        setCutAllPrinters(res.allPrinters ?? []);
       } else {
         setCutScanError(res?.error ?? "Scan failed — ensure you are running on Windows.");
         setCutPrinters([]);
+        setCutAllPrinters([]);
       }
     } catch (err) {
       setCutScanError(err?.message ?? "Unknown error during scan.");
       setCutPrinters([]);
+      setCutAllPrinters([]);
     } finally {
       setCutScanning(false);
       setCutScanned(true);
@@ -8694,8 +8698,25 @@ This cannot be undone.`
                           )}
 
                           {cutScanned && !cutScanError && cutPrinters.length === 0 && (
-                            <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
-                              No DNP or HiTi printers found. Make sure the printer driver is installed and the device is connected.
+                            <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 space-y-2">
+                              <p className="font-semibold">No supported printer detected.</p>
+                              <p>The scan checks for DNP and HiTi by name, driver, and model number (DS620, DS820, DS-RX1, DS40, DS80, DP-S, P520L, P720L, etc.). If your printer is listed below but wasn&apos;t detected, please report the name so it can be added.</p>
+                              {cutAllPrinters.length > 0 && (
+                                <div className="mt-2 pt-2 border-t border-amber-200">
+                                  <p className="font-semibold text-amber-800 mb-1">Printers found in Windows ({cutAllPrinters.length}):</p>
+                                  <ul className="space-y-0.5">
+                                    {cutAllPrinters.map((p, i) => (
+                                      <li key={i} className="text-amber-900">
+                                        <span className="font-medium">{p.name}</span>
+                                        {p.driver && p.driver !== p.name && <span className="text-amber-600"> — {p.driver}</span>}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+                              {cutAllPrinters.length === 0 && (
+                                <p className="text-amber-600">No printers found in Windows at all — check that the driver is installed.</p>
+                              )}
                             </div>
                           )}
 

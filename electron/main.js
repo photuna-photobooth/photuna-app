@@ -4529,23 +4529,26 @@ app.whenReady().then(async () => {
   });
 
   // ── Photo-lab printer cut-mode detection (DNP + HiTi) ────────────────────
-  safeHandle("printer:dnpScan", async () => {
+  safeHandle("printer:dnpScan", async (event) => {
     try {
       const { execSync } = require("child_process");
 
-      // Find printers whose name or driver mentions DNP or HiTi
-      const listRaw = execSync(
-        `powershell -NoProfile -NonInteractive -Command ` +
-        `"Get-Printer | Where-Object { $_.Name -match 'DNP|HiTi|Hi-Ti|HITI' -or $_.DriverName -match 'DNP|HiTi|Hi-Ti|HITI' } | ` +
-        `Select-Object Name,DriverName,PortName,PrinterStatus | ConvertTo-Json -Depth 2"`,
-        { timeout: 8000, encoding: "utf8", windowsHide: true }
-      ).trim();
+      // Use Electron's own printer enumeration — same source as the Printer setup dropdown
+      const win = BrowserWindow.fromWebContents(event.sender);
+      const electronPrinters = await win.webContents.getPrintersAsync();
+      // Normalise to { Name, DriverName } shape
+      const allPrinters = electronPrinters.map((p) => ({
+        Name: p.name ?? p.displayName ?? "",
+        DriverName: p.description ?? "",
+        PortName: "",
+        PrinterStatus: p.status ?? 0,
+      }));
 
-      let printers = [];
-      try {
-        const parsed = JSON.parse(listRaw || "null");
-        printers = Array.isArray(parsed) ? parsed : (parsed ? [parsed] : []);
-      } catch { /* no supported printers found */ }
+      // Match DNP (DS-series, Imagingcomm, Citizen DP-S) and HiTi (P-series)
+      const BRAND_RE = /DNP|HiTi|Hi-Ti|HITI|DS620|DS820|DS-RX|DS40|DS80|DS23|DP-S|Imagingcomm|P510S|P520L|P525L|P528L|P720L|P728L|P750L/i;
+      const printers = allPrinters.filter(
+        (p) => BRAND_RE.test(p.Name) || BRAND_RE.test(p.DriverName)
+      );
 
       const results = await Promise.all(
         printers.map(async (p) => {
@@ -4609,9 +4612,9 @@ app.whenReady().then(async () => {
         })
       );
 
-      return { ok: true, printers: results };
+      return { ok: true, printers: results, allPrinters: allPrinters.map((p) => ({ name: p.Name, driver: p.DriverName })) };
     } catch (err) {
-      return { ok: false, printers: [], error: err.message };
+      return { ok: false, printers: [], allPrinters: [], error: err.message };
     }
   });
 
