@@ -4575,7 +4575,13 @@ app.whenReady().then(async () => {
     const safeSrc  = printerName.replace(/'/g, "''");
     const safeDest = stripName.replace(/'/g, "''");
 
-    // Step 1: Read source printer info via WMI (no PrintManagement module needed)
+    const { execFileSync } = require("child_process");
+    const fs   = require("fs");
+    const path = require("path");
+    const printui = `${process.env.SystemRoot || "C:\\Windows"}\\System32\\printui.exe`;
+    const tempSettings = path.join(app.getPath("temp"), `photuna-printer-${Date.now()}.dat`);
+
+    // Step 1: Read source printer driver + port via WMI (no PrintManagement needed)
     let driverName, portName;
     try {
       const infoRaw = execSync(
@@ -4588,34 +4594,57 @@ app.whenReady().then(async () => {
       return { ok: false, error: `Could not read printer info: ${err.message}` };
     }
     if (!driverName || !portName) {
-      return { ok: false, error: "Could not read driver/port from printer. Is the printer driver installed?" };
+      return { ok: false, error: "Could not read driver/port. Is the printer driver installed?" };
     }
 
-    // Step 2: Create the STRIP printer via printui.exe (always available, no module needed)
-    // NOTE: SpawnInstance().Put() is intentionally avoided — it renames instead of creating.
+    // Step 2: Export source printer settings BEFORE creating the copy (captures 2inch cut state)
     try {
-      const { execFileSync } = require("child_process");
-      const printui = `${process.env.SystemRoot || "C:\\Windows"}\\System32\\printui.exe`;
-      execFileSync(printui, ["/if", "/b", stripName, "/r", portName, "/m", driverName, "/Z"], {
-        timeout: 15000,
-        windowsHide: true,
+      execFileSync(printui, ["/Ss", "/n", printerName, "/a", tempSettings, "/7"], {
+        timeout: 10000, windowsHide: true,
       });
-      return { ok: true, stripName };
-    } catch { /* fall through to Add-Printer */ }
+    } catch { /* settings export optional — continue */ }
 
-    // Step 3: Fallback — Add-Printer (requires PrintManagement module)
+    // Step 3: Create the STRIP printer via printui.exe
+    // NOTE: Win32_Printer.SpawnInstance().Put() is intentionally avoided — it renames the original.
+    let created = false;
     try {
-      const safeDriver = driverName.replace(/'/g, "''");
-      const safePort   = portName.replace(/'/g, "''");
-      execSync(
-        `powershell -NoProfile -NonInteractive -Command ` +
-        `"Add-Printer -Name '${safeDest}' -DriverName '${safeDriver}' -PortName '${safePort}' -ErrorAction Stop"`,
-        { timeout: 10000, encoding: "utf8", windowsHide: true }
-      );
-      return { ok: true, stripName };
-    } catch (err) {
-      return { ok: false, error: `Could not create STRIP profile. Try running Photuna as Administrator.\n${err.message}` };
+      execFileSync(printui, ["/if", "/b", stripName, "/r", portName, "/m", driverName, "/Z"], {
+        timeout: 15000, windowsHide: true,
+      });
+      created = true;
+    } catch { /* fall through */ }
+
+    if (!created) {
+      // Fallback: Add-Printer (requires PrintManagement module)
+      try {
+        const safeDriver = driverName.replace(/'/g, "''");
+        const safePort   = portName.replace(/'/g, "''");
+        execSync(
+          `powershell -NoProfile -NonInteractive -Command ` +
+          `"Add-Printer -Name '${safeDest}' -DriverName '${safeDriver}' -PortName '${safePort}' -ErrorAction Stop"`,
+          { timeout: 10000, encoding: "utf8", windowsHide: true }
+        );
+        created = true;
+      } catch (err) {
+        try { fs.unlinkSync(tempSettings); } catch { }
+        return { ok: false, error: `Could not create STRIP profile. Try running Photuna as Administrator.\n${err.message}` };
+      }
     }
+
+    // Step 4: Restore source settings onto the new STRIP printer (copies 2inch cut + DEVMODE)
+    await new Promise((r) => setTimeout(r, 1200)); // let Windows register the new printer
+    try {
+      if (fs.existsSync(tempSettings)) {
+        execFileSync(printui, ["/Sr", "/n", stripName, "/a", tempSettings, "/r"], {
+          timeout: 10000, windowsHide: true,
+        });
+      }
+    } catch { /* non-fatal — printer exists, settings copy failed */ }
+    finally {
+      try { fs.unlinkSync(tempSettings); } catch { }
+    }
+
+    return { ok: true, stripName };
   });
 
   safeHandle("printer:setCutMode", async (_e, { printerName, propertyName, value } = {}) => {
