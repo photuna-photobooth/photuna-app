@@ -730,8 +730,8 @@ async function createOnlineGalleryInMain(payload = {}) {
     slotVideoMapCount: hasSlotVideos ? payload.slotVideoMap.length : 0,
   });
 
-  try {
-    if (hasSlots) {
+  if (hasSlots && hasSlotVideos) {
+    try {
       const motionResult = await createAnimatedComposite({
         userId,
         eventId,
@@ -764,14 +764,12 @@ async function createOnlineGalleryInMain(payload = {}) {
           console.warn("⚠️ motionResult ok but no file path returned");
         }
       }
+    } catch (err) {
+      // Animated composite is optional — log and continue with static image only
+      console.warn("[gallery:create] animated composite skipped:", err?.message || err);
     }
-  } catch (err) {
-    console.error("❌ createAnimatedComposite FAILED:", err);
-    throw err;
-  }
-
-  if (hasSlots && !finalVideoBlob) {
-    console.warn("[gallery:create] animated composite not generated — proceeding without video");
+  } else if (hasSlots) {
+    console.log("[gallery:create] slots present but no slot videos captured — skipping motion composite");
   }
 
   const supabaseAdminClient = getSupabaseAdmin();
