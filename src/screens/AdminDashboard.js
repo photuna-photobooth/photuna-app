@@ -1918,6 +1918,19 @@ This cannot be undone.`
       return;
     }
 
+    // In a browser (no Electron bridge) printer enumeration is not possible —
+    // browsers have no API to list OS print queues. Show a clear message instead
+    // of silently returning an empty list.
+    if (!native) {
+      setPrinters([]);
+      setSelectedPrinter("");
+      setPrinterOnline(false);
+      setPrinterStatusText("Printer access requires the Photuna desktop app");
+      setPrinterError("Printers can only be managed from the Photuna desktop app. Open the app on your booth computer to configure printing.");
+      setPrinterLoading(false);
+      return;
+    }
+
     try {
       let found = [];
 
