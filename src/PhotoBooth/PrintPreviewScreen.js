@@ -638,11 +638,11 @@ export default function PrintPreviewScreen({
         </div>
       )}
 
-      {/* INFO PANEL — portrait: Row 3 (shrink-0, h-[45vh], order 2); landscape: left column */}
+      {/* INFO PANEL — portrait: Row 3 (shrink-0, h-[45vh], order 2); landscape: left column 50% */}
       <div
         className={isPortrait
           ? "shrink-0 overflow-y-auto flex flex-col items-center justify-start"
-          : "flex flex-col justify-center items-center w-[35%] px-8 md:px-12"
+          : "flex flex-col justify-center items-center w-1/2 px-10"
         }
         style={isPortrait ? { height: '45vh', padding: '1vh 4vw 2vh', order: 2 } : undefined}
       >
@@ -711,29 +711,7 @@ export default function PrintPreviewScreen({
           {galleryEnabled && !offlineMode && uploadMode === "system" ? i18n.thanksTail : ` ${isIpadApp ? i18n.tabletSaved : i18n.localSaved}`}
         </p>
 
-        {/* iPad: AirPrint button via window.print() — hidden in print-only (auto-triggered instead) */}
-        {isIpadApp && uploadMode !== "none" && (composedImage || composedImageUrl) && (
-          <button
-            onClick={handleIpadPrint}
-            className="mt-6 flex items-center gap-2 rounded-full font-semibold shadow-sm"
-            style={{
-              backgroundColor: buttonBgColor,
-              color: buttonFontColor,
-              fontFamily: buttonFont,
-              fontSize: 'clamp(14px, 1.6vw, 24px)',
-              padding: 'clamp(8px, 1vh, 14px) clamp(20px, 2.5vw, 40px)',
-            }}
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: '1.2em', height: '1.2em' }}>
-              <polyline points="6 9 6 2 18 2 18 9" />
-              <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
-              <rect x="6" y="14" width="12" height="8" />
-            </svg>
-            Print
-          </button>
-        )}
-
-        {/* Print error banner (Windows and iPad) */}
+        {/* Print error banner */}
         {printError && (
           <div className="mt-4 rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-center text-sm text-red-700 max-w-sm">
             {printError}
@@ -741,11 +719,11 @@ export default function PrintPreviewScreen({
         )}
       </div>
 
-      {/* POSTER PREVIEW — portrait: Row 2 (flex-1 min-h-0, order 1); landscape: right side */}
+      {/* POSTER PREVIEW — portrait: Row 2 (flex-1 min-h-0, order 1); landscape: right column 50% */}
       <div
         className={isPortrait
           ? "flex-1 min-h-0 flex items-center justify-center overflow-hidden"
-          : "flex-1 flex items-center justify-center p-4"
+          : "w-1/2 flex items-center justify-center p-6"
         }
         style={isPortrait ? { padding: '1vh 4vw', order: 1 } : undefined}
       >

@@ -247,39 +247,39 @@ export default function ThankYouScreen({
         </div>
       )}
 
-      {/* Landscape: absolute logo header — centered across full width */}
-      {!isPortrait && (
-        <div className="absolute top-10 left-0 right-0 z-30 flex flex-col items-center text-center">
-          {logoPath ? (
-            <img src={logoPath} alt="logo" className="max-w-[500px] sm:max-w-[500px] md:max-w-[600px]" />
-          ) : (
-            <>
-              <h1 className="font-bold" style={{ fontFamily: headerFont, color: headerFontColor, fontSize: 'clamp(22px, 3.5vw, 56px)' }}>{boothName}</h1>
-              {tagline && <p style={{ color: generalFontColor, fontSize: 'clamp(14px, 1.4vw, 24px)' }}>{tagline}</p>}
-            </>
-          )}
-        </div>
-      )}
-
-      {/* Center/Row2 minimal content */}
+      {/* Single centered section — portrait: flex child; landscape: full centered block */}
       <motion.div
-        className={`relative z-10 text-center px-6 ${isPortrait ? "flex-1 min-h-0 flex flex-col items-center justify-center" : "w-[92vw] max-w-2xl"}`}
+        className={`relative z-10 text-center px-6 ${isPortrait ? "flex-1 min-h-0 flex flex-col items-center justify-center" : "flex flex-col items-center justify-center w-[92vw] max-w-2xl"}`}
         initial={{ opacity: 0, y: 14 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.35, ease: "easeOut" }}
       >
 
+        {/* Logo / booth name — landscape only (portrait shows it in the header row) */}
+        {!isPortrait && (
+          <div className="mb-6">
+            {logoPath ? (
+              <img src={logoPath} alt="logo" className="max-h-16 w-auto object-contain mx-auto" />
+            ) : (
+              <>
+                <p className="font-bold" style={{ fontFamily: headerFont, color: headerFontColor, fontSize: 'clamp(18px, 2.5vw, 40px)' }}>{boothName}</p>
+                {tagline && <p style={{ color: generalFontColor, fontSize: 'clamp(12px, 1.2vw, 20px)' }}>{tagline}</p>}
+              </>
+            )}
+          </div>
+        )}
+
         <h1
-          className="mt-4 font-extrabold tracking-tight"
-          style={{ fontFamily: headerFont, color: headerFontColor, fontSize: isPortrait ? 'clamp(28px, 4vw, 76px)' : 'clamp(28px, 4.5vw, 72px)' }}
+          className="font-extrabold tracking-tight"
+          style={{ fontFamily: headerFont, color: headerFontColor, fontSize: isPortrait ? 'clamp(28px, 4vw, 76px)' : 'clamp(24px, 3.5vw, 60px)' }}
         >
           {t.ready}
         </h1>
 
-        <p className={`mt-10 opacity-75 ${isPortrait ? "" : "text-lg"}`} style={isPortrait ? { fontSize: 'clamp(14px, 1.8vw, 34px)' } : undefined}>{t.Thankyou}</p>
+        <p className="mt-6 opacity-75" style={{ fontSize: isPortrait ? 'clamp(14px, 1.8vw, 34px)' : 'clamp(13px, 1.4vw, 22px)' }}>{t.Thankyou}</p>
 
         {!isPortrait && (
-          <p className="mt-6 text-md opacity-50">
+          <p className="mt-4 opacity-50" style={{ fontSize: 'clamp(12px, 1.2vw, 18px)' }}>
             {t.returningIn}{" "}
             <span className="font-bold opacity-80">{countdown}{t.seconds}</span>
           </p>
