@@ -4620,41 +4620,62 @@ app.whenReady().then(async () => {
       }
     }
 
-    // Step 3: Wait for Windows to register the new printer, then copy the DEVMODE.
-    // The user's 2inch cut preference lives in HKCU\Printers\DevModes2 (per-user),
-    // NOT in HKLM Default DevMode (that's only the driver factory default = Disable).
+    // Step 3: Wait for Windows to register the new printer, then copy the full
+    // DEVMODE (including vendor-private dmDriverExtra where DNP stores 2inch cut)
+    // via the Win32 spooler API — DocumentProperties to read, SetPrinter level 9
+    // to write. Registry approaches don't work because Windows caches DEVMODE in
+    // memory and only flushes it through the spooler API.
+    let cutModeApplied = false;
     await new Promise((r) => setTimeout(r, 1500));
     try {
-      // Escape single-quotes for use inside a PowerShell single-quoted string
-      const pSrc = printerName.replace(/'/g, "''");
-      const pDst = stripName.replace(/'/g, "''");
-      const psScript = [
-        `$src='${pSrc}'; $dst='${pDst}'`,
-        // Locate the per-user DEVMODE (Windows may use DevModes2 or DevModePerUser)
-        `$dm=$null`,
-        `foreach($p in @('HKCU:\\Printers\\DevModes2','HKCU:\\Printers\\DevModePerUser')){`,
-        `  if(Test-Path $p){`,
-        `    $v=(Get-ItemProperty $p $src -EA SilentlyContinue).$src`,
-        `    if($v){$dm=$v;break}`,
-        `  }`,
-        `}`,
-        // If per-user DevMode found, write it to the same HKCU key for the STRIP printer
-        // and also push it to HKLM Default DevMode so it becomes the system default
-        `if($dm){`,
-        `  foreach($p in @('HKCU:\\Printers\\DevModes2','HKCU:\\Printers\\DevModePerUser')){`,
-        `    if(Test-Path $p){Set-ItemProperty $p $dst $dm -Type Binary -EA SilentlyContinue}`,
-        `  }`,
-        `  $hklm='HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Print\\Printers\\'+$dst`,
-        `  if(Test-Path $hklm){Set-ItemProperty $hklm 'Default DevMode' $dm -Type Binary -EA SilentlyContinue}`,
-        `}`,
-      ].join(";");
-      execSync(
-        `powershell -NoProfile -NonInteractive -Command "${psScript}"`,
-        { timeout: 8000, encoding: "utf8", windowsHide: true }
+      const tmpPs1 = require("path").join(require("os").tmpdir(), `ph_devmode_${Date.now()}.ps1`);
+      require("fs").writeFileSync(tmpPs1,
+        `$src='${printerName.replace(/'/g, "''")}'\n` +
+        `$dst='${stripName.replace(/'/g, "''")}'\n` +
+        `Add-Type -TypeDefinition @'\n` +
+        `using System;\n` +
+        `using System.Runtime.InteropServices;\n` +
+        `public class WinSpool {\n` +
+        `  [DllImport("winspool.drv",CharSet=CharSet.Unicode,SetLastError=true)]\n` +
+        `  public static extern bool OpenPrinter(string n,out IntPtr h,IntPtr d);\n` +
+        `  [DllImport("winspool.drv",SetLastError=true)]\n` +
+        `  public static extern bool ClosePrinter(IntPtr h);\n` +
+        `  [DllImport("winspool.drv",CharSet=CharSet.Unicode,SetLastError=true)]\n` +
+        `  public static extern int DocumentProperties(IntPtr w,IntPtr p,string d,IntPtr o,IntPtr i,int m);\n` +
+        `  [DllImport("winspool.drv",SetLastError=true)]\n` +
+        `  public static extern bool SetPrinter(IntPtr h,int l,IntPtr b,int c);\n` +
+        `}\n` +
+        `'@\n` +
+        // Read full DEVMODE from source printer via DocumentProperties (DM_OUT_BUFFER=2)
+        `$sh=[IntPtr]::Zero; [WinSpool]::OpenPrinter($src,[ref]$sh,[IntPtr]::Zero)|Out-Null\n` +
+        `$sz=[WinSpool]::DocumentProperties([IntPtr]::Zero,$sh,$src,[IntPtr]::Zero,[IntPtr]::Zero,0)\n` +
+        `if($sz -le 0){[WinSpool]::ClosePrinter($sh)|Out-Null; exit 1}\n` +
+        `$dm=[Runtime.InteropServices.Marshal]::AllocHGlobal($sz)\n` +
+        `[WinSpool]::DocumentProperties([IntPtr]::Zero,$sh,$src,$dm,[IntPtr]::Zero,2)|Out-Null\n` +
+        `[WinSpool]::ClosePrinter($sh)|Out-Null\n` +
+        // Apply DEVMODE to STRIP printer via SetPrinter level 9 (per-user DEVMODE)
+        `$dh=[IntPtr]::Zero; [WinSpool]::OpenPrinter($dst,[ref]$dh,[IntPtr]::Zero)|Out-Null\n` +
+        `$pi=[Runtime.InteropServices.Marshal]::AllocHGlobal([IntPtr]::Size)\n` +
+        `[Runtime.InteropServices.Marshal]::WriteIntPtr($pi,$dm)\n` +
+        `$ok=[WinSpool]::SetPrinter($dh,9,$pi,0)\n` +
+        `[WinSpool]::ClosePrinter($dh)|Out-Null\n` +
+        `[Runtime.InteropServices.Marshal]::FreeHGlobal($pi)\n` +
+        `[Runtime.InteropServices.Marshal]::FreeHGlobal($dm)\n` +
+        `if($ok){'OK'}else{'FAIL:'+[Runtime.InteropServices.Marshal]::GetLastWin32Error()}\n`,
+        "utf8"
       );
-    } catch { /* non-fatal — printer created, DEVMODE copy failed */ }
+      const out = execSync(
+        `powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "${tmpPs1}"`,
+        { timeout: 12000, encoding: "utf8", windowsHide: true }
+      ).trim();
+      try { require("fs").unlinkSync(tmpPs1); } catch {}
+      cutModeApplied = out.startsWith("OK");
+      if (!cutModeApplied) console.warn("SetPrinter DEVMODE copy:", out);
+    } catch (err) {
+      console.warn("DEVMODE copy via SetPrinter failed (non-fatal):", err?.message);
+    }
 
-    return { ok: true, stripName };
+    return { ok: true, stripName, cutModeApplied };
   });
 
   safeHandle("printer:setCutMode", async (_e, { printerName, propertyName, value } = {}) => {

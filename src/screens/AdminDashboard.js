@@ -1352,6 +1352,7 @@ This cannot be undone.`
   const [cutScanError, setCutScanError] = useState("");
   const [cutScanned, setCutScanned] = useState(false);
   const [cutCreating, setCutCreating] = useState(null); // printerName being created
+  const [cutModeApplied, setCutModeApplied] = useState({}); // { [printerName]: true } when SetPrinter succeeded
 
   // helper: choose proper frame preview given layout
   const getFramePreviewForLayout = (frame, layout) =>
@@ -1473,6 +1474,9 @@ This cannot be undone.`
         ? window.api.createStripProfile(printerName)
         : safeInvoke("printer:createStripProfile", printerName));
       if (res?.ok) {
+        if (res.cutModeApplied) {
+          setCutModeApplied((prev) => ({ ...prev, [printerName]: true }));
+        }
         // Re-scan to reflect the new profile
         const scanRes = await safeInvoke("printer:dnpScan");
         if (scanRes?.ok) {
@@ -8793,12 +8797,33 @@ This cannot be undone.`
                                   </div>
 
                                   {printer.hasStripProfile ? (
-                                    <p className="mt-2 text-xs text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-1.5">
-                                      2×6 and 6×2 strip jobs will automatically route to <strong>{printer.stripProfileName}</strong>. Make sure 2-inch cut is enabled in that printer&apos;s Windows driver preferences.
-                                    </p>
+                                    <div className="mt-3 space-y-2">
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 border border-emerald-200 px-2.5 py-1 text-xs font-medium text-emerald-700">
+                                          <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>
+                                          Strip routing active
+                                        </span>
+                                        {cutModeApplied[printer.name] ? (
+                                          <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 border border-blue-200 px-2.5 py-1 text-xs font-medium text-blue-700">
+                                            <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.121 14.121L19 19m-7-7l7-7m-7 7l-2.879 2.879M12 12L9.121 9.121m0 5.758a3 3 0 10-4.243-4.243 3 3 0 004.243 4.243z" /></svg>
+                                            2inch cut: Enable
+                                          </span>
+                                        ) : (
+                                          <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 border border-amber-200 px-2.5 py-1 text-xs font-medium text-amber-700">
+                                            <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                            2inch cut — verify in Windows
+                                          </span>
+                                        )}
+                                      </div>
+                                      {!cutModeApplied[printer.name] && (
+                                        <p className="text-xs text-slate-500">
+                                          To apply 2inch cut automatically, delete <strong>{printer.stripProfileName}</strong> from Windows Printers and recreate it here.
+                                        </p>
+                                      )}
+                                    </div>
                                   ) : (
                                     <p className="mt-2 text-xs text-slate-500">
-                                      No STRIP profile yet. Click <strong>Create STRIP profile</strong> — Photuna will add <strong>{printer.stripProfileName}</strong> to Windows and automatically route strip layouts to it.
+                                      No STRIP profile yet. Click <strong>Create STRIP profile</strong> — Photuna will add <strong>{printer.stripProfileName}</strong> to Windows and automatically configure 2inch cut.
                                     </p>
                                   )}
                                 </div>
