@@ -360,6 +360,7 @@ export default function TemplateSelectionScreen({
 
 
   const { isPortrait, isUnsupported, isPortrait2K, isTablet } = useLayout();
+  const isIpadApp = typeof window !== "undefined" && typeof window.Capacitor !== "undefined";
 
   /* ---------------- Render ---------------- */
   if (isUnsupported) {
@@ -511,7 +512,7 @@ export default function TemplateSelectionScreen({
         <div
           className={isPortrait
             ? "shrink-0 overflow-hidden flex items-center justify-center"
-            : "col-span-1 h-full flex items-center justify-center px-8 pt-4 pb-8"
+            : "col-span-1 h-full overflow-y-auto light-scroll px-8 pt-4 pb-8"
           }
           style={isPortrait ? { padding: '1vh 4vw', order: 1, height: '42vh' } : undefined}
         >
@@ -534,7 +535,7 @@ export default function TemplateSelectionScreen({
                 default:    return "h-[35vh] w-auto";
               }
             }
-            if (isTablet) {
+            if (isIpadApp) {
               switch (layoutKey) {
                 case "2x6": return "w-full max-w-[150px]";
                 case "6x2": return "w-full max-w-[360px]";
@@ -543,10 +544,10 @@ export default function TemplateSelectionScreen({
               }
             }
             switch (layoutKey) {
-              case "2x6": return "h-[72vh] w-auto";
-              case "6x2": return "w-full max-w-[90%]";
-              case "6x4": return "w-full max-w-[90%]";
-              default:    return "h-[72vh] w-auto";
+              case "2x6": return "flex-none h-[85vh]";
+              case "6x2": return "flex-none w-[42vw]";
+              case "6x4": return "flex-none w-[42vw]";
+              default:    return "flex-none h-[85vh]";
             }
           })();
 
@@ -591,21 +592,21 @@ export default function TemplateSelectionScreen({
 
           if (!isStrip) {
             return (
-              <div className="flex items-center justify-center">
+              <div className="min-h-full flex items-center justify-center">
                 <div className={`shadow-lg border border-gray-200 relative overflow-hidden ${boxClass}`} style={aspectStyle}>{Canvas}</div>
               </div>
             );
           }
           if (layoutKey === "2x6") {
             return (
-              <div className="flex items-center justify-center gap-6">
+              <div className="min-h-full flex items-center justify-center gap-6">
                 <div className={`shadow-lg border border-gray-200 relative overflow-hidden ${boxClass}`} style={aspectStyle}>{Canvas}</div>
                 <div className={`shadow-lg border border-gray-200 relative overflow-hidden ${boxClass}`} style={aspectStyle}>{Canvas}</div>
               </div>
             );
           }
           return (
-            <div className="flex flex-col items-center justify-center gap-6">
+            <div className="min-h-full flex flex-col items-center justify-center gap-6">
               <div className={`shadow-lg border border-gray-200 relative overflow-hidden ${boxClass}`} style={aspectStyle}>{Canvas}</div>
               <div className={`shadow-lg border border-gray-200 relative overflow-hidden ${boxClass}`} style={aspectStyle}>{Canvas}</div>
             </div>

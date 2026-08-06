@@ -89,7 +89,8 @@ export default function PhotoBooth({ frames = [], onShortcut, initialEvent = nul
   const [galleryQrUrl, setGalleryQrUrl] = useState(null);
   const [slotVideoMap, setSlotVideoMap] = useState([]);
   const cameraStreamRef = useRef(null);
-  const [composedLayout, setComposedLayout] = useState(null);       // keep normalizedLayout/string if you want
+  const [composedLayout, setComposedLayout] = useState(null);
+  const [composedPrintMode, setComposedPrintMode] = useState("single");
   const [composedLayoutConfig, setComposedLayoutConfig] = useState(null);
   const [motionBackgroundColor, setMotionBackgroundColor] = useState("#ffffff");
   const [frameOverlayDataUrl, setFrameOverlayDataUrl] = useState(null);
@@ -847,6 +848,7 @@ export default function PhotoBooth({ frames = [], onShortcut, initialEvent = nul
               if (payload?.qrImage) setQrImage(payload.qrImage);
 
               if (payload?.layout) setComposedLayout(payload.layout);
+              if (payload?.printMode) setComposedPrintMode(payload.printMode);
               if (payload?.layoutConfig) setComposedLayoutConfig(payload.layoutConfig);
               if (Array.isArray(payload?.slotVideoMap)) setSlotVideoMap(payload.slotVideoMap);
 
@@ -898,8 +900,9 @@ export default function PhotoBooth({ frames = [], onShortcut, initialEvent = nul
             sessionId={activeSessionId || session?.sessionId || "default"}
             eventId={activeEventId || "default"}
             event={selectedEvent}
-            layout={composedLayout}                // normalizedLayout string
-            layoutConfig={composedLayoutConfig}    // NEW full object with slots
+            layout={composedLayout}
+            printMode={composedPrintMode}
+            layoutConfig={composedLayoutConfig}
             photos={photos
               .map((p) => {
                 if (!p) return null;

@@ -75,7 +75,8 @@ export default function PrintPreviewScreen({
   onNextPage,
   event = null,
   layout,
-  layoutConfig = null,   // NEW
+  printMode = "single",
+  layoutConfig = null,
   photos = [],
   slotVideoMap = [],
   frameOverlayDataUrl = null,
@@ -422,6 +423,7 @@ export default function PrintPreviewScreen({
         printer: String(target.name),
         imageData: posterSrc,
         layout: resolvedLayout || "4x6",
+        printMode: printMode ?? "single",
         paperSize: effectiveSettings?.paperSize || resolvedLayout || "4x6",
         copies: effectiveSettings?.printCopies ?? 1,
         colorMode: effectiveSettings?.printColorMode ?? "color",

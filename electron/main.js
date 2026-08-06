@@ -1634,6 +1634,7 @@ ipcMain.handle("print-photo", async (event, {
   printer,
   imageData,
   layout = "4x6",
+  printMode = "single",
   paperSize = "4x6",
   copies = 1,
   colorMode = "color",
@@ -1653,7 +1654,9 @@ ipcMain.handle("print-photo", async (event, {
     const printers = await sender.webContents.getPrintersAsync();
 
     const normalizedLayout = String(layout || "4x6").toLowerCase();
-    const isStripLayout = normalizedLayout === "2x6" || normalizedLayout === "6x2";
+    const isDualPrint = String(printMode || "single").toLowerCase() === "dual";
+    const isStripLayout = normalizedLayout === "2x6" || normalizedLayout === "6x2" ||
+      (normalizedLayout === "4x6" && isDualPrint);
 
     // Try exact printer first
     const exactPrinter =
