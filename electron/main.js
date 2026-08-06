@@ -4628,51 +4628,70 @@ app.whenReady().then(async () => {
     let cutModeApplied = false;
     await new Promise((r) => setTimeout(r, 1500));
     try {
-      const tmpPs1 = require("path").join(require("os").tmpdir(), `ph_devmode_${Date.now()}.ps1`);
-      require("fs").writeFileSync(tmpPs1,
-        `$src='${printerName.replace(/'/g, "''")}'\n` +
-        `$dst='${stripName.replace(/'/g, "''")}'\n` +
-        `Add-Type -TypeDefinition @'\n` +
-        `using System;\n` +
-        `using System.Runtime.InteropServices;\n` +
-        `public class WinSpool {\n` +
-        `  [DllImport("winspool.drv",CharSet=CharSet.Unicode,SetLastError=true)]\n` +
-        `  public static extern bool OpenPrinter(string n,out IntPtr h,IntPtr d);\n` +
-        `  [DllImport("winspool.drv",SetLastError=true)]\n` +
-        `  public static extern bool ClosePrinter(IntPtr h);\n` +
-        `  [DllImport("winspool.drv",CharSet=CharSet.Unicode,SetLastError=true)]\n` +
-        `  public static extern int DocumentProperties(IntPtr w,IntPtr p,string d,IntPtr o,IntPtr i,int m);\n` +
-        `  [DllImport("winspool.drv",SetLastError=true)]\n` +
-        `  public static extern bool SetPrinter(IntPtr h,int l,IntPtr b,int c);\n` +
-        `}\n` +
-        `'@\n` +
-        // Read full DEVMODE from source printer via DocumentProperties (DM_OUT_BUFFER=2)
-        `$sh=[IntPtr]::Zero; [WinSpool]::OpenPrinter($src,[ref]$sh,[IntPtr]::Zero)|Out-Null\n` +
-        `$sz=[WinSpool]::DocumentProperties([IntPtr]::Zero,$sh,$src,[IntPtr]::Zero,[IntPtr]::Zero,0)\n` +
-        `if($sz -le 0){[WinSpool]::ClosePrinter($sh)|Out-Null; exit 1}\n` +
-        `$dm=[Runtime.InteropServices.Marshal]::AllocHGlobal($sz)\n` +
-        `[WinSpool]::DocumentProperties([IntPtr]::Zero,$sh,$src,$dm,[IntPtr]::Zero,2)|Out-Null\n` +
-        `[WinSpool]::ClosePrinter($sh)|Out-Null\n` +
-        // Apply DEVMODE to STRIP printer via SetPrinter level 9 (per-user DEVMODE)
-        `$dh=[IntPtr]::Zero; [WinSpool]::OpenPrinter($dst,[ref]$dh,[IntPtr]::Zero)|Out-Null\n` +
-        `$pi=[Runtime.InteropServices.Marshal]::AllocHGlobal([IntPtr]::Size)\n` +
-        `[Runtime.InteropServices.Marshal]::WriteIntPtr($pi,$dm)\n` +
-        `$ok=[WinSpool]::SetPrinter($dh,9,$pi,0)\n` +
-        `[WinSpool]::ClosePrinter($dh)|Out-Null\n` +
-        `[Runtime.InteropServices.Marshal]::FreeHGlobal($pi)\n` +
-        `[Runtime.InteropServices.Marshal]::FreeHGlobal($dm)\n` +
-        `if($ok){'OK'}else{'FAIL:'+[Runtime.InteropServices.Marshal]::GetLastWin32Error()}\n`,
-        "utf8"
-      );
-      const out = execSync(
-        `powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "${tmpPs1}"`,
-        { timeout: 12000, encoding: "utf8", windowsHide: true }
-      ).trim();
-      try { require("fs").unlinkSync(tmpPs1); } catch {}
-      cutModeApplied = out.startsWith("OK");
-      if (!cutModeApplied) console.warn("SetPrinter DEVMODE copy:", out);
+      const { spawnSync } = require("child_process");
+      const pSrc = printerName.replace(/'/g, "''");
+      const pDst = stripName.replace(/'/g, "''");
+      // Build the script as an array of lines, then encode as UTF-16 LE for
+      // -EncodedCommand. This avoids file-encoding issues and shell quoting.
+      const psLines = [
+        `$src='${pSrc}'`,
+        `$dst='${pDst}'`,
+        // Add-Type with here-string — closing '@ must be at column 0
+        `try {`,
+        `Add-Type -TypeDefinition @'`,
+        `using System;`,
+        `using System.Runtime.InteropServices;`,
+        `public class WinSpool {`,
+        `  [DllImport("winspool.drv",CharSet=CharSet.Unicode,SetLastError=true)]`,
+        `  public static extern bool OpenPrinter(string n,out IntPtr h,IntPtr d);`,
+        `  [DllImport("winspool.drv",SetLastError=true)]`,
+        `  public static extern bool ClosePrinter(IntPtr h);`,
+        `  [DllImport("winspool.drv",CharSet=CharSet.Unicode,SetLastError=true)]`,
+        `  public static extern int DocumentProperties(IntPtr w,IntPtr p,string d,IntPtr o,IntPtr i,int m);`,
+        `  [DllImport("winspool.drv",SetLastError=true)]`,
+        `  public static extern bool SetPrinter(IntPtr h,int l,IntPtr b,int c);`,
+        `}`,
+        `'@`,
+        `} catch { if ($_.Exception.Message -notmatch 'already exists') { Write-Output ('FAIL:AddType:'+$_.Exception.Message); exit 1 } }`,
+        // Open source printer
+        `$sh=[IntPtr]::Zero`,
+        `if(-not [WinSpool]::OpenPrinter($src,[ref]$sh,[IntPtr]::Zero)){`,
+        `  Write-Output ('FAIL:OpenSrc:'+[Runtime.InteropServices.Marshal]::GetLastWin32Error()); exit 1`,
+        `}`,
+        // Get DEVMODE size then read full DEVMODE (DM_OUT_BUFFER=2)
+        `$sz=[WinSpool]::DocumentProperties([IntPtr]::Zero,$sh,$src,[IntPtr]::Zero,[IntPtr]::Zero,0)`,
+        `if($sz -le 0){[WinSpool]::ClosePrinter($sh)|Out-Null; Write-Output ('FAIL:DocPropsSize:'+$sz+':'+[Runtime.InteropServices.Marshal]::GetLastWin32Error()); exit 1}`,
+        `$dm=[Runtime.InteropServices.Marshal]::AllocHGlobal($sz)`,
+        `[WinSpool]::DocumentProperties([IntPtr]::Zero,$sh,$src,$dm,[IntPtr]::Zero,2)|Out-Null`,
+        `[WinSpool]::ClosePrinter($sh)|Out-Null`,
+        // Open dest printer and apply DEVMODE via SetPrinter level 9 (per-user)
+        `$dh=[IntPtr]::Zero`,
+        `if(-not [WinSpool]::OpenPrinter($dst,[ref]$dh,[IntPtr]::Zero)){`,
+        `  [Runtime.InteropServices.Marshal]::FreeHGlobal($dm)`,
+        `  Write-Output ('FAIL:OpenDst:'+[Runtime.InteropServices.Marshal]::GetLastWin32Error()); exit 1`,
+        `}`,
+        `$pi=[Runtime.InteropServices.Marshal]::AllocHGlobal([IntPtr]::Size)`,
+        `[Runtime.InteropServices.Marshal]::WriteIntPtr($pi,$dm)`,
+        `$ok=[WinSpool]::SetPrinter($dh,9,$pi,0)`,
+        `$we=[Runtime.InteropServices.Marshal]::GetLastWin32Error()`,
+        `[WinSpool]::ClosePrinter($dh)|Out-Null`,
+        `[Runtime.InteropServices.Marshal]::FreeHGlobal($pi)`,
+        `[Runtime.InteropServices.Marshal]::FreeHGlobal($dm)`,
+        `if($ok){Write-Output 'OK'}else{Write-Output ('FAIL:SetPrinter:'+$we)}`,
+      ];
+      const psScript = psLines.join("\r\n");
+      const encoded = Buffer.from(psScript, "utf16le").toString("base64");
+      const result = spawnSync("powershell", ["-NoProfile", "-NonInteractive", "-EncodedCommand", encoded], {
+        timeout: 12000, encoding: "utf8", windowsHide: true,
+      });
+      const stdout = (result.stdout || "").trim();
+      const stderr = (result.stderr || "").trim();
+      cutModeApplied = stdout === "OK";
+      if (!cutModeApplied) {
+        console.warn("[DEVMODE] SetPrinter failed — stdout:", stdout || "(empty)", "| stderr:", stderr || "(empty)");
+      }
     } catch (err) {
-      console.warn("DEVMODE copy via SetPrinter failed (non-fatal):", err?.message);
+      console.warn("[DEVMODE] SetPrinter error:", err?.message);
     }
 
     return { ok: true, stripName, cutModeApplied };
