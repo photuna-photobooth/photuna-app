@@ -1520,7 +1520,7 @@ export default function FrameFilterScreen({
       </div>
 
       {/* ── Body: 2-column (landscape) or reordered stack (portrait) ── */}
-      <div className={`flex-1 min-h-0 ${isPortrait ? "flex flex-col" : "grid grid-cols-[.8fr_.8fr] gap-8 pb-[50px]"}`}>
+      <div className={`flex-1 min-h-0 ${isPortrait ? "flex flex-col" : "grid grid-cols-2 pb-[50px]"}`}>
 
       {/* Controls column — portrait: bottom flex-1, landscape: left column */}
       <div
@@ -1610,7 +1610,7 @@ export default function FrameFilterScreen({
           </div>
         ) : (
           /* ── Landscape: scrollable grid layout ── */
-          <div className="flex-1 min-h-0 overflow-y-auto light-scroll px-16 pt-4 pb-4">
+          <div className="flex-1 min-h-0 overflow-y-auto light-scroll px-8 pt-4 pb-4">
             {/* Tone */}
             <div className="mb-10">
               <div className="text-5xl font-bold mb-4" style={{ fontFamily: headerFont, color: headerFontColor }}>{t.tone}</div>
@@ -1709,7 +1709,7 @@ export default function FrameFilterScreen({
 
         {/* Action — pinned at the bottom of the controls column */}
         <div
-          className={`shrink-0 ${isPortrait ? "" : "py-4 px-16"}`}
+          className={`shrink-0 ${isPortrait ? "" : "py-4 px-8"}`}
           style={isPortrait ? { padding: '1vh 4vw 2vh' } : undefined}
         >
           <div className="flex items-center gap-3">
@@ -1745,11 +1745,11 @@ export default function FrameFilterScreen({
         </div>
       </div>
 
-      {/* RIGHT: print preview — portrait: top fixed height, landscape: right column */}
+      {/* RIGHT: print preview — portrait: top fixed height, landscape: right column 50% */}
       <div
         className={isPortrait
           ? "shrink-0 flex items-center justify-center overflow-hidden"
-          : "col-span-1 h-full overflow-y-auto px-10 pt-4 pb-16 light-scroll"
+          : "col-span-1 h-full flex items-center justify-center px-8 pt-4 pb-8"
         }
         style={isPortrait ? { padding: '1vh 4vw', order: 1, height: '42vh' } : undefined}
       >
@@ -1786,10 +1786,10 @@ export default function FrameFilterScreen({
               }
             }
             switch (layoutKey) {
-              case "2x6": return "w-full max-w-[230px]";
-              case "6x2": return "w-full max-w-[620px]";
-              case "6x4": return "w-full max-w-[620px]";
-              default:    return "w-full max-w-[460px]";
+              case "2x6": return "h-[72vh] w-auto";
+              case "6x2": return "w-full max-w-[90%]";
+              case "6x4": return "w-full max-w-[90%]";
+              default:    return "h-[72vh] w-auto";
             }
           })();
 

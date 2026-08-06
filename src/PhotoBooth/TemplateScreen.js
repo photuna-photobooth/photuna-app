@@ -600,15 +600,15 @@ export default function TemplateScreen({
           transition={{ delay: 0.2, duration: 0.5 }}
         >
 
-          {/* Carousel */}
+          {/* Carousel / grid */}
           <div
             ref={carouselRef}
-            className={`template-carousel flex-1 min-h-0 ${isPortrait ? "flex flex-col overflow-y-auto overflow-x-hidden" : "flex items-center overflow-x-auto overflow-y-hidden snap-x snap-mandatory px-8 sm:px-12 lg:px-16"} [scrollbar-width:none] [-ms-overflow-style:none]`}
-            style={{ WebkitOverflowScrolling: "touch", scrollBehavior: "smooth", ...(isPortrait ? { padding: '1vh 4vw' } : { paddingTop: '1rem', paddingBottom: '1rem' }) }}
+            className={`template-carousel flex-1 min-h-0 ${isPortrait ? "flex flex-col overflow-y-auto overflow-x-hidden" : "grid grid-cols-2 overflow-y-auto overflow-x-hidden"} [scrollbar-width:none] [-ms-overflow-style:none]`}
+            style={{ WebkitOverflowScrolling: "touch", scrollBehavior: "smooth", ...(isPortrait ? { padding: '1vh 4vw' } : { padding: '1.5rem 4vw 2rem' }) }}
           >
             <div
-              className={`flex gap-6 sm:gap-8 lg:gap-10 ${isPortrait ? "flex-wrap justify-center items-start" : "items-center"}`}
-              style={isPortrait ? { margin: 'auto 0' } : { margin: '0 auto' }}
+              className={`flex gap-6 sm:gap-8 lg:gap-10 ${isPortrait ? "flex-wrap justify-center items-start" : "contents"}`}
+              style={isPortrait ? { margin: 'auto 0' } : undefined}
             >
               {finalTemplates.map((tpl) => (
                 <button
@@ -618,11 +618,11 @@ export default function TemplateScreen({
                     onSelect(tpl);
                     if (typeof onApplyTemplate === "function") onApplyTemplate(tpl);
                   }}
-                  className={`flex-shrink-0 snap-start ${isPortrait ? "w-[260px]" : isTablet ? "w-[320px]" : "w-[300px] sm:w-[340px] md:w-[380px] lg:w-[420px]"} flex flex-col items-center group touch-manipulation transition-all rounded-md focus:outline-none`}
+                  className={`${isPortrait ? "flex-shrink-0 w-[260px]" : "w-full"} flex flex-col items-center group touch-manipulation transition-all rounded-md focus:outline-none`}
                   style={{ backgroundColor: "transparent" }}
                 >
                   <div
-                    className={`flex items-center ${isPortrait ? "h-[300px]" : isTablet ? "h-[360px]" : "h-[340px] md:h-[400px] lg:h-[460px]"} justify-center transform transition-all group-hover:scale-105 group-active:scale-95 w-full`}
+                    className={`flex items-center ${isPortrait ? "h-[300px]" : "h-[46vh]"} justify-center transform transition-all group-hover:scale-105 group-active:scale-95 w-full`}
                     style={{
                       borderColor: "rgba(229, 231, 235, 1)",
                     }}
@@ -641,8 +641,8 @@ export default function TemplateScreen({
                       return (
                         <div
                           className={`pointer-events-none ${aspectClass} ${isTall
-                            ? (isPortrait ? "h-[290px]" : isTablet ? "h-[350px]" : "h-[330px] md:h-[390px] lg:h-[450px]")
-                            : (isPortrait ? "w-[290px]" : isTablet ? "w-[310px]" : "w-[330px] md:w-[390px] lg:w-[450px]")
+                            ? (isPortrait ? "h-[290px]" : "h-[44vh]")
+                            : (isPortrait ? "w-[290px]" : "w-full max-w-[90%]")
                           } flex items-center justify-center`}
                         >
                           {tpl.thumbSrc ? (
