@@ -869,6 +869,16 @@ export default function AdminDashboard({ onLogout, onStartPhotobooth, jumpToUpda
     setCameraLoading(true);
     setCameraError("");
 
+    if (!native) {
+      setCameraList([]);
+      setSelectedCameraId("");
+      setCameraOnline(false);
+      setCameraStatusText("Camera access requires the Photuna desktop app");
+      setCameraError("Cameras can only be accessed from the Photuna desktop app. Open the app on your booth computer to configure the camera.");
+      setCameraLoading(false);
+      return;
+    }
+
     try {
       const devices = (await native?.listCameras?.()) ?? [];
       const normalized = normalizeCameraList(devices);
@@ -2610,21 +2620,23 @@ This cannot be undone.`
       // Probe hardware status quietly on startup so dashboard tiles
       // reflect the real state without requiring a visit to Settings.
 
-      // Camera
-      try {
-        const devices = (await native?.listCameras?.()) ?? [];
-        if (!cancelled) {
-          const normalized = normalizeCameraList(devices);
-          setCameraList(normalized);
-          if (normalized.length) {
-            setCameraOnline(true);
-            setCameraStatusText(`${normalized.length} camera${normalized.length > 1 ? "s" : ""} detected`);
-          } else {
-            setCameraOnline(false);
-            setCameraStatusText("No cameras detected");
+      // Camera — skip entirely when running in a browser with no Electron bridge
+      if (native) {
+        try {
+          const devices = (await native?.listCameras?.()) ?? [];
+          if (!cancelled) {
+            const normalized = normalizeCameraList(devices);
+            setCameraList(normalized);
+            if (normalized.length) {
+              setCameraOnline(true);
+              setCameraStatusText(`${normalized.length} camera${normalized.length > 1 ? "s" : ""} detected`);
+            } else {
+              setCameraOnline(false);
+              setCameraStatusText("No cameras detected");
+            }
           }
-        }
-      } catch { if (!cancelled) { setCameraOnline(false); setCameraStatusText("Camera check failed"); } }
+        } catch { if (!cancelled) { setCameraOnline(false); setCameraStatusText("Camera check failed"); } }
+      }
 
       // Read saved settings once for printer + storage probes
       let saved = null;
@@ -8365,7 +8377,7 @@ This cannot be undone.`
                                 onChange={(e) => setSelectedCameraId(e.target.value)}
                                 className={`${SURFACE_BG} ${SURFACE_BORDER} ${INPUT_RADIUS} px-3 py-2 mt-1 w-full`}
                               >
-                                {!cameraList.length && <option value="">No cameras found</option>}
+                                {!cameraList.length && <option value="">{native ? "No cameras found" : "Open desktop app to access cameras"}</option>}
                                 {cameraList.map((c) => (
                                   <option key={c.id} value={c.id}>
                                     {c.label || c.id}
@@ -8561,7 +8573,7 @@ This cannot be undone.`
                                 onChange={(e) => setSelectedPrinter(e.target.value)}
                                 className={`${SURFACE_BG} ${SURFACE_BORDER} ${INPUT_RADIUS} px-3 py-2 mt-1 w-full`}
                               >
-                                {!printers.length && <option value="">No printers found</option>}
+                                {!printers.length && <option value="">{native ? "No printers found" : "Open desktop app to manage printers"}</option>}
                                 {printers.map((p) => (
                                   <option key={p.name} value={p.name}>
                                     {p.displayName || p.name}
