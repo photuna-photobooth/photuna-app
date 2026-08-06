@@ -4620,195 +4620,189 @@ app.whenReady().then(async () => {
       }
     }
 
-    // Step 3: Wait for Windows to register the new printer, then copy the full
-    // DEVMODE (including vendor-private dmDriverExtra where DNP stores 2inch cut)
-    // via the Win32 spooler API — DocumentProperties to read, SetPrinter level 9
-    // to write. Registry approaches don't work because Windows caches DEVMODE in
-    // memory and only flushes it through the spooler API.
+    // Step 3: Apply 2inch cut=Enable DEVMODE to the new STRIP printer.
+    // Strategy: we do NOT copy from the main printer (it has 2inch cut=Disable).
+    // Instead, on first creation we open the STRIP printer's Printing Preferences
+    // so the user sets it once. After they save it, a "Save Setting" button in the
+    // UI calls printer:saveStripDevmode which reads the saved DEVMODE and stores it
+    // to userData. On all future recreations we read that saved file and apply it
+    // via SetPrinter level 9 — fully automatic with no prompts.
     let cutModeApplied = false;
     await new Promise((r) => setTimeout(r, 1500));
     try {
-      const { spawnSync } = require("child_process");
+      const { spawnSync, execFile } = require("child_process");
       const fs2 = require("fs");
       const path2 = require("path");
 
-      // Compile a tiny C# helper once into userData. csc.exe (part of .NET
-      // Framework, always present on Windows 10/11) produces a proper exe that
-      // calls DocumentProperties + SetPrinter directly — no PowerShell Add-Type
-      // quirks, no here-string parse errors.
       const userData = app.getPath("userData");
       // Versioned filename — bump suffix when C# source changes to force recompile
       // v7: read source DEVMODE from HKCU\Printers\DevModes2\{src} directly.
-      // DocumentProperties(NULL, DM_OUT_BUFFER) returns driver factory defaults
-      // (2inch cut=Disable), NOT the user's saved Printing Preferences settings.
-      // The user's settings (2inch cut=Enable) live in HKCU\Printers\DevModes2.
-      // v7 also writes the patched DEVMODE directly to HKCU\Printers\DevModes2\{dst}
-      // in addition to SetPrinter level 9, to ensure the registry (which Printing
-      // Preferences reads) gets the right value regardless of spooler caching.
-      // v8: use GetPrinter level 9 as primary source (reads spooler's own per-user
-      // DEVMODE, same data as DevModes2 but via the spooler API). Removed the
-      // RegWrite section which caused AccessViolationException after SetPrinter —
-      // reading back from dm after SetPrinter is unsafe (driver may have modified
-      // it in place or the spooler's internal buffer re-use invalidated the region).
-      // Also lists all DevModes2 keys and dumps all non-zero dmDriverExtra offsets
-      // so we can identify the 2inch cut byte if the source has no per-user DEVMODE.
-      const helperExe = path2.join(userData, "ph_devmode_helper_v8.exe");
-
-      if (!fs2.existsSync(helperExe)) {
+      // v9 helper: two modes.
+      // --save {printer} {file}       → GetPrinter(level 9) → write DEVMODE bytes to file
+      // --apply-file {file} {printer} → read file → patch dmDeviceName → SetPrinter(level 9)
+      const helperExe = path2.join(userData, "ph_devmode_helper_v9.exe");
+      const compileHelper = () => {
         const csSource = [
           "using System;",
+          "using System.IO;",
           "using System.Runtime.InteropServices;",
           "using System.Text;",
-          "using Microsoft.Win32;",
           "class P {",
           "  [DllImport(\"winspool.drv\",CharSet=CharSet.Unicode,SetLastError=true)]",
           "  static extern bool OpenPrinter(string n,out IntPtr h,IntPtr d);",
           "  [DllImport(\"winspool.drv\",SetLastError=true)]",
           "  static extern bool ClosePrinter(IntPtr h);",
-          "  [DllImport(\"winspool.drv\",CharSet=CharSet.Unicode,SetLastError=true)]",
-          "  static extern int DocumentProperties(IntPtr w,IntPtr p,string d,IntPtr o,IntPtr i,int m);",
           "  [DllImport(\"winspool.drv\",SetLastError=true)]",
           "  static extern bool SetPrinter(IntPtr h,int l,IntPtr b,int c);",
           "  [DllImport(\"winspool.drv\",CharSet=CharSet.Unicode,SetLastError=true)]",
           "  static extern bool GetPrinter(IntPtr h,int l,IntPtr b,int s,out int n);",
           "  static int Main(string[] a) {",
-          "    Console.Error.WriteLine(\"START\");",
+          "    Console.Error.WriteLine(\"START args=\"+string.Join(\" \",a));",
           "    try {",
-          "      if(a.Length<2){Console.Error.WriteLine(\"args\");return 1;}",
-          "      string src=a[0],dst=a[1];",
-          "      Console.Error.WriteLine(\"src=\"+src+\" dst=\"+dst);",
-          // List DevModes2 entries so we can see what key name Windows used
-          "      try{",
-          "        using(RegistryKey k=Registry.CurrentUser.OpenSubKey(\"Printers\\\\DevModes2\")){",
-          "          if(k!=null)Console.Error.WriteLine(\"DevModes2=\"+string.Join(\",\",k.GetValueNames()));",
-          "          else Console.Error.WriteLine(\"DevModes2=<key missing>\");",
-          "        }",
-          "      }catch(Exception ex2){Console.Error.WriteLine(\"DevModes2 ex:\"+ex2.Message);}",
-          // Pre-allocate ALL managed objects before any native calls
-          "      byte[] nameBytes=new byte[64];",
-          "      byte[] dstEncoded=Encoding.Unicode.GetBytes(dst.Length>31?dst.Substring(0,31):dst);",
-          "      IntPtr dm=Marshal.AllocHGlobal(1048576);",
-          "      int dmLen=0; bool gotDM=false; bool hasUserDM=false;",
-          // Open source printer
-          "      IntPtr sh=IntPtr.Zero;",
-          "      if(!OpenPrinter(src,out sh,IntPtr.Zero)){Console.Error.WriteLine(\"OpenSrc fail:\"+Marshal.GetLastWin32Error());return 1;}",
-          "      Console.Error.WriteLine(\"OpenSrc ok\");",
-          // PRIMARY: GetPrinter level 9 — per-user DEVMODE via spooler API
-          // (same data as DevModes2 registry, but we never read dm back after SetPrinter)
-          "      int pi9n=0; GetPrinter(sh,9,IntPtr.Zero,0,out pi9n);",
-          "      Console.Error.WriteLine(\"PI9 needed=\"+pi9n);",
-          "      if(pi9n>0){",
-          "        IntPtr pi9b=Marshal.AllocHGlobal(pi9n+256);",
-          "        if(GetPrinter(sh,9,pi9b,pi9n,out pi9n)){",
-          "          IntPtr sdm=Marshal.ReadIntPtr(pi9b,0);",
-          "          Console.Error.WriteLine(\"PI9.pDM=\"+(sdm==IntPtr.Zero?\"null\":sdm.ToString(\"X\")));",
-          "          if(sdm!=IntPtr.Zero){",
-          "            short df9=(short)Marshal.ReadInt16(sdm,68);",
-          "            short de9=(short)Marshal.ReadInt16(sdm,70);",
-          "            dmLen=(int)df9+(int)de9;",
-          "            Console.Error.WriteLine(\"PI9 dmFixed=\"+df9+\" dmExtra=\"+de9+\" total=\"+dmLen);",
-          "            if(dmLen>0&&dmLen<=1048572){",
-          "              byte[] tmp9=new byte[dmLen];",
-          "              Marshal.Copy(sdm,tmp9,0,dmLen);",
-          "              Marshal.Copy(tmp9,0,dm,dmLen);",
-          "              gotDM=true; hasUserDM=true;",
-          "              Console.Error.WriteLine(\"PI9 copy ok\");",
-          "            }",
-          "          } else Console.Error.WriteLine(\"PI9.pDM null → no per-user DEVMODE saved for \"+src);",
-          "        } else Console.Error.WriteLine(\"GetPrinter9 fail:\"+Marshal.GetLastWin32Error());",
-          "      }",
-          // FALLBACK: DocumentProperties (returns factory defaults, not user settings)
-          "      if(!gotDM){",
-          "        int sz=DocumentProperties(IntPtr.Zero,sh,src,IntPtr.Zero,IntPtr.Zero,0);",
-          "        Console.Error.WriteLine(\"DocSz=\"+sz);",
-          "        if(sz>0){",
-          "          int r=DocumentProperties(IntPtr.Zero,sh,src,dm,IntPtr.Zero,2);",
-          "          Console.Error.WriteLine(\"DocProps=\"+r);",
-          "          if(r>=1){dmLen=sz;gotDM=true;}",
-          "        }",
-          "      }",
-          "      ClosePrinter(sh);",
-          "      if(!gotDM){Console.Error.WriteLine(\"no DEVMODE\");return 1;}",
-          // Dump ALL non-zero bytes in dmDriverExtra — shows where vendor settings live
-          "      if(dmLen>=72){",
-          "        short dmFix=(short)Marshal.ReadInt16(dm,68);",
-          "        short dmExt=(short)Marshal.ReadInt16(dm,70);",
-          "        Console.Error.WriteLine(\"dmFixed=\"+dmFix+\" dmExtra=\"+dmExt);",
-          "        if(dmExt>0&&dmFix>0){",
-          "          System.Text.StringBuilder sb=new System.Text.StringBuilder();",
-          "          for(int i=0;i<(int)dmExt;i++){",
-          "            byte b=Marshal.ReadByte(dm,(int)dmFix+i);",
-          "            if(b!=0)sb.Append(i+\"=\"+b.ToString(\"X2\")+\" \");",
-          "          }",
-          "          Console.Error.WriteLine(\"nonzero=\"+(sb.Length>0?sb.ToString().TrimEnd():\"(all-zero)\"));",
-          "        }",
-          "      }",
+          "      if(a.Length<3){Console.Error.WriteLine(\"usage: --save printer file | --apply-file file printer\");return 1;}",
+          "      if(a[0]==\"--save\"){",
+          // --save mode: read per-user DEVMODE from printer and save to file
+          "        string src=a[1],file=a[2];",
+          "        IntPtr sh=IntPtr.Zero;",
+          "        if(!OpenPrinter(src,out sh,IntPtr.Zero)){Console.Error.WriteLine(\"OpenSrc:\"+Marshal.GetLastWin32Error());return 1;}",
+          "        int n=0; GetPrinter(sh,9,IntPtr.Zero,0,out n);",
+          "        Console.Error.WriteLine(\"PI9 needed=\"+n);",
+          "        if(n<=0){ClosePrinter(sh);Console.Error.WriteLine(\"PI9 size=0\");return 1;}",
+          "        IntPtr buf=Marshal.AllocHGlobal(n+256);",
+          "        if(!GetPrinter(sh,9,buf,n,out n)){ClosePrinter(sh);Console.Error.WriteLine(\"GetPrinter9:\"+Marshal.GetLastWin32Error());return 1;}",
+          "        ClosePrinter(sh);",
+          "        IntPtr pdm=Marshal.ReadIntPtr(buf,0);",
+          "        Console.Error.WriteLine(\"pDevMode=\"+(pdm==IntPtr.Zero?\"null\":\"ok\"));",
+          "        if(pdm==IntPtr.Zero){Console.WriteLine(\"NO_USER_DEVMODE\");return 2;}",
+          "        short dmFix=(short)Marshal.ReadInt16(pdm,68);",
+          "        short dmExt=(short)Marshal.ReadInt16(pdm,70);",
+          "        int dmLen=(int)dmFix+(int)dmExt;",
+          "        Console.Error.WriteLine(\"dmLen=\"+dmLen);",
+          "        if(dmLen<=0||dmLen>1048576){Console.Error.WriteLine(\"bad dmLen\");return 1;}",
+          "        byte[] dm=new byte[dmLen];",
+          "        Marshal.Copy(pdm,dm,0,dmLen);",
+          "        File.WriteAllBytes(file,dm);",
+          "        Console.Error.WriteLine(\"saved \"+dmLen+\" bytes\");",
+          "        Console.WriteLine(\"OK\");return 0;",
+          "      } else if(a[0]==\"--apply-file\"){",
+          // --apply-file mode: read DEVMODE from file and write to printer
+          "        string file=a[1],dst=a[2];",
+          "        if(!File.Exists(file)){Console.Error.WriteLine(\"file not found\");return 1;}",
+          "        byte[] dm=File.ReadAllBytes(file);",
+          "        Console.Error.WriteLine(\"read \"+dm.Length+\" bytes\");",
           // Patch dmDeviceName (WCHAR[32] = first 64 bytes) to match destination
-          "      Array.Copy(dstEncoded,nameBytes,Math.Min(dstEncoded.Length,62));",
-          "      Marshal.Copy(nameBytes,0,dm,64);",
-          // Only write to DS-RX1-STRIP if we have a real per-user DEVMODE (not factory defaults)
-          // Writing factory defaults would just confirm Disable — user must save DS-RX1 first
-          "      if(!hasUserDM){",
-          "      Console.Error.WriteLine(\"WARN: no per-user DEVMODE for \"+src+\" — open its Printing Preferences, set 2inch cut=Enable, click OK, then recreate STRIP profile\");",
-          "      Console.WriteLine(\"NO_USER_DEVMODE\");return 2;",
+          "        byte[] nb=new byte[64];",
+          "        byte[] de=Encoding.Unicode.GetBytes(dst.Length>31?dst.Substring(0,31):dst);",
+          "        Array.Copy(de,nb,Math.Min(de.Length,62));",
+          "        Array.Copy(nb,0,dm,0,64);",
+          "        Console.Error.WriteLine(\"name patched\");",
+          // Copy to unmanaged buffer and apply via SetPrinter level 9
+          "        IntPtr udm=Marshal.AllocHGlobal(dm.Length+256);",
+          "        Marshal.Copy(dm,0,udm,dm.Length);",
+          "        IntPtr dh=IntPtr.Zero;",
+          "        if(!OpenPrinter(dst,out dh,IntPtr.Zero)){Console.Error.WriteLine(\"OpenDst:\"+Marshal.GetLastWin32Error());return 1;}",
+          "        IntPtr pi=Marshal.AllocHGlobal(IntPtr.Size);",
+          "        Marshal.WriteIntPtr(pi,udm);",
+          "        bool ok9=SetPrinter(dh,9,pi,0);",
+          "        int e9=Marshal.GetLastWin32Error();",
+          "        Console.Error.WriteLine(\"L9=\"+ok9+\" e=\"+e9);",
+          "        ClosePrinter(dh);",
+          "        if(ok9){Console.WriteLine(\"OK\");return 0;}",
+          "        return 1;",
           "      }",
-          "      Console.Error.WriteLine(\"name patched\");",
-          // Write via SetPrinter level 9
-          "      IntPtr dh=IntPtr.Zero;",
-          "      if(!OpenPrinter(dst,out dh,IntPtr.Zero)){Console.Error.WriteLine(\"OpenDst fail:\"+Marshal.GetLastWin32Error());return 1;}",
-          "      IntPtr pi=Marshal.AllocHGlobal(IntPtr.Size);",
-          "      Marshal.WriteIntPtr(pi,dm);",
-          "      bool ok9=SetPrinter(dh,9,pi,0);",
-          "      int e9=Marshal.GetLastWin32Error();",
-          "      Console.Error.WriteLine(\"L9=\"+ok9+\" e=\"+e9);",
-          "      ClosePrinter(dh);",
-          "      if(ok9){Console.WriteLine(\"OK\");return 0;}",
-          "      return 1;",
+          "      Console.Error.WriteLine(\"unknown mode\");return 1;",
           "    }catch(Exception ex){Console.Error.WriteLine(\"EX:\"+ex.Message);return 1;}",
           "  }",
           "}",
         ].join("\r\n");
-
-        const csFile = path2.join(userData, "ph_devmode_helper_v8.cs");
+        const csFile = path2.join(userData, "ph_devmode_helper_v9.cs");
         fs2.writeFileSync(csFile, csSource, "utf8");
-
-        // Find csc.exe — .NET Framework 4.x is always present on Win10/11
         const sysRoot = process.env.SystemRoot || "C:\\Windows";
         const cscCandidates = [
           path2.join(sysRoot, "Microsoft.NET", "Framework64", "v4.0.30319", "csc.exe"),
           path2.join(sysRoot, "Microsoft.NET", "Framework", "v4.0.30319", "csc.exe"),
         ];
         const cscExe = cscCandidates.find((p) => fs2.existsSync(p));
-        if (!cscExe) {
-          console.warn("[DEVMODE] csc.exe not found — cannot compile helper");
-        } else {
-          const compileResult = spawnSync(cscExe, ["/nologo", "/optimize+", `/out:${helperExe}`, csFile], {
-            timeout: 20000, encoding: "utf8", windowsHide: true,
-          });
-          console.log("[DEVMODE] compile status:", compileResult.status, compileResult.stdout, compileResult.stderr);
-          try { fs2.unlinkSync(csFile); } catch {}
-        }
-      }
+        if (!cscExe) { console.warn("[DEVMODE] csc.exe not found"); return false; }
+        const cr = spawnSync(cscExe, ["/nologo", "/optimize+", `/out:${helperExe}`, csFile], {
+          timeout: 20000, encoding: "utf8", windowsHide: true,
+        });
+        console.log("[DEVMODE] compile status:", cr.status, cr.stderr?.trim() || "");
+        try { fs2.unlinkSync(csFile); } catch {}
+        return cr.status === 0;
+      };
 
-      if (fs2.existsSync(helperExe)) {
-        const result = spawnSync(helperExe, [printerName, stripName], {
+      if (!fs2.existsSync(helperExe)) compileHelper();
+
+      // Saved DEVMODE file from a previous "Save 2inch Cut Setting" action.
+      // Key is based on the source printer name (e.g. DS-RX1).
+      const safeKey = printerName.replace(/[^a-z0-9]/gi, "_");
+      const devmodeFile = path2.join(userData, `strip_devmode_${safeKey}.bin`);
+
+      if (fs2.existsSync(devmodeFile) && fs2.existsSync(helperExe)) {
+        // Saved DEVMODE from a previous session → apply it automatically
+        const result = spawnSync(helperExe, ["--apply-file", devmodeFile, stripName], {
           timeout: 10000, encoding: "utf8", windowsHide: true,
         });
         const stdout = (result.stdout || "").trim();
-        const stderr = (result.stderr || "").trim();
+        console.log("[DEVMODE] apply-file status:", result.status, "| stdout:", stdout, "| stderr:", (result.stderr || "").trim());
         cutModeApplied = stdout === "OK";
-        const needsSave = stdout === "NO_USER_DEVMODE";
-        console.log("[DEVMODE] helper status:", result.status, "| error:", result.error?.message ?? "none");
-        console.log("[DEVMODE] stdout:", stdout || "(empty)", "| stderr:", stderr || "(empty)");
-        if (needsSave) {
-          return { ok: true, stripName, cutModeApplied: false, needsSave: true };
-        }
+      } else {
+        // First time or saved file was cleared — open Printing Preferences for DS-RX1-STRIP
+        // so the user can set 2inch cut=Enable once. They then click "Save Setting" in the UI,
+        // which calls printer:saveStripDevmode and stores the DEVMODE for future automatic use.
+        const { execFile: execFile2 } = require("child_process");
+        const safeStripName = stripName.replace(/"/g, "");
+        execFile2("rundll32.exe", ["printui.dll,PrintUIEntry", "/e", "/n", safeStripName], {
+          windowsHide: false,
+        });
+        console.log("[DEVMODE] opened Printing Preferences for first-time 2inch cut setup");
+        return { ok: true, stripName, cutModeApplied: false, needsManualSetup: true };
       }
     } catch (err) {
       console.warn("[DEVMODE] error:", err?.message);
     }
 
     return { ok: true, stripName, cutModeApplied };
+  });
+
+  // Open Printing Preferences dialog for a printer
+  safeHandle("printer:openPrinterPrefs", async (_e, { printerName } = {}) => {
+    if (!printerName) return { ok: false, error: "printerName required" };
+    const { execFile } = require("child_process");
+    const safe = printerName.replace(/"/g, "");
+    execFile("rundll32.exe", ["printui.dll,PrintUIEntry", "/e", "/n", safe], { windowsHide: false });
+    return { ok: true };
+  });
+
+  // Save the per-user DEVMODE from a configured STRIP printer to userData so future
+  // recreations of the STRIP profile can apply 2inch cut=Enable automatically.
+  safeHandle("printer:saveStripDevmode", async (_e, { stripProfileName, printerKey } = {}) => {
+    if (!stripProfileName || !printerKey) return { ok: false, error: "stripProfileName and printerKey required" };
+    try {
+      const { spawnSync } = require("child_process");
+      const fs2 = require("fs");
+      const path2 = require("path");
+      const userData = app.getPath("userData");
+      const helperExe = path2.join(userData, "ph_devmode_helper_v9.exe");
+      if (!fs2.existsSync(helperExe)) return { ok: false, error: "Helper not compiled — create STRIP profile first" };
+
+      const safeKey = printerKey.replace(/[^a-z0-9]/gi, "_");
+      const devmodeFile = path2.join(userData, `strip_devmode_${safeKey}.bin`);
+
+      const result = spawnSync(helperExe, ["--save", stripProfileName, devmodeFile], {
+        timeout: 10000, encoding: "utf8", windowsHide: true,
+      });
+      const stdout = (result.stdout || "").trim();
+      const stderr = (result.stderr || "").trim();
+      console.log("[DEVMODE] save status:", result.status, "| stdout:", stdout, "| stderr:", stderr);
+
+      if (stdout === "OK") return { ok: true };
+      if (stdout === "NO_USER_DEVMODE") return { ok: false, error: "no_user_devmode" };
+      return { ok: false, error: `Helper exited ${result.status}` };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
   });
 
   safeHandle("printer:setCutMode", async (_e, { printerName, propertyName, value } = {}) => {

@@ -121,6 +121,8 @@ const apiImpl = {
   /* DNP/HiTi strip profile management */
   scanDnpPrinters: () => ipcRenderer.invoke("printer:dnpScan"),
   createStripProfile: (printerName) => ipcRenderer.invoke("printer:createStripProfile", { printerName }),
+  openPrinterPrefs: (printerName) => ipcRenderer.invoke("printer:openPrinterPrefs", { printerName }),
+  saveStripDevmode: (stripProfileName, printerKey) => ipcRenderer.invoke("printer:saveStripDevmode", { stripProfileName, printerKey }),
 
   /* Meta-flags (one-time injection markers) */
   getMetaFlag: (payload) => ipcRenderer.invoke("store:getMetaFlag", payload),

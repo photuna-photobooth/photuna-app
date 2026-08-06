@@ -1478,7 +1478,7 @@ This cannot be undone.`
         if (res.cutModeApplied) {
           setCutModeApplied((prev) => ({ ...prev, [printerName]: true }));
         }
-        if (res.needsSave) {
+        if (res.needsManualSetup) {
           setCutNeedsSave((prev) => ({ ...prev, [printerName]: true }));
         }
         // Re-scan to reflect the new profile
@@ -1494,6 +1494,24 @@ This cannot be undone.`
       setCutScanError(err?.message ?? "Unknown error creating STRIP profile.");
     } finally {
       setCutCreating(null);
+    }
+  };
+
+  const handleSaveStripDevmode = async (printerName, stripProfileName) => {
+    try {
+      const res = await (window.api?.saveStripDevmode
+        ? window.api.saveStripDevmode(stripProfileName, printerName)
+        : safeInvoke("printer:saveStripDevmode", { stripProfileName, printerKey: printerName }));
+      if (res?.ok) {
+        setCutModeApplied((prev) => ({ ...prev, [printerName]: true }));
+        setCutNeedsSave((prev) => { const n = { ...prev }; delete n[printerName]; return n; });
+      } else if (res?.error === "no_user_devmode") {
+        alert("The Printing Preferences window should still be open.\nSet 2inch cut to Enable and click OK, then try again.");
+      } else {
+        alert("Could not save the setting. Make sure you clicked OK in the Printing Preferences window first.");
+      }
+    } catch (err) {
+      alert("Error saving setting: " + err.message);
     }
   };
 
@@ -8809,28 +8827,46 @@ This cannot be undone.`
                                         </span>
                                         {cutModeApplied[printer.name] ? (
                                           <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 border border-blue-200 px-2.5 py-1 text-xs font-medium text-blue-700">
-                                            <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.121 14.121L19 19m-7-7l7-7m-7 7l-2.879 2.879M12 12L9.121 9.121m0 5.758a3 3 0 10-4.243-4.243 3 3 0 004.243 4.243z" /></svg>
+                                            <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
                                             2inch cut: Enable
-                                          </span>
-                                        ) : cutNeedsSave[printer.name] ? (
-                                          <span className="inline-flex items-center gap-1.5 rounded-full bg-orange-50 border border-orange-200 px-2.5 py-1 text-xs font-medium text-orange-700">
-                                            <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                                            Action needed
                                           </span>
                                         ) : (
                                           <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 border border-amber-200 px-2.5 py-1 text-xs font-medium text-amber-700">
                                             <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                                            2inch cut — verify in Windows
+                                            2inch cut: setup needed
                                           </span>
                                         )}
                                       </div>
-                                      {cutNeedsSave[printer.name] ? (
-                                        <p className="text-xs text-orange-700 font-medium">
-                                          Open <strong>{printer.name}</strong> Printing Preferences → set 2inch cut to Enable → click OK to save. Then delete <strong>{printer.stripProfileName}</strong> from Windows Printers and recreate it here.
-                                        </p>
-                                      ) : !cutModeApplied[printer.name] && (
-                                        <p className="text-xs text-slate-500">
-                                          To apply 2inch cut automatically, delete <strong>{printer.stripProfileName}</strong> from Windows Printers and recreate it here.
+                                      {cutNeedsSave[printer.name] && !cutModeApplied[printer.name] && (
+                                        <div className="mt-2 rounded-lg border border-orange-200 bg-orange-50 p-3 space-y-2">
+                                          <p className="text-xs font-semibold text-orange-800">One-time setup — Printing Preferences has opened</p>
+                                          <ol className="text-xs text-orange-700 list-decimal list-inside space-y-1">
+                                            <li>In the window that opened, find <strong>2inch cut</strong> and set it to <strong>Enable</strong></li>
+                                            <li>Click <strong>OK</strong> to save</li>
+                                            <li>Click the button below — Photuna will remember this for all future STRIP profiles</li>
+                                          </ol>
+                                          <div className="flex gap-2 pt-1">
+                                            <button
+                                              onClick={() => handleSaveStripDevmode(printer.name, printer.stripProfileName)}
+                                              className="inline-flex items-center gap-1.5 rounded-md bg-orange-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-orange-700"
+                                            >
+                                              <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                                              I set 2inch cut — Save Setting
+                                            </button>
+                                            <button
+                                              onClick={() => window.api?.openPrinterPrefs
+                                                ? window.api.openPrinterPrefs(printer.stripProfileName)
+                                                : safeInvoke("printer:openPrinterPrefs", { printerName: printer.stripProfileName })}
+                                              className="inline-flex items-center gap-1.5 rounded-md border border-orange-300 px-3 py-1.5 text-xs font-medium text-orange-700 hover:bg-orange-100"
+                                            >
+                                              Reopen Printing Preferences
+                                            </button>
+                                          </div>
+                                        </div>
+                                      )}
+                                      {!cutNeedsSave[printer.name] && !cutModeApplied[printer.name] && (
+                                        <p className="text-xs text-slate-500 mt-1">
+                                          Delete <strong>{printer.stripProfileName}</strong> from Windows Printers and recreate it here to apply 2inch cut automatically.
                                         </p>
                                       )}
                                     </div>
