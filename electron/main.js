@@ -4629,69 +4629,88 @@ app.whenReady().then(async () => {
     await new Promise((r) => setTimeout(r, 1500));
     try {
       const { spawnSync } = require("child_process");
-      const pSrc = printerName.replace(/'/g, "''");
-      const pDst = stripName.replace(/'/g, "''");
-      // Build the script as an array of lines, then encode as UTF-16 LE for
-      // -EncodedCommand. This avoids file-encoding issues and shell quoting.
-      const psLines = [
-        `$src='${pSrc}'`,
-        `$dst='${pDst}'`,
-        // Add-Type with here-string — closing '@ must be at column 0
-        `try {`,
-        `Add-Type -TypeDefinition @'`,
-        `using System;`,
-        `using System.Runtime.InteropServices;`,
-        `public class WinSpool {`,
-        `  [DllImport("winspool.drv",CharSet=CharSet.Unicode,SetLastError=true)]`,
-        `  public static extern bool OpenPrinter(string n,out IntPtr h,IntPtr d);`,
-        `  [DllImport("winspool.drv",SetLastError=true)]`,
-        `  public static extern bool ClosePrinter(IntPtr h);`,
-        `  [DllImport("winspool.drv",CharSet=CharSet.Unicode,SetLastError=true)]`,
-        `  public static extern int DocumentProperties(IntPtr w,IntPtr p,string d,IntPtr o,IntPtr i,int m);`,
-        `  [DllImport("winspool.drv",SetLastError=true)]`,
-        `  public static extern bool SetPrinter(IntPtr h,int l,IntPtr b,int c);`,
-        `}`,
-        `'@`,
-        `} catch { if ($_.Exception.Message -notmatch 'already exists') { Write-Output ('FAIL:AddType:'+$_.Exception.Message); exit 1 } }`,
-        // Open source printer
-        `$sh=[IntPtr]::Zero`,
-        `if(-not [WinSpool]::OpenPrinter($src,[ref]$sh,[IntPtr]::Zero)){`,
-        `  Write-Output ('FAIL:OpenSrc:'+[Runtime.InteropServices.Marshal]::GetLastWin32Error()); exit 1`,
-        `}`,
-        // Get DEVMODE size then read full DEVMODE (DM_OUT_BUFFER=2)
-        `$sz=[WinSpool]::DocumentProperties([IntPtr]::Zero,$sh,$src,[IntPtr]::Zero,[IntPtr]::Zero,0)`,
-        `if($sz -le 0){[WinSpool]::ClosePrinter($sh)|Out-Null; Write-Output ('FAIL:DocPropsSize:'+$sz+':'+[Runtime.InteropServices.Marshal]::GetLastWin32Error()); exit 1}`,
-        `$dm=[Runtime.InteropServices.Marshal]::AllocHGlobal($sz)`,
-        `[WinSpool]::DocumentProperties([IntPtr]::Zero,$sh,$src,$dm,[IntPtr]::Zero,2)|Out-Null`,
-        `[WinSpool]::ClosePrinter($sh)|Out-Null`,
-        // Open dest printer and apply DEVMODE via SetPrinter level 9 (per-user)
-        `$dh=[IntPtr]::Zero`,
-        `if(-not [WinSpool]::OpenPrinter($dst,[ref]$dh,[IntPtr]::Zero)){`,
-        `  [Runtime.InteropServices.Marshal]::FreeHGlobal($dm)`,
-        `  Write-Output ('FAIL:OpenDst:'+[Runtime.InteropServices.Marshal]::GetLastWin32Error()); exit 1`,
-        `}`,
-        `$pi=[Runtime.InteropServices.Marshal]::AllocHGlobal([IntPtr]::Size)`,
-        `[Runtime.InteropServices.Marshal]::WriteIntPtr($pi,$dm)`,
-        `$ok=[WinSpool]::SetPrinter($dh,9,$pi,0)`,
-        `$we=[Runtime.InteropServices.Marshal]::GetLastWin32Error()`,
-        `[WinSpool]::ClosePrinter($dh)|Out-Null`,
-        `[Runtime.InteropServices.Marshal]::FreeHGlobal($pi)`,
-        `[Runtime.InteropServices.Marshal]::FreeHGlobal($dm)`,
-        `if($ok){Write-Output 'OK'}else{Write-Output ('FAIL:SetPrinter:'+$we)}`,
-      ];
-      const psScript = psLines.join("\r\n");
-      const encoded = Buffer.from(psScript, "utf16le").toString("base64");
-      const result = spawnSync("powershell", ["-NoProfile", "-NonInteractive", "-EncodedCommand", encoded], {
-        timeout: 12000, encoding: "utf8", windowsHide: true,
-      });
-      const stdout = (result.stdout || "").trim();
-      const stderr = (result.stderr || "").trim();
-      cutModeApplied = stdout === "OK";
-      if (!cutModeApplied) {
-        console.warn("[DEVMODE] SetPrinter failed — stdout:", stdout || "(empty)", "| stderr:", stderr || "(empty)");
+      const fs2 = require("fs");
+      const path2 = require("path");
+
+      // Compile a tiny C# helper once into userData. csc.exe (part of .NET
+      // Framework, always present on Windows 10/11) produces a proper exe that
+      // calls DocumentProperties + SetPrinter directly — no PowerShell Add-Type
+      // quirks, no here-string parse errors.
+      const userData = app.getPath("userData");
+      const helperExe = path2.join(userData, "ph_devmode_helper.exe");
+
+      if (!fs2.existsSync(helperExe)) {
+        const csSource = [
+          "using System;",
+          "using System.Runtime.InteropServices;",
+          "class P {",
+          "  [DllImport(\"winspool.drv\",CharSet=CharSet.Unicode,SetLastError=true)]",
+          "  static extern bool OpenPrinter(string n,out IntPtr h,IntPtr d);",
+          "  [DllImport(\"winspool.drv\",SetLastError=true)]",
+          "  static extern bool ClosePrinter(IntPtr h);",
+          "  [DllImport(\"winspool.drv\",CharSet=CharSet.Unicode,SetLastError=true)]",
+          "  static extern int DocumentProperties(IntPtr w,IntPtr p,string d,IntPtr o,IntPtr i,int m);",
+          "  [DllImport(\"winspool.drv\",SetLastError=true)]",
+          "  static extern bool SetPrinter(IntPtr h,int l,IntPtr b,int c);",
+          "  static int Main(string[] a) {",
+          "    if(a.Length<2){Console.Error.WriteLine(\"FAIL:ARGS\");return 1;}",
+          "    string src=a[0],dst=a[1];",
+          "    IntPtr sh=IntPtr.Zero;",
+          "    if(!OpenPrinter(src,out sh,IntPtr.Zero)){Console.Error.WriteLine(\"FAIL:OpenSrc:\"+Marshal.GetLastWin32Error());return 1;}",
+          "    int sz=DocumentProperties(IntPtr.Zero,sh,src,IntPtr.Zero,IntPtr.Zero,0);",
+          "    if(sz<=0){ClosePrinter(sh);Console.Error.WriteLine(\"FAIL:DocProps:\"+sz);return 1;}",
+          "    IntPtr dm=Marshal.AllocHGlobal(sz);",
+          "    DocumentProperties(IntPtr.Zero,sh,src,dm,IntPtr.Zero,2);",
+          "    ClosePrinter(sh);",
+          "    IntPtr dh=IntPtr.Zero;",
+          "    if(!OpenPrinter(dst,out dh,IntPtr.Zero)){Marshal.FreeHGlobal(dm);Console.Error.WriteLine(\"FAIL:OpenDst:\"+Marshal.GetLastWin32Error());return 1;}",
+          "    IntPtr pi=Marshal.AllocHGlobal(IntPtr.Size);",
+          "    Marshal.WriteIntPtr(pi,dm);",
+          "    bool ok=SetPrinter(dh,9,pi,0);",
+          "    int we=Marshal.GetLastWin32Error();",
+          "    ClosePrinter(dh);Marshal.FreeHGlobal(pi);Marshal.FreeHGlobal(dm);",
+          "    if(ok){Console.WriteLine(\"OK\");return 0;}",
+          "    Console.Error.WriteLine(\"FAIL:SetPrinter:\"+we);return 1;",
+          "  }",
+          "}",
+        ].join("\r\n");
+
+        const csFile = path2.join(userData, "ph_devmode_helper.cs");
+        fs2.writeFileSync(csFile, csSource, "utf8");
+
+        // Find csc.exe — .NET Framework 4.x is always present on Win10/11
+        const sysRoot = process.env.SystemRoot || "C:\\Windows";
+        const cscCandidates = [
+          path2.join(sysRoot, "Microsoft.NET", "Framework64", "v4.0.30319", "csc.exe"),
+          path2.join(sysRoot, "Microsoft.NET", "Framework", "v4.0.30319", "csc.exe"),
+        ];
+        const cscExe = cscCandidates.find((p) => fs2.existsSync(p));
+        if (!cscExe) {
+          console.warn("[DEVMODE] csc.exe not found — cannot compile helper");
+        } else {
+          const compileResult = spawnSync(cscExe, ["/nologo", "/optimize+", `/out:${helperExe}`, csFile], {
+            timeout: 20000, encoding: "utf8", windowsHide: true,
+          });
+          if (compileResult.status !== 0) {
+            console.warn("[DEVMODE] csc compile failed:", compileResult.stdout, compileResult.stderr);
+          }
+          try { fs2.unlinkSync(csFile); } catch {}
+        }
+      }
+
+      if (fs2.existsSync(helperExe)) {
+        const result = spawnSync(helperExe, [printerName, stripName], {
+          timeout: 10000, encoding: "utf8", windowsHide: true,
+        });
+        const stdout = (result.stdout || "").trim();
+        const stderr = (result.stderr || "").trim();
+        cutModeApplied = stdout === "OK";
+        if (!cutModeApplied) {
+          console.warn("[DEVMODE] helper failed — stdout:", stdout || "(empty)", "| stderr:", stderr || "(empty)");
+        }
       }
     } catch (err) {
-      console.warn("[DEVMODE] SetPrinter error:", err?.message);
+      console.warn("[DEVMODE] error:", err?.message);
     }
 
     return { ok: true, stripName, cutModeApplied };
