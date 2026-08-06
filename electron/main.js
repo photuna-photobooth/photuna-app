@@ -4638,21 +4638,21 @@ app.whenReady().then(async () => {
       // quirks, no here-string parse errors.
       const userData = app.getPath("userData");
       // Versioned filename — bump suffix when C# source changes to force recompile
-      // v6: 1MB buffer (prevents DocumentProperties overflow entirely).
-      // Root cause of v5 silent crash: nameBytes = new byte[64] was the first
-      // managed heap alloc AFTER DocumentProperties corrupted the heap (sz+1024
-      // was still too small), so CLR's heap-corruption check fired before any
-      // Console.Error line ran. Fix: pre-allocate managed arrays BEFORE the
-      // DocumentProperties write call, use 1MB unmanaged buffer.
-      // Also adds SetPrinterData("Default DevMode") which writes through the
-      // spooler and updates its in-memory cache (SetPrinter level 8 needs admin).
-      const helperExe = path2.join(userData, "ph_devmode_helper_v6.exe");
+      // v7: read source DEVMODE from HKCU\Printers\DevModes2\{src} directly.
+      // DocumentProperties(NULL, DM_OUT_BUFFER) returns driver factory defaults
+      // (2inch cut=Disable), NOT the user's saved Printing Preferences settings.
+      // The user's settings (2inch cut=Enable) live in HKCU\Printers\DevModes2.
+      // v7 also writes the patched DEVMODE directly to HKCU\Printers\DevModes2\{dst}
+      // in addition to SetPrinter level 9, to ensure the registry (which Printing
+      // Preferences reads) gets the right value regardless of spooler caching.
+      const helperExe = path2.join(userData, "ph_devmode_helper_v7.exe");
 
       if (!fs2.existsSync(helperExe)) {
         const csSource = [
           "using System;",
           "using System.Runtime.InteropServices;",
           "using System.Text;",
+          "using Microsoft.Win32;",
           "class P {",
           "  [DllImport(\"winspool.drv\",CharSet=CharSet.Unicode,SetLastError=true)]",
           "  static extern bool OpenPrinter(string n,out IntPtr h,IntPtr d);",
@@ -4662,62 +4662,91 @@ app.whenReady().then(async () => {
           "  static extern int DocumentProperties(IntPtr w,IntPtr p,string d,IntPtr o,IntPtr i,int m);",
           "  [DllImport(\"winspool.drv\",SetLastError=true)]",
           "  static extern bool SetPrinter(IntPtr h,int l,IntPtr b,int c);",
-          "  [DllImport(\"winspool.drv\",CharSet=CharSet.Unicode,SetLastError=true)]",
-          "  static extern int SetPrinterData(IntPtr h,string k,int t,IntPtr v,int s);",
           "  static int Main(string[] a) {",
           "    Console.Error.WriteLine(\"START\");",
           "    try {",
           "      if(a.Length<2){Console.Error.WriteLine(\"args\");return 1;}",
           "      string src=a[0],dst=a[1];",
           "      Console.Error.WriteLine(\"src=\"+src+\" dst=\"+dst);",
-          "      IntPtr sh=IntPtr.Zero;",
-          "      if(!OpenPrinter(src,out sh,IntPtr.Zero)){Console.Error.WriteLine(\"OpenSrc fail:\"+Marshal.GetLastWin32Error());return 1;}",
-          "      Console.Error.WriteLine(\"OpenSrc ok\");",
-          "      int sz=DocumentProperties(IntPtr.Zero,sh,src,IntPtr.Zero,IntPtr.Zero,0);",
-          "      Console.Error.WriteLine(\"sz=\"+sz);",
-          "      if(sz<=0){ClosePrinter(sh);return 1;}",
-          // Pre-allocate managed arrays BEFORE DocumentProperties write so the
-          // CLR heap does not allocate new memory after the (possibly overflowing)
-          // native call — allocation post-overflow triggers STATUS_HEAP_CORRUPTION.
+          // Pre-allocate ALL managed objects before any native calls
           "      byte[] nameBytes=new byte[64];",
           "      byte[] dstEncoded=Encoding.Unicode.GetBytes(dst.Length>31?dst.Substring(0,31):dst);",
-          "      Console.Error.WriteLine(\"arrays ok\");",
-          // 1MB buffer — far exceeds any real DEVMODE, prevents all overflow
           "      IntPtr dm=Marshal.AllocHGlobal(1048576);",
-          "      int r=DocumentProperties(IntPtr.Zero,sh,src,dm,IntPtr.Zero,2);",
-          "      ClosePrinter(sh);",
-          "      Console.Error.WriteLine(\"DocProps=\"+r);",
-          "      if(r<1) return 1;",
-          // Patch dmDeviceName (WCHAR[32] = first 64 bytes). Windows validates
-          // this matches the target printer name; mismatch → silent ignore.
+          "      int dmLen=0; bool gotDM=false;",
+          // PRIMARY: read from HKCU\Printers\DevModes2\{src} — the user's actual
+          // per-user DEVMODE where 2inch cut=Enable is saved by Printing Preferences.
+          // DocumentProperties(NULL,DM_OUT_BUFFER) only returns factory defaults.
+          "      try {",
+          "        using(RegistryKey k=Registry.CurrentUser.OpenSubKey(\"Printers\\\\DevModes2\")){",
+          "          if(k!=null){",
+          "            byte[] raw=k.GetValue(src) as byte[];",
+          "            if(raw!=null&&raw.Length>=64){",
+          "              dmLen=raw.Length;",
+          "              Marshal.Copy(raw,0,dm,Math.Min(dmLen,1048572));",
+          "              gotDM=true;",
+          "              Console.Error.WriteLine(\"RegDM ok len=\"+dmLen);",
+          "            } else Console.Error.WriteLine(\"RegDM missing len=\"+(raw==null?\"null\":raw.Length.ToString()));",
+          "          } else Console.Error.WriteLine(\"RegDM key null\");",
+          "        }",
+          "      } catch(Exception rx){Console.Error.WriteLine(\"RegDM ex:\"+rx.Message);}",
+          // FALLBACK: DocumentProperties if HKCU entry missing (printer was just added)
+          "      if(!gotDM){",
+          "        IntPtr sh2=IntPtr.Zero;",
+          "        if(!OpenPrinter(src,out sh2,IntPtr.Zero)){Console.Error.WriteLine(\"OpenSrc fail:\"+Marshal.GetLastWin32Error());return 1;}",
+          "        int sz2=DocumentProperties(IntPtr.Zero,sh2,src,IntPtr.Zero,IntPtr.Zero,0);",
+          "        Console.Error.WriteLine(\"DocSz=\"+sz2);",
+          "        if(sz2<=0){ClosePrinter(sh2);return 1;}",
+          "        int r2=DocumentProperties(IntPtr.Zero,sh2,src,dm,IntPtr.Zero,2);",
+          "        ClosePrinter(sh2);",
+          "        Console.Error.WriteLine(\"DocProps=\"+r2);",
+          "        if(r2<1) return 1;",
+          "        dmLen=sz2; gotDM=true;",
+          "      }",
+          // Dump last 32 bytes of dmDriverExtra — vendor settings incl 2inch cut
+          "      if(dmLen>=72){",
+          "        short dmFix=(short)Marshal.ReadInt16(dm,68);",
+          "        short dmExt=(short)Marshal.ReadInt16(dm,70);",
+          "        Console.Error.WriteLine(\"dmFixed=\"+dmFix+\" dmExtra=\"+dmExt);",
+          "        if(dmExt>0&&dmFix>0&&dmFix+dmExt<=dmLen){",
+          "          int ts=dmFix+Math.Max(0,dmExt-32);int tl=Math.Min(32,dmExt);",
+          "          byte[] tb=new byte[tl];",
+          "          Marshal.Copy(new IntPtr(dm.ToInt64()+ts),tb,0,tl);",
+          "          Console.Error.WriteLine(\"extraTail=\"+BitConverter.ToString(tb));",
+          "        }",
+          "      }",
+          // Patch dmDeviceName (WCHAR[32] = first 64 bytes) to match destination
           "      Array.Copy(dstEncoded,nameBytes,Math.Min(dstEncoded.Length,62));",
           "      Marshal.Copy(nameBytes,0,dm,64);",
           "      Console.Error.WriteLine(\"name patched\");",
+          // Write via SetPrinter level 9 (updates spooler per-user cache)
           "      IntPtr dh=IntPtr.Zero;",
           "      if(!OpenPrinter(dst,out dh,IntPtr.Zero)){Console.Error.WriteLine(\"OpenDst fail:\"+Marshal.GetLastWin32Error());return 1;}",
-          "      Console.Error.WriteLine(\"OpenDst ok\");",
-          // SetPrinterData writes "Default DevMode" through the spooler API,
-          // updating both the registry and the spooler's in-memory cache.
-          "      int dr=SetPrinterData(dh,\"Default DevMode\",3,dm,sz);",
-          "      Console.Error.WriteLine(\"SPD=\"+dr+\" e=\"+Marshal.GetLastWin32Error());",
-          // Level 9: per-user DEVMODE (succeeds without PRINTER_ACCESS_ADMINISTER)
           "      IntPtr pi=Marshal.AllocHGlobal(IntPtr.Size);",
           "      Marshal.WriteIntPtr(pi,dm);",
           "      bool ok9=SetPrinter(dh,9,pi,0);",
           "      int e9=Marshal.GetLastWin32Error();",
           "      Console.Error.WriteLine(\"L9=\"+ok9+\" e=\"+e9);",
           "      ClosePrinter(dh);",
-          "      if((dr==0)||ok9){Console.WriteLine(\"OK\");return 0;}",
+          // ALSO write directly to HKCU\Printers\DevModes2\{dst} — Printing
+          // Preferences reads from here; bypasses any spooler caching issue
+          "      try {",
+          "        byte[] wb=new byte[dmLen];",
+          "        Marshal.Copy(dm,wb,0,dmLen);",
+          "        using(RegistryKey wk=Registry.CurrentUser.OpenSubKey(\"Printers\\\\DevModes2\",true)){",
+          "          if(wk!=null){wk.SetValue(dst,wb,RegistryValueKind.Binary);Console.Error.WriteLine(\"RegWrite ok\");}",
+          "          else Console.Error.WriteLine(\"RegWrite key null\");",
+          "        }",
+          "      } catch(Exception wx){Console.Error.WriteLine(\"RegWrite ex:\"+wx.Message);}",
+          "      if(ok9){Console.WriteLine(\"OK\");return 0;}",
           "      return 1;",
-          "    } catch(Exception ex) {",
-          "      Console.Error.WriteLine(\"EX:\"+ex.Message);",
-          "      return 1;",
+          "    } catch(Exception ex){",
+          "      Console.Error.WriteLine(\"EX:\"+ex.Message);return 1;",
           "    }",
           "  }",
           "}",
         ].join("\r\n");
 
-        const csFile = path2.join(userData, "ph_devmode_helper_v6.cs");
+        const csFile = path2.join(userData, "ph_devmode_helper_v7.cs");
         fs2.writeFileSync(csFile, csSource, "utf8");
 
         // Find csc.exe — .NET Framework 4.x is always present on Win10/11
