@@ -424,7 +424,7 @@ export default function PrintPreviewScreen({
         paperSize: effectiveSettings?.paperSize || resolvedLayout || "4x6",
         copies: effectiveSettings?.printCopies ?? 1,
         colorMode: effectiveSettings?.printColorMode ?? "color",
-        quality: effectiveSettings?.printQuality ?? "standard",
+        quality: effectiveSettings?.printQuality ?? "high",
         orientation: effectiveSettings?.printOrientation ?? "auto",
         duplexMode: effectiveSettings?.printDuplexMode ?? "simplex",
         dpi: effectiveSettings?.printDpi ?? 300,
