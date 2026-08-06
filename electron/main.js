@@ -770,8 +770,8 @@ async function createOnlineGalleryInMain(payload = {}) {
     throw err;
   }
 
-  if (!finalVideoBlob) {
-    throw new Error("Final motion video was not generated from captured slot videos.");
+  if (hasSlots && !finalVideoBlob) {
+    console.warn("[gallery:create] animated composite not generated — proceeding without video");
   }
 
   const supabaseAdminClient = getSupabaseAdmin();
