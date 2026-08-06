@@ -68,6 +68,15 @@ internal static class Program
                 Console.WriteLine($"Paper Size: {printDoc.DefaultPageSettings.PaperSize?.Width} x {printDoc.DefaultPageSettings.PaperSize?.Height}");
                 Console.WriteLine($"Landscape: {printDoc.DefaultPageSettings.Landscape}");
 
+                // Validate paper size is 4x6 in.
+                var ps = printDoc.DefaultPageSettings.PaperSize;
+                bool is4x6 = ps != null && (
+                    (Approximately(ps.Width, 400) && Approximately(ps.Height, 600)) ||
+                    (Approximately(ps.Width, 600) && Approximately(ps.Height, 400))
+                );
+                Console.WriteLine($"Photo size: {(ps?.Width ?? 0) / 100.0:F1} x {(ps?.Height ?? 0) / 100.0:F1} in.  Validated 4×6: {(is4x6 ? "PASS" : "WARN – not 4×6")}");
+                Console.WriteLine("Fit: Shrink to fit");
+
                 printDoc.PrintPage += (sender, e) =>
                 {
                     e.Graphics.PageUnit = GraphicsUnit.Display;
@@ -81,23 +90,31 @@ internal static class Program
 
                     int hardX = (int)Math.Round(e.PageSettings.HardMarginX);
                     int hardY = (int)Math.Round(e.PageSettings.HardMarginY);
-
-                    int pageWidth = e.PageBounds.Width;
+                    int pageWidth  = e.PageBounds.Width;
                     int pageHeight = e.PageBounds.Height;
 
-                    // Full-bleed draw.
-                    // Negative hard margins keep the image aligned to the real photo paper,
-                    // not to a document-style printable area.
-                    var destRect = new Rectangle(
-                        -hardX,
-                        -hardY,
-                        pageWidth,
-                        pageHeight
+                    // Shrink to fit: scale image down to fill the printable area while
+                    // maintaining aspect ratio, centered on the page. Never scales up.
+                    int printableX = hardX;
+                    int printableY = hardY;
+                    int printableW = Math.Max(1, pageWidth  - 2 * hardX);
+                    int printableH = Math.Max(1, pageHeight - 2 * hardY);
+
+                    float scale = Math.Min(
+                        (float)printableW / renderImage.Width,
+                        (float)printableH / renderImage.Height
                     );
+
+                    int drawW = (int)Math.Round(renderImage.Width  * scale);
+                    int drawH = (int)Math.Round(renderImage.Height * scale);
+                    int drawX = printableX + (printableW - drawW) / 2;
+                    int drawY = printableY + (printableH - drawH) / 2;
+
+                    Console.WriteLine($"Scale: {scale:F4}  printable: {printableW}×{printableH}  image: {renderImage.Width}×{renderImage.Height}  draw: ({drawX},{drawY},{drawW},{drawH})");
 
                     e.Graphics.DrawImage(
                         renderImage,
-                        destRect,
+                        new Rectangle(drawX, drawY, drawW, drawH),
                         new Rectangle(0, 0, renderImage.Width, renderImage.Height),
                         GraphicsUnit.Pixel
                     );
@@ -120,33 +137,13 @@ internal static class Program
 
     private static Bitmap PrepareImageForLayout(Image sourceImage, string layout)
     {
-        var normalized = NormalizeLayout(layout);
         var bitmap = new Bitmap(sourceImage);
-
-        // IMPORTANT:
-        // 4x6 print output should already be exported as landscape 1800x1200.
-        // Do not rotate 4x6 / 6x4.
-        //
-        // Only rotate strip layouts if your strip export is portrait.
-        switch (normalized)
-        {
-            case "4x6":
-            case "6x4":
-                break;
-
-            case "2x6":
-                // Rotate only if your source strip is portrait-oriented.
-                if (bitmap.Height > bitmap.Width)
-                {
-                    bitmap.RotateFlip(RotateFlipType.Rotate90FlipNone);
-                }
-                break;
-
-            case "6x2":
-            default:
-                break;
-        }
-
+        // The composited image from Photuna is always in the correct orientation:
+        //   4x6  → 1200×1800 portrait
+        //   2x6  → 1200×1800 portrait (two strips side-by-side; STRIP printer DEVMODE cuts at 2")
+        //   6x4  → 1800×1200 landscape
+        //   6x2  → 1800×600  landscape
+        // No rotation is applied here; the image is sent as-is.
         TrySetBitmapDpi(bitmap, 300, 300);
         return bitmap;
     }
@@ -155,38 +152,20 @@ internal static class Program
     {
         string normalized = NormalizeLayout(layout);
 
-        // Physical media target:
-        // 4x6 photo paper should be printed as 6x4 landscape.
-        bool isRegular46 = normalized == "4x6" || normalized == "6x4";
-        bool isStrip = normalized == "2x6" || normalized == "6x2";
+        // Composite images from Photuna:
+        //   4x6  → 1200×1800 portrait → print on 4×6 portrait
+        //   2x6  → 1200×1800 portrait → print on 4×6 portrait (STRIP printer DEVMODE cuts at 2")
+        //   6x4  → 1800×1200 landscape → print on 4×6 landscape
+        //   6x2  → 1800×600  landscape → print on 6×2 landscape (STRIP printer DEVMODE cuts at 2")
+        bool isLandscape = normalized == "6x4" || normalized == "6x2";
+        bool isStrip26 = normalized == "2x6";   // portrait strip: treated as portrait 4×6 for paper
+        bool isStrip62 = normalized == "6x2";   // landscape strip: treated as landscape 6×2 for paper
 
-        int widthHundredths;
-        int heightHundredths;
+        // Paper dimensions: 2x6 uses same physical sheet as 4x6 (DNP STRIP printer exposes 4×6)
+        int widthHundredths  = isLandscape ? 600 : 400;
+        int heightHundredths = isLandscape ? (isStrip62 ? 200 : 400) : 600;
 
-        if (isStrip)
-        {
-            // Driver may still expose strip / cut sizes as 6x4 media with cut mode,
-            // but this gives a true size fallback when available.
-            widthHundredths = 600;
-            heightHundredths = 200;
-        }
-        else
-        {
-            widthHundredths = 600;
-            heightHundredths = 400;
-        }
-
-        bool landscape = (orientation ?? "").Trim().ToLowerInvariant() switch
-        {
-            "portrait" => false,
-            "landscape" => true,
-            _ => true
-        };
-
-        // Force 4x6 to landscape unless the caller explicitly overrides it.
-        if (isRegular46)
-            landscape = true;
-
+        bool landscape = isLandscape;
         printDoc.DefaultPageSettings.Landscape = landscape;
         printDoc.DefaultPageSettings.Margins = new Margins(0, 0, 0, 0);
         printDoc.OriginAtMargins = false;
@@ -195,62 +174,47 @@ internal static class Program
 
         Console.WriteLine("Available paper sizes:");
         foreach (PaperSize ps in printDoc.PrinterSettings.PaperSizes)
-        {
             Console.WriteLine($"PaperSize: Name={ps.PaperName}, W={ps.Width}, H={ps.Height}, RawKind={ps.RawKind}");
-        }
 
-        // 1) Prefer explicit paper names
+        // Step 1: name match — for 2x6 strip, the DNP STRIP printer only exposes "4 x 6" paper
         foreach (PaperSize ps in printDoc.PrinterSettings.PaperSizes)
         {
             string name = (ps.PaperName ?? "").ToLowerInvariant();
+            bool is46Name =
+                name.Contains("4x6") || name.Contains("4 x 6") ||
+                name.Contains("6x4") || name.Contains("6 x 4");
+            bool isStripName =
+                name.Contains("2x6") || name.Contains("2 x 6") ||
+                name.Contains("6x2") || name.Contains("6 x 2") ||
+                name.Contains("strip") || name.Contains("split") ||
+                name.Contains("2-cut") || name.Contains("2 cut") ||
+                name.Contains("2 inch cut") || name.Contains("2-inch cut");
 
-            if (isRegular46)
+            if (isStrip62)
             {
-                bool is46Name =
-                    name.Contains("4x6") || name.Contains("4 x 6") ||
-                    name.Contains("6x4") || name.Contains("6 x 4");
-
-                bool isStripName =
-                    name.Contains("2x6") || name.Contains("2 x 6") ||
-                    name.Contains("6x2") || name.Contains("6 x 2") ||
-                    name.Contains("strip") || name.Contains("split") ||
-                    name.Contains("2-cut") || name.Contains("2 cut") ||
-                    name.Contains("2 inch cut") || name.Contains("2-inch cut");
-
-                if (is46Name && !isStripName)
-                {
-                    best = ps;
-                    Console.WriteLine($"Using named 4x6 paper: {ps.PaperName}");
-                    break;
-                }
+                // 6×2: prefer an explicitly named strip/6x2 paper; fall through to 4x6 if not found
+                if (isStripName) { best = ps; Console.WriteLine($"Using named 6x2 strip paper: {ps.PaperName}"); break; }
             }
-            else if (isStrip)
+            else if (isStrip26)
             {
-                bool isStripName =
-                    name.Contains("2x6") || name.Contains("2 x 6") ||
-                    name.Contains("6x2") || name.Contains("6 x 2") ||
-                    name.Contains("strip") || name.Contains("split") ||
-                    name.Contains("2-cut") || name.Contains("2 cut") ||
-                    name.Contains("2 inch cut") || name.Contains("2-inch cut");
-
-                if (isStripName)
-                {
-                    best = ps;
-                    Console.WriteLine($"Using named strip paper: {ps.PaperName}");
-                    break;
-                }
+                // 2×6: prefer explicit strip name, but also accept 4×6 (STRIP printer DEVMODE handles cut)
+                if (isStripName) { best = ps; Console.WriteLine($"Using named 2x6 strip paper: {ps.PaperName}"); break; }
+                if (is46Name)    { best = ps; Console.WriteLine($"Using 4x6 paper for 2x6 strip: {ps.PaperName}"); break; }
+            }
+            else
+            {
+                // Regular 4×6 / 6×4: find 4×6 paper, exclude strip papers
+                if (is46Name && !isStripName) { best = ps; Console.WriteLine($"Using named 4x6 paper: {ps.PaperName}"); break; }
             }
         }
 
-        // 2) Fall back to size match
+        // Step 2: size match
         if (best == null)
         {
             foreach (PaperSize ps in printDoc.PrinterSettings.PaperSizes)
             {
-                if (
-                    (Approximately(ps.Width, widthHundredths) && Approximately(ps.Height, heightHundredths)) ||
-                    (Approximately(ps.Width, heightHundredths) && Approximately(ps.Height, widthHundredths))
-                )
+                if ((Approximately(ps.Width, widthHundredths) && Approximately(ps.Height, heightHundredths)) ||
+                    (Approximately(ps.Width, heightHundredths) && Approximately(ps.Height, widthHundredths)))
                 {
                     best = ps;
                     Console.WriteLine($"Using size-matched paper: {ps.PaperName}");
@@ -259,15 +223,10 @@ internal static class Program
             }
         }
 
-        // 3) Final fallback
+        // Step 3: final fallback — for 2x6, create a portrait 4×6 custom paper (not 6×2)
         if (best == null)
         {
-            best = new PaperSize(
-                isStrip ? "Photo 2x6" : "Photo 4x6",
-                widthHundredths,
-                heightHundredths
-            );
-
+            best = new PaperSize("Photo 4x6", widthHundredths, heightHundredths);
             Console.WriteLine($"Using custom fallback paper: {best.PaperName} ({best.Width}x{best.Height})");
         }
 
