@@ -4645,7 +4645,14 @@ app.whenReady().then(async () => {
       // v7 also writes the patched DEVMODE directly to HKCU\Printers\DevModes2\{dst}
       // in addition to SetPrinter level 9, to ensure the registry (which Printing
       // Preferences reads) gets the right value regardless of spooler caching.
-      const helperExe = path2.join(userData, "ph_devmode_helper_v7b.exe");
+      // v8: use GetPrinter level 9 as primary source (reads spooler's own per-user
+      // DEVMODE, same data as DevModes2 but via the spooler API). Removed the
+      // RegWrite section which caused AccessViolationException after SetPrinter —
+      // reading back from dm after SetPrinter is unsafe (driver may have modified
+      // it in place or the spooler's internal buffer re-use invalidated the region).
+      // Also lists all DevModes2 keys and dumps all non-zero dmDriverExtra offsets
+      // so we can identify the 2inch cut byte if the source has no per-user DEVMODE.
+      const helperExe = path2.join(userData, "ph_devmode_helper_v8.exe");
 
       if (!fs2.existsSync(helperExe)) {
         const csSource = [
@@ -4662,63 +4669,91 @@ app.whenReady().then(async () => {
           "  static extern int DocumentProperties(IntPtr w,IntPtr p,string d,IntPtr o,IntPtr i,int m);",
           "  [DllImport(\"winspool.drv\",SetLastError=true)]",
           "  static extern bool SetPrinter(IntPtr h,int l,IntPtr b,int c);",
+          "  [DllImport(\"winspool.drv\",CharSet=CharSet.Unicode,SetLastError=true)]",
+          "  static extern bool GetPrinter(IntPtr h,int l,IntPtr b,int s,out int n);",
           "  static int Main(string[] a) {",
           "    Console.Error.WriteLine(\"START\");",
           "    try {",
           "      if(a.Length<2){Console.Error.WriteLine(\"args\");return 1;}",
           "      string src=a[0],dst=a[1];",
           "      Console.Error.WriteLine(\"src=\"+src+\" dst=\"+dst);",
+          // List DevModes2 entries so we can see what key name Windows used
+          "      try{",
+          "        using(RegistryKey k=Registry.CurrentUser.OpenSubKey(\"Printers\\\\DevModes2\")){",
+          "          if(k!=null)Console.Error.WriteLine(\"DevModes2=\"+string.Join(\",\",k.GetValueNames()));",
+          "          else Console.Error.WriteLine(\"DevModes2=<key missing>\");",
+          "        }",
+          "      }catch(Exception ex2){Console.Error.WriteLine(\"DevModes2 ex:\"+ex2.Message);}",
           // Pre-allocate ALL managed objects before any native calls
           "      byte[] nameBytes=new byte[64];",
           "      byte[] dstEncoded=Encoding.Unicode.GetBytes(dst.Length>31?dst.Substring(0,31):dst);",
           "      IntPtr dm=Marshal.AllocHGlobal(1048576);",
-          "      int dmLen=0; bool gotDM=false;",
-          // PRIMARY: read from HKCU\Printers\DevModes2\{src} — the user's actual
-          // per-user DEVMODE where 2inch cut=Enable is saved by Printing Preferences.
-          // DocumentProperties(NULL,DM_OUT_BUFFER) only returns factory defaults.
-          "      try {",
-          "        using(RegistryKey k=Registry.CurrentUser.OpenSubKey(\"Printers\\\\DevModes2\")){",
-          "          if(k!=null){",
-          "            byte[] raw=k.GetValue(src) as byte[];",
-          "            if(raw!=null&&raw.Length>=64){",
-          "              dmLen=raw.Length;",
-          "              Marshal.Copy(raw,0,dm,Math.Min(dmLen,1048572));",
-          "              gotDM=true;",
-          "              Console.Error.WriteLine(\"RegDM ok len=\"+dmLen);",
-          "            } else Console.Error.WriteLine(\"RegDM missing len=\"+(raw==null?\"null\":raw.Length.ToString()));",
-          "          } else Console.Error.WriteLine(\"RegDM key null\");",
-          "        }",
-          "      } catch(Exception rx){Console.Error.WriteLine(\"RegDM ex:\"+rx.Message);}",
-          // FALLBACK: DocumentProperties if HKCU entry missing (printer was just added)
-          "      if(!gotDM){",
-          "        IntPtr sh2=IntPtr.Zero;",
-          "        if(!OpenPrinter(src,out sh2,IntPtr.Zero)){Console.Error.WriteLine(\"OpenSrc fail:\"+Marshal.GetLastWin32Error());return 1;}",
-          "        int sz2=DocumentProperties(IntPtr.Zero,sh2,src,IntPtr.Zero,IntPtr.Zero,0);",
-          "        Console.Error.WriteLine(\"DocSz=\"+sz2);",
-          "        if(sz2<=0){ClosePrinter(sh2);return 1;}",
-          "        int r2=DocumentProperties(IntPtr.Zero,sh2,src,dm,IntPtr.Zero,2);",
-          "        ClosePrinter(sh2);",
-          "        Console.Error.WriteLine(\"DocProps=\"+r2);",
-          "        if(r2<1) return 1;",
-          "        dmLen=sz2; gotDM=true;",
+          "      int dmLen=0; bool gotDM=false; bool hasUserDM=false;",
+          // Open source printer
+          "      IntPtr sh=IntPtr.Zero;",
+          "      if(!OpenPrinter(src,out sh,IntPtr.Zero)){Console.Error.WriteLine(\"OpenSrc fail:\"+Marshal.GetLastWin32Error());return 1;}",
+          "      Console.Error.WriteLine(\"OpenSrc ok\");",
+          // PRIMARY: GetPrinter level 9 — per-user DEVMODE via spooler API
+          // (same data as DevModes2 registry, but we never read dm back after SetPrinter)
+          "      int pi9n=0; GetPrinter(sh,9,IntPtr.Zero,0,out pi9n);",
+          "      Console.Error.WriteLine(\"PI9 needed=\"+pi9n);",
+          "      if(pi9n>0){",
+          "        IntPtr pi9b=Marshal.AllocHGlobal(pi9n+256);",
+          "        if(GetPrinter(sh,9,pi9b,pi9n,out pi9n)){",
+          "          IntPtr sdm=Marshal.ReadIntPtr(pi9b,0);",
+          "          Console.Error.WriteLine(\"PI9.pDM=\"+(sdm==IntPtr.Zero?\"null\":sdm.ToString(\"X\")));",
+          "          if(sdm!=IntPtr.Zero){",
+          "            short df9=(short)Marshal.ReadInt16(sdm,68);",
+          "            short de9=(short)Marshal.ReadInt16(sdm,70);",
+          "            dmLen=(int)df9+(int)de9;",
+          "            Console.Error.WriteLine(\"PI9 dmFixed=\"+df9+\" dmExtra=\"+de9+\" total=\"+dmLen);",
+          "            if(dmLen>0&&dmLen<=1048572){",
+          "              byte[] tmp9=new byte[dmLen];",
+          "              Marshal.Copy(sdm,tmp9,0,dmLen);",
+          "              Marshal.Copy(tmp9,0,dm,dmLen);",
+          "              gotDM=true; hasUserDM=true;",
+          "              Console.Error.WriteLine(\"PI9 copy ok\");",
+          "            }",
+          "          } else Console.Error.WriteLine(\"PI9.pDM null → no per-user DEVMODE saved for \"+src);",
+          "        } else Console.Error.WriteLine(\"GetPrinter9 fail:\"+Marshal.GetLastWin32Error());",
           "      }",
-          // Dump last 32 bytes of dmDriverExtra — vendor settings incl 2inch cut
+          // FALLBACK: DocumentProperties (returns factory defaults, not user settings)
+          "      if(!gotDM){",
+          "        int sz=DocumentProperties(IntPtr.Zero,sh,src,IntPtr.Zero,IntPtr.Zero,0);",
+          "        Console.Error.WriteLine(\"DocSz=\"+sz);",
+          "        if(sz>0){",
+          "          int r=DocumentProperties(IntPtr.Zero,sh,src,dm,IntPtr.Zero,2);",
+          "          Console.Error.WriteLine(\"DocProps=\"+r);",
+          "          if(r>=1){dmLen=sz;gotDM=true;}",
+          "        }",
+          "      }",
+          "      ClosePrinter(sh);",
+          "      if(!gotDM){Console.Error.WriteLine(\"no DEVMODE\");return 1;}",
+          // Dump ALL non-zero bytes in dmDriverExtra — shows where vendor settings live
           "      if(dmLen>=72){",
           "        short dmFix=(short)Marshal.ReadInt16(dm,68);",
           "        short dmExt=(short)Marshal.ReadInt16(dm,70);",
           "        Console.Error.WriteLine(\"dmFixed=\"+dmFix+\" dmExtra=\"+dmExt);",
-          "        if(dmExt>0&&dmFix>0&&dmFix+dmExt<=dmLen){",
-          "          int ts=dmFix+Math.Max(0,(int)dmExt-32);int tl=Math.Min(32,(int)dmExt);",
-          "          byte[] tb=new byte[tl];",
-          "          Marshal.Copy(new IntPtr(dm.ToInt64()+ts),tb,0,tl);",
-          "          Console.Error.WriteLine(\"extraTail=\"+BitConverter.ToString(tb));",
+          "        if(dmExt>0&&dmFix>0){",
+          "          System.Text.StringBuilder sb=new System.Text.StringBuilder();",
+          "          for(int i=0;i<(int)dmExt;i++){",
+          "            byte b=Marshal.ReadByte(dm,(int)dmFix+i);",
+          "            if(b!=0)sb.Append(i+\"=\"+b.ToString(\"X2\")+\" \");",
+          "          }",
+          "          Console.Error.WriteLine(\"nonzero=\"+(sb.Length>0?sb.ToString().TrimEnd():\"(all-zero)\"));",
           "        }",
           "      }",
           // Patch dmDeviceName (WCHAR[32] = first 64 bytes) to match destination
           "      Array.Copy(dstEncoded,nameBytes,Math.Min(dstEncoded.Length,62));",
           "      Marshal.Copy(nameBytes,0,dm,64);",
+          // Only write to DS-RX1-STRIP if we have a real per-user DEVMODE (not factory defaults)
+          // Writing factory defaults would just confirm Disable — user must save DS-RX1 first
+          "      if(!hasUserDM){",
+          "      Console.Error.WriteLine(\"WARN: no per-user DEVMODE for \"+src+\" — open its Printing Preferences, set 2inch cut=Enable, click OK, then recreate STRIP profile\");",
+          "      Console.WriteLine(\"NO_USER_DEVMODE\");return 2;",
+          "      }",
           "      Console.Error.WriteLine(\"name patched\");",
-          // Write via SetPrinter level 9 (updates spooler per-user cache)
+          // Write via SetPrinter level 9
           "      IntPtr dh=IntPtr.Zero;",
           "      if(!OpenPrinter(dst,out dh,IntPtr.Zero)){Console.Error.WriteLine(\"OpenDst fail:\"+Marshal.GetLastWin32Error());return 1;}",
           "      IntPtr pi=Marshal.AllocHGlobal(IntPtr.Size);",
@@ -4727,26 +4762,14 @@ app.whenReady().then(async () => {
           "      int e9=Marshal.GetLastWin32Error();",
           "      Console.Error.WriteLine(\"L9=\"+ok9+\" e=\"+e9);",
           "      ClosePrinter(dh);",
-          // ALSO write directly to HKCU\Printers\DevModes2\{dst} — Printing
-          // Preferences reads from here; bypasses any spooler caching issue
-          "      try {",
-          "        byte[] wb=new byte[dmLen];",
-          "        Marshal.Copy(dm,wb,0,dmLen);",
-          "        using(RegistryKey wk=Registry.CurrentUser.OpenSubKey(\"Printers\\\\DevModes2\",true)){",
-          "          if(wk!=null){wk.SetValue(dst,wb,RegistryValueKind.Binary);Console.Error.WriteLine(\"RegWrite ok\");}",
-          "          else Console.Error.WriteLine(\"RegWrite key null\");",
-          "        }",
-          "      } catch(Exception wx){Console.Error.WriteLine(\"RegWrite ex:\"+wx.Message);}",
           "      if(ok9){Console.WriteLine(\"OK\");return 0;}",
           "      return 1;",
-          "    } catch(Exception ex){",
-          "      Console.Error.WriteLine(\"EX:\"+ex.Message);return 1;",
-          "    }",
+          "    }catch(Exception ex){Console.Error.WriteLine(\"EX:\"+ex.Message);return 1;}",
           "  }",
           "}",
         ].join("\r\n");
 
-        const csFile = path2.join(userData, "ph_devmode_helper_v7b.cs");
+        const csFile = path2.join(userData, "ph_devmode_helper_v8.cs");
         fs2.writeFileSync(csFile, csSource, "utf8");
 
         // Find csc.exe — .NET Framework 4.x is always present on Win10/11
@@ -4774,8 +4797,12 @@ app.whenReady().then(async () => {
         const stdout = (result.stdout || "").trim();
         const stderr = (result.stderr || "").trim();
         cutModeApplied = stdout === "OK";
+        const needsSave = stdout === "NO_USER_DEVMODE";
         console.log("[DEVMODE] helper status:", result.status, "| error:", result.error?.message ?? "none");
         console.log("[DEVMODE] stdout:", stdout || "(empty)", "| stderr:", stderr || "(empty)");
+        if (needsSave) {
+          return { ok: true, stripName, cutModeApplied: false, needsSave: true };
+        }
       }
     } catch (err) {
       console.warn("[DEVMODE] error:", err?.message);

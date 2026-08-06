@@ -1353,6 +1353,7 @@ This cannot be undone.`
   const [cutScanned, setCutScanned] = useState(false);
   const [cutCreating, setCutCreating] = useState(null); // printerName being created
   const [cutModeApplied, setCutModeApplied] = useState({}); // { [printerName]: true } when SetPrinter succeeded
+  const [cutNeedsSave, setCutNeedsSave] = useState({}); // { [printerName]: true } when DS-RX1 Printing Preferences not yet saved
 
   // helper: choose proper frame preview given layout
   const getFramePreviewForLayout = (frame, layout) =>
@@ -1476,6 +1477,9 @@ This cannot be undone.`
       if (res?.ok) {
         if (res.cutModeApplied) {
           setCutModeApplied((prev) => ({ ...prev, [printerName]: true }));
+        }
+        if (res.needsSave) {
+          setCutNeedsSave((prev) => ({ ...prev, [printerName]: true }));
         }
         // Re-scan to reflect the new profile
         const scanRes = await safeInvoke("printer:dnpScan");
@@ -8808,6 +8812,11 @@ This cannot be undone.`
                                             <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.121 14.121L19 19m-7-7l7-7m-7 7l-2.879 2.879M12 12L9.121 9.121m0 5.758a3 3 0 10-4.243-4.243 3 3 0 004.243 4.243z" /></svg>
                                             2inch cut: Enable
                                           </span>
+                                        ) : cutNeedsSave[printer.name] ? (
+                                          <span className="inline-flex items-center gap-1.5 rounded-full bg-orange-50 border border-orange-200 px-2.5 py-1 text-xs font-medium text-orange-700">
+                                            <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                            Action needed
+                                          </span>
                                         ) : (
                                           <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 border border-amber-200 px-2.5 py-1 text-xs font-medium text-amber-700">
                                             <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
@@ -8815,7 +8824,11 @@ This cannot be undone.`
                                           </span>
                                         )}
                                       </div>
-                                      {!cutModeApplied[printer.name] && (
+                                      {cutNeedsSave[printer.name] ? (
+                                        <p className="text-xs text-orange-700 font-medium">
+                                          Open <strong>{printer.name}</strong> Printing Preferences → set 2inch cut to Enable → click OK to save. Then delete <strong>{printer.stripProfileName}</strong> from Windows Printers and recreate it here.
+                                        </p>
+                                      ) : !cutModeApplied[printer.name] && (
                                         <p className="text-xs text-slate-500">
                                           To apply 2inch cut automatically, delete <strong>{printer.stripProfileName}</strong> from Windows Printers and recreate it here.
                                         </p>
