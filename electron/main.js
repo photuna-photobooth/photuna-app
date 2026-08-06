@@ -4637,9 +4637,11 @@ app.whenReady().then(async () => {
       // calls DocumentProperties + SetPrinter directly — no PowerShell Add-Type
       // quirks, no here-string parse errors.
       const userData = app.getPath("userData");
-      const helperExe = path2.join(userData, "ph_devmode_helper.exe");
+      // Versioned filename — bump suffix when C# source changes to force recompile
+      const helperExe = path2.join(userData, "ph_devmode_helper_v3.exe");
 
       if (!fs2.existsSync(helperExe)) {
+        // Wrapped in try/catch so any unhandled exception prints to stderr
         const csSource = [
           "using System;",
           "using System.Runtime.InteropServices;",
@@ -4653,29 +4655,43 @@ app.whenReady().then(async () => {
           "  [DllImport(\"winspool.drv\",SetLastError=true)]",
           "  static extern bool SetPrinter(IntPtr h,int l,IntPtr b,int c);",
           "  static int Main(string[] a) {",
-          "    if(a.Length<2){Console.Error.WriteLine(\"FAIL:ARGS\");return 1;}",
-          "    string src=a[0],dst=a[1];",
-          "    IntPtr sh=IntPtr.Zero;",
-          "    if(!OpenPrinter(src,out sh,IntPtr.Zero)){Console.Error.WriteLine(\"FAIL:OpenSrc:\"+Marshal.GetLastWin32Error());return 1;}",
-          "    int sz=DocumentProperties(IntPtr.Zero,sh,src,IntPtr.Zero,IntPtr.Zero,0);",
-          "    if(sz<=0){ClosePrinter(sh);Console.Error.WriteLine(\"FAIL:DocProps:\"+sz);return 1;}",
-          "    IntPtr dm=Marshal.AllocHGlobal(sz);",
-          "    DocumentProperties(IntPtr.Zero,sh,src,dm,IntPtr.Zero,2);",
-          "    ClosePrinter(sh);",
-          "    IntPtr dh=IntPtr.Zero;",
-          "    if(!OpenPrinter(dst,out dh,IntPtr.Zero)){Marshal.FreeHGlobal(dm);Console.Error.WriteLine(\"FAIL:OpenDst:\"+Marshal.GetLastWin32Error());return 1;}",
-          "    IntPtr pi=Marshal.AllocHGlobal(IntPtr.Size);",
-          "    Marshal.WriteIntPtr(pi,dm);",
-          "    bool ok=SetPrinter(dh,9,pi,0);",
-          "    int we=Marshal.GetLastWin32Error();",
-          "    ClosePrinter(dh);Marshal.FreeHGlobal(pi);Marshal.FreeHGlobal(dm);",
-          "    if(ok){Console.WriteLine(\"OK\");return 0;}",
-          "    Console.Error.WriteLine(\"FAIL:SetPrinter:\"+we);return 1;",
+          "    try {",
+          "      Console.Error.WriteLine(\"START\");",
+          "      if(a.Length<2){Console.Error.WriteLine(\"FAIL:ARGS\");return 1;}",
+          "      string src=a[0],dst=a[1];",
+          "      Console.Error.WriteLine(\"src=\"+src+\" dst=\"+dst);",
+          "      IntPtr sh=IntPtr.Zero;",
+          "      bool openSrc=OpenPrinter(src,out sh,IntPtr.Zero);",
+          "      Console.Error.WriteLine(\"OpenSrc=\"+openSrc+\" handle=\"+sh+\" err=\"+Marshal.GetLastWin32Error());",
+          "      if(!openSrc){return 1;}",
+          "      int sz=DocumentProperties(IntPtr.Zero,sh,src,IntPtr.Zero,IntPtr.Zero,0);",
+          "      Console.Error.WriteLine(\"DocPropsSize=\"+sz+\" err=\"+Marshal.GetLastWin32Error());",
+          "      if(sz<=0){ClosePrinter(sh);return 1;}",
+          "      IntPtr dm=Marshal.AllocHGlobal(sz);",
+          "      int dpRet=DocumentProperties(IntPtr.Zero,sh,src,dm,IntPtr.Zero,2);",
+          "      Console.Error.WriteLine(\"DocPropsRead=\"+dpRet);",
+          "      ClosePrinter(sh);",
+          "      IntPtr dh=IntPtr.Zero;",
+          "      bool openDst=OpenPrinter(dst,out dh,IntPtr.Zero);",
+          "      Console.Error.WriteLine(\"OpenDst=\"+openDst+\" handle=\"+dh+\" err=\"+Marshal.GetLastWin32Error());",
+          "      if(!openDst){Marshal.FreeHGlobal(dm);return 1;}",
+          "      IntPtr pi=Marshal.AllocHGlobal(IntPtr.Size);",
+          "      Marshal.WriteIntPtr(pi,dm);",
+          "      bool ok=SetPrinter(dh,9,pi,0);",
+          "      int we=Marshal.GetLastWin32Error();",
+          "      Console.Error.WriteLine(\"SetPrinter=\"+ok+\" err=\"+we);",
+          "      ClosePrinter(dh);Marshal.FreeHGlobal(pi);Marshal.FreeHGlobal(dm);",
+          "      if(ok){Console.WriteLine(\"OK\");return 0;}",
+          "      return 1;",
+          "    } catch(Exception ex) {",
+          "      Console.Error.WriteLine(\"EXCEPTION:\"+ex.GetType().Name+\":\"+ex.Message);",
+          "      return 1;",
+          "    }",
           "  }",
           "}",
         ].join("\r\n");
 
-        const csFile = path2.join(userData, "ph_devmode_helper.cs");
+        const csFile = path2.join(userData, "ph_devmode_helper_v3.cs");
         fs2.writeFileSync(csFile, csSource, "utf8");
 
         // Find csc.exe — .NET Framework 4.x is always present on Win10/11
@@ -4691,9 +4707,7 @@ app.whenReady().then(async () => {
           const compileResult = spawnSync(cscExe, ["/nologo", "/optimize+", `/out:${helperExe}`, csFile], {
             timeout: 20000, encoding: "utf8", windowsHide: true,
           });
-          if (compileResult.status !== 0) {
-            console.warn("[DEVMODE] csc compile failed:", compileResult.stdout, compileResult.stderr);
-          }
+          console.log("[DEVMODE] compile status:", compileResult.status, compileResult.stdout, compileResult.stderr);
           try { fs2.unlinkSync(csFile); } catch {}
         }
       }
@@ -4705,9 +4719,8 @@ app.whenReady().then(async () => {
         const stdout = (result.stdout || "").trim();
         const stderr = (result.stderr || "").trim();
         cutModeApplied = stdout === "OK";
-        if (!cutModeApplied) {
-          console.warn("[DEVMODE] helper failed — stdout:", stdout || "(empty)", "| stderr:", stderr || "(empty)");
-        }
+        console.log("[DEVMODE] helper status:", result.status, "| error:", result.error?.message ?? "none");
+        console.log("[DEVMODE] stdout:", stdout || "(empty)", "| stderr:", stderr || "(empty)");
       }
     } catch (err) {
       console.warn("[DEVMODE] error:", err?.message);
