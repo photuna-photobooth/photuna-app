@@ -4638,10 +4638,12 @@ app.whenReady().then(async () => {
       // quirks, no here-string parse errors.
       const userData = app.getPath("userData");
       // Versioned filename — bump suffix when C# source changes to force recompile
-      const helperExe = path2.join(userData, "ph_devmode_helper_v3.exe");
+      // v4: allocate sz+1024 to absorb DocumentProperties overflow (it reports
+      // sz=1260 but writes slightly more, corrupting the heap before OK is printed).
+      // FreeHGlobal removed — process exits immediately after, OS reclaims memory.
+      const helperExe = path2.join(userData, "ph_devmode_helper_v4.exe");
 
       if (!fs2.existsSync(helperExe)) {
-        // Wrapped in try/catch so any unhandled exception prints to stderr
         const csSource = [
           "using System;",
           "using System.Runtime.InteropServices;",
@@ -4656,42 +4658,36 @@ app.whenReady().then(async () => {
           "  static extern bool SetPrinter(IntPtr h,int l,IntPtr b,int c);",
           "  static int Main(string[] a) {",
           "    try {",
-          "      Console.Error.WriteLine(\"START\");",
-          "      if(a.Length<2){Console.Error.WriteLine(\"FAIL:ARGS\");return 1;}",
+          "      if(a.Length<2) return 1;",
           "      string src=a[0],dst=a[1];",
-          "      Console.Error.WriteLine(\"src=\"+src+\" dst=\"+dst);",
           "      IntPtr sh=IntPtr.Zero;",
-          "      bool openSrc=OpenPrinter(src,out sh,IntPtr.Zero);",
-          "      Console.Error.WriteLine(\"OpenSrc=\"+openSrc+\" handle=\"+sh+\" err=\"+Marshal.GetLastWin32Error());",
-          "      if(!openSrc){return 1;}",
+          "      if(!OpenPrinter(src,out sh,IntPtr.Zero)) return 1;",
+          // Allocate sz + 1024 padding — DocumentProperties can write beyond the
+          // reported size with vendor drivers, causing heap corruption otherwise.
           "      int sz=DocumentProperties(IntPtr.Zero,sh,src,IntPtr.Zero,IntPtr.Zero,0);",
-          "      Console.Error.WriteLine(\"DocPropsSize=\"+sz+\" err=\"+Marshal.GetLastWin32Error());",
           "      if(sz<=0){ClosePrinter(sh);return 1;}",
-          "      IntPtr dm=Marshal.AllocHGlobal(sz);",
-          "      int dpRet=DocumentProperties(IntPtr.Zero,sh,src,dm,IntPtr.Zero,2);",
-          "      Console.Error.WriteLine(\"DocPropsRead=\"+dpRet);",
+          "      IntPtr dm=Marshal.AllocHGlobal(sz+1024);",
+          "      if(DocumentProperties(IntPtr.Zero,sh,src,dm,IntPtr.Zero,2)<1){ClosePrinter(sh);return 1;}",
           "      ClosePrinter(sh);",
           "      IntPtr dh=IntPtr.Zero;",
-          "      bool openDst=OpenPrinter(dst,out dh,IntPtr.Zero);",
-          "      Console.Error.WriteLine(\"OpenDst=\"+openDst+\" handle=\"+dh+\" err=\"+Marshal.GetLastWin32Error());",
-          "      if(!openDst){Marshal.FreeHGlobal(dm);return 1;}",
+          "      if(!OpenPrinter(dst,out dh,IntPtr.Zero)) return 1;",
           "      IntPtr pi=Marshal.AllocHGlobal(IntPtr.Size);",
           "      Marshal.WriteIntPtr(pi,dm);",
           "      bool ok=SetPrinter(dh,9,pi,0);",
-          "      int we=Marshal.GetLastWin32Error();",
-          "      Console.Error.WriteLine(\"SetPrinter=\"+ok+\" err=\"+we);",
-          "      ClosePrinter(dh);Marshal.FreeHGlobal(pi);Marshal.FreeHGlobal(dm);",
+          // Close handles before writing OK — don't free dm/pi, process exits next.
+          "      ClosePrinter(dh);",
           "      if(ok){Console.WriteLine(\"OK\");return 0;}",
+          "      Console.Error.WriteLine(\"FAIL:SetPrinter:\"+Marshal.GetLastWin32Error());",
           "      return 1;",
           "    } catch(Exception ex) {",
-          "      Console.Error.WriteLine(\"EXCEPTION:\"+ex.GetType().Name+\":\"+ex.Message);",
+          "      Console.Error.WriteLine(\"EX:\"+ex.Message);",
           "      return 1;",
           "    }",
           "  }",
           "}",
         ].join("\r\n");
 
-        const csFile = path2.join(userData, "ph_devmode_helper_v3.cs");
+        const csFile = path2.join(userData, "ph_devmode_helper_v4.cs");
         fs2.writeFileSync(csFile, csSource, "utf8");
 
         // Find csc.exe — .NET Framework 4.x is always present on Win10/11
