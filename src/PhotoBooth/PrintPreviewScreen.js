@@ -93,6 +93,7 @@ export default function PrintPreviewScreen({
       ? window.api || window.electron || null
       : null;
   const { isPortrait, isUnsupported, isTablet } = useLayout();
+  const isIpadApp = typeof window !== "undefined" && typeof window.Capacitor !== "undefined";
 
   /* ---------------------------- Load AdminDashboard state ---------------------------- */
   const [currentEvent, setCurrentEvent] = useState(event ?? null);
@@ -502,10 +503,10 @@ export default function PrintPreviewScreen({
     }
   }, [composedImage, sendPrintJob]);
 
-  // On iPad (no Electron API), auto-print for print-only mode
+  // On iPad (Capacitor), auto-print for print-only mode
   useEffect(() => {
     if (
-      isTablet &&
+      isIpadApp &&
       uploadMode === "none" &&
       !ipadPrintedRef.current &&
       (composedImage || composedImageUrl)
@@ -658,10 +659,10 @@ export default function PrintPreviewScreen({
 
         <div className="text-center" style={{ fontFamily: headerFont }}>
           <p style={{ color: headerFontColor, fontSize: isPortrait ? 'clamp(22px, 3vw, 56px)' : 'clamp(32px, 5vw, 80px)' }}>
-            {isTablet ? i18n.savedTitle1 : i18n.printingTitle1}
+            {isIpadApp ? i18n.savedTitle1 : i18n.printingTitle1}
           </p>
           <p className="italic font-semibold -mt-2" style={{ color: headerFontColor, fontSize: isPortrait ? 'clamp(22px, 3vw, 56px)' : 'clamp(32px, 5vw, 80px)' }}>
-            {isTablet ? i18n.savedTitle2 : i18n.printingTitle2}
+            {isIpadApp ? i18n.savedTitle2 : i18n.printingTitle2}
           </p>
         </div>
 
@@ -707,11 +708,11 @@ export default function PrintPreviewScreen({
           <span className="font-semibold" style={{ color: headerFontColor }}>
             {boothName ?? i18n.thanksBold}
           </span>
-          {galleryEnabled && !offlineMode && uploadMode === "system" ? i18n.thanksTail : ` ${isTablet ? i18n.tabletSaved : i18n.localSaved}`}
+          {galleryEnabled && !offlineMode && uploadMode === "system" ? i18n.thanksTail : ` ${isIpadApp ? i18n.tabletSaved : i18n.localSaved}`}
         </p>
 
         {/* iPad: AirPrint button via window.print() — hidden in print-only (auto-triggered instead) */}
-        {isTablet && uploadMode !== "none" && (composedImage || composedImageUrl) && (
+        {isIpadApp && uploadMode !== "none" && (composedImage || composedImageUrl) && (
           <button
             onClick={handleIpadPrint}
             className="mt-6 flex items-center gap-2 rounded-full font-semibold shadow-sm"
@@ -748,7 +749,7 @@ export default function PrintPreviewScreen({
         }
         style={isPortrait ? { padding: '1vh 4vw', order: 1 } : undefined}
       >
-        <div className={`w-full h-full flex items-center justify-center ${isPortrait ? "" : "max-w-[70%] max-h-[70%]"}`}>
+        <div className="w-full h-full flex items-center justify-center">
           {isStripTall ? (
             /* 2×6: show single strip only */
             <div

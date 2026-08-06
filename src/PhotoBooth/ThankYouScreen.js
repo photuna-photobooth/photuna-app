@@ -247,13 +247,17 @@ export default function ThankYouScreen({
         </div>
       )}
 
-      {/* Landscape: absolute logo header */}
+      {/* Landscape: absolute logo header — centered across full width */}
       {!isPortrait && (
-        <div className="absolute top-24 z-30">
-          {logoPath ? (<img src={logoPath} alt="logo" className="max-w-[500px] sm:max-w-[500px] md:max-w-[600px]" />) : (<>
-            <h1 className="font-bold" style={{ fontFamily: headerFont, color: headerFontColor, fontSize: 'clamp(22px, 3.5vw, 56px)' }}>{boothName}</h1>
-            {tagline && <p className="text-lg flex items-center justify-center" style={{ color: generalFontColor }}>{tagline}</p>}
-          </>)}
+        <div className="absolute top-10 left-0 right-0 z-30 flex flex-col items-center text-center">
+          {logoPath ? (
+            <img src={logoPath} alt="logo" className="max-w-[500px] sm:max-w-[500px] md:max-w-[600px]" />
+          ) : (
+            <>
+              <h1 className="font-bold" style={{ fontFamily: headerFont, color: headerFontColor, fontSize: 'clamp(22px, 3.5vw, 56px)' }}>{boothName}</h1>
+              {tagline && <p style={{ color: generalFontColor, fontSize: 'clamp(14px, 1.4vw, 24px)' }}>{tagline}</p>}
+            </>
+          )}
         </div>
       )}
 
