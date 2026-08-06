@@ -4641,15 +4641,24 @@ app.whenReady().then(async () => {
       // v4: allocate sz+1024 to absorb DocumentProperties overflow (it reports
       // sz=1260 but writes slightly more, corrupting the heap before OK is printed).
       // FreeHGlobal removed — process exits immediately after, OS reclaims memory.
-      const helperExe = path2.join(userData, "ph_devmode_helper_v4.exe");
+      // v5: patch dmDeviceName in the copied DEVMODE to match the destination
+      // printer name (WCHAR[32] = first 64 bytes). Windows validates this field
+      // when loading DEVMODE for a printer — a mismatch causes it to silently
+      // ignore the DEVMODE and fall back to driver defaults (2inch cut = Disable).
+      // Also use SetPrinter level 8 (system/global default) which is what the
+      // Printing Preferences dialog reads; level 9 is per-user and can be shadowed.
+      const helperExe = path2.join(userData, "ph_devmode_helper_v5.exe");
 
       if (!fs2.existsSync(helperExe)) {
         const csSource = [
           "using System;",
           "using System.Runtime.InteropServices;",
+          "using System.Text;",
           "class P {",
           "  [DllImport(\"winspool.drv\",CharSet=CharSet.Unicode,SetLastError=true)]",
           "  static extern bool OpenPrinter(string n,out IntPtr h,IntPtr d);",
+          "  [DllImport(\"winspool.drv\",CharSet=CharSet.Unicode,SetLastError=true)]",
+          "  static extern bool OpenPrinter2(string n,out IntPtr h,IntPtr d,IntPtr o);",
           "  [DllImport(\"winspool.drv\",SetLastError=true)]",
           "  static extern bool ClosePrinter(IntPtr h);",
           "  [DllImport(\"winspool.drv\",CharSet=CharSet.Unicode,SetLastError=true)]",
@@ -4660,24 +4669,33 @@ app.whenReady().then(async () => {
           "    try {",
           "      if(a.Length<2) return 1;",
           "      string src=a[0],dst=a[1];",
+          // Read full DEVMODE from source printer
           "      IntPtr sh=IntPtr.Zero;",
-          "      if(!OpenPrinter(src,out sh,IntPtr.Zero)) return 1;",
-          // Allocate sz + 1024 padding — DocumentProperties can write beyond the
-          // reported size with vendor drivers, causing heap corruption otherwise.
+          "      if(!OpenPrinter(src,out sh,IntPtr.Zero)){Console.Error.WriteLine(\"OpenSrc:\"+Marshal.GetLastWin32Error());return 1;}",
           "      int sz=DocumentProperties(IntPtr.Zero,sh,src,IntPtr.Zero,IntPtr.Zero,0);",
-          "      if(sz<=0){ClosePrinter(sh);return 1;}",
+          "      if(sz<=0){ClosePrinter(sh);Console.Error.WriteLine(\"DocSize:\"+sz);return 1;}",
           "      IntPtr dm=Marshal.AllocHGlobal(sz+1024);",
-          "      if(DocumentProperties(IntPtr.Zero,sh,src,dm,IntPtr.Zero,2)<1){ClosePrinter(sh);return 1;}",
+          "      if(DocumentProperties(IntPtr.Zero,sh,src,dm,IntPtr.Zero,2)<1){ClosePrinter(sh);Console.Error.WriteLine(\"DocRead fail\");return 1;}",
           "      ClosePrinter(sh);",
+          // Patch dmDeviceName (WCHAR[32], first 64 bytes) to match destination.
+          // Windows rejects DEVMODE whose dmDeviceName doesn't match the printer.
+          "      byte[] nameBytes=new byte[64];",
+          "      byte[] dstEncoded=Encoding.Unicode.GetBytes(dst.Length>31?dst.Substring(0,31):dst);",
+          "      Array.Copy(dstEncoded,nameBytes,Math.Min(dstEncoded.Length,62));",
+          "      Marshal.Copy(nameBytes,0,dm,64);",
+          // Apply as system default via SetPrinter level 8 — this is what
+          // Printing Preferences reads. Level 9 (per-user) can be shadowed by it.
           "      IntPtr dh=IntPtr.Zero;",
-          "      if(!OpenPrinter(dst,out dh,IntPtr.Zero)) return 1;",
+          "      if(!OpenPrinter(dst,out dh,IntPtr.Zero)){Console.Error.WriteLine(\"OpenDst:\"+Marshal.GetLastWin32Error());return 1;}",
           "      IntPtr pi=Marshal.AllocHGlobal(IntPtr.Size);",
           "      Marshal.WriteIntPtr(pi,dm);",
-          "      bool ok=SetPrinter(dh,9,pi,0);",
-          // Close handles before writing OK — don't free dm/pi, process exits next.
+          "      bool ok8=SetPrinter(dh,8,pi,0);",
+          "      int e8=Marshal.GetLastWin32Error();",
+          "      bool ok9=SetPrinter(dh,9,pi,0);",
+          "      int e9=Marshal.GetLastWin32Error();",
           "      ClosePrinter(dh);",
-          "      if(ok){Console.WriteLine(\"OK\");return 0;}",
-          "      Console.Error.WriteLine(\"FAIL:SetPrinter:\"+Marshal.GetLastWin32Error());",
+          "      Console.Error.WriteLine(\"L8=\"+ok8+\" e=\"+e8+\" L9=\"+ok9+\" e=\"+e9);",
+          "      if(ok8||ok9){Console.WriteLine(\"OK\");return 0;}",
           "      return 1;",
           "    } catch(Exception ex) {",
           "      Console.Error.WriteLine(\"EX:\"+ex.Message);",
@@ -4687,7 +4705,7 @@ app.whenReady().then(async () => {
           "}",
         ].join("\r\n");
 
-        const csFile = path2.join(userData, "ph_devmode_helper_v4.cs");
+        const csFile = path2.join(userData, "ph_devmode_helper_v5.cs");
         fs2.writeFileSync(csFile, csSource, "utf8");
 
         // Find csc.exe — .NET Framework 4.x is always present on Win10/11
