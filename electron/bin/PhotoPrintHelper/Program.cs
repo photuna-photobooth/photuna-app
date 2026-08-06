@@ -68,7 +68,7 @@ internal static class Program
                 Console.WriteLine($"Paper Size: {printDoc.DefaultPageSettings.PaperSize?.Width} x {printDoc.DefaultPageSettings.PaperSize?.Height}");
                 Console.WriteLine($"Landscape: {printDoc.DefaultPageSettings.Landscape}");
 
-                // Validate paper size is 4x6 in.
+                // Validate paper size is 4x6 in. (DS-RX1 reports as landscape 6×4 = 600×400)
                 var ps = printDoc.DefaultPageSettings.PaperSize;
                 bool is4x6 = ps != null && (
                     (Approximately(ps.Width, 400) && Approximately(ps.Height, 600)) ||
@@ -137,13 +137,17 @@ internal static class Program
 
     private static Bitmap PrepareImageForLayout(Image sourceImage, string layout)
     {
+        string normalized = NormalizeLayout(layout);
         var bitmap = new Bitmap(sourceImage);
-        // The composited image from Photuna is always in the correct orientation:
-        //   4x6  → 1200×1800 portrait
-        //   2x6  → 1200×1800 portrait (two strips side-by-side; STRIP printer DEVMODE cuts at 2")
-        //   6x4  → 1800×1200 landscape
-        //   6x2  → 1800×600  landscape
-        // No rotation is applied here; the image is sent as-is.
+
+        // The DS-RX1 (and most DNP printers) always operate with a landscape (6×4) page.
+        // Photuna composites portrait images for 4×6 and 2×6 (1200×1800).
+        // Rotate portrait outputs 90° CW → landscape (1800×1200) so the image fills
+        // the landscape page at full bleed (scale = 1/3 exactly). 6×4 and 6×2 composites
+        // are already landscape — no rotation needed.
+        if ((normalized == "4x6" || normalized == "2x6") && bitmap.Height > bitmap.Width)
+            bitmap.RotateFlip(RotateFlipType.Rotate90FlipNone);
+
         TrySetBitmapDpi(bitmap, 300, 300);
         return bitmap;
     }
@@ -152,20 +156,17 @@ internal static class Program
     {
         string normalized = NormalizeLayout(layout);
 
-        // Composite images from Photuna:
-        //   4x6  → 1200×1800 portrait → print on 4×6 portrait
-        //   2x6  → 1200×1800 portrait → print on 4×6 portrait (STRIP printer DEVMODE cuts at 2")
-        //   6x4  → 1800×1200 landscape → print on 4×6 landscape
-        //   6x2  → 1800×600  landscape → print on 6×2 landscape (STRIP printer DEVMODE cuts at 2")
-        bool isLandscape = normalized == "6x4" || normalized == "6x2";
-        bool isStrip26 = normalized == "2x6";   // portrait strip: treated as portrait 4×6 for paper
-        bool isStrip62 = normalized == "6x2";   // landscape strip: treated as landscape 6×2 for paper
+        // DS-RX1 (and most DNP printers) always use landscape page orientation.
+        //   4x6  → landscape 6×4 (600×400). Image pre-rotated 90° CW in PrepareImageForLayout.
+        //   2x6  → landscape 6×4 (600×400). Same sheet as 4x6; STRIP DEVMODE cuts at 2".
+        //   6x4  → landscape 6×4 (600×400). Image already landscape.
+        //   6x2  → landscape 6×2 (600×200) if available, else 6×4 fallback.
+        bool isStrip62 = normalized == "6x2";
 
-        // Paper dimensions: 2x6 uses same physical sheet as 4x6 (DNP STRIP printer exposes 4×6)
-        int widthHundredths  = isLandscape ? 600 : 400;
-        int heightHundredths = isLandscape ? (isStrip62 ? 200 : 400) : 600;
+        int widthHundredths  = 600;
+        int heightHundredths = isStrip62 ? 200 : 400;
 
-        bool landscape = isLandscape;
+        bool landscape = true;   // always landscape for DS-RX1
         printDoc.DefaultPageSettings.Landscape = landscape;
         printDoc.DefaultPageSettings.Margins = new Margins(0, 0, 0, 0);
         printDoc.OriginAtMargins = false;
@@ -176,7 +177,7 @@ internal static class Program
         foreach (PaperSize ps in printDoc.PrinterSettings.PaperSizes)
             Console.WriteLine($"PaperSize: Name={ps.PaperName}, W={ps.Width}, H={ps.Height}, RawKind={ps.RawKind}");
 
-        // Step 1: name match — for 2x6 strip, the DNP STRIP printer only exposes "4 x 6" paper
+        // Step 1: name match
         foreach (PaperSize ps in printDoc.PrinterSettings.PaperSizes)
         {
             string name = (ps.PaperName ?? "").ToLowerInvariant();
@@ -192,20 +193,12 @@ internal static class Program
 
             if (isStrip62)
             {
-                // 6×2: prefer an explicitly named strip/6x2 paper; fall through to 4x6 if not found
+                // 6×2 landscape strip: prefer explicit strip/6x2 name, then fall through to 4x6
                 if (isStripName) { best = ps; Console.WriteLine($"Using named 6x2 strip paper: {ps.PaperName}"); break; }
             }
-            else if (isStrip26)
-            {
-                // 2×6: prefer explicit strip name, but also accept 4×6 (STRIP printer DEVMODE handles cut)
-                if (isStripName) { best = ps; Console.WriteLine($"Using named 2x6 strip paper: {ps.PaperName}"); break; }
-                if (is46Name)    { best = ps; Console.WriteLine($"Using 4x6 paper for 2x6 strip: {ps.PaperName}"); break; }
-            }
-            else
-            {
-                // Regular 4×6 / 6×4: find 4×6 paper, exclude strip papers
-                if (is46Name && !isStripName) { best = ps; Console.WriteLine($"Using named 4x6 paper: {ps.PaperName}"); break; }
-            }
+
+            // For all layouts: find the 4×6 paper (excludes strip-named papers)
+            if (is46Name && !isStripName) { best = ps; Console.WriteLine($"Using named 4x6 paper: {ps.PaperName}"); break; }
         }
 
         // Step 2: size match
