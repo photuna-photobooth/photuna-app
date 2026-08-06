@@ -564,17 +564,18 @@ export default function PhotoBooth({ frames = [], onShortcut, initialEvent = nul
             event={selectedEvent}
             eventConfig={eventConfig}
             onDecline={() => setScreen("WELCOME")}
-            onAccept={async ({ consentVersion, consentedAt }) => {
+            onAccept={({ consentVersion, consentedAt }) => {
+              // Fire-and-forget: don't await the Supabase insert.
+              // In Electron the renderer-side fetch can hang on file:// origins —
+              // awaiting it would block the screen transition indefinitely.
               const pendingSessionId = `pre-${Date.now()}`;
-              try {
-                await supabase.from("booth_consent_logs").insert({
-                  session_id: pendingSessionId,
-                  event_id: selectedEvent?.id || "unknown",
-                  booth_id: selectedEvent?.boothId || null,
-                  consent_version: consentVersion,
-                  consented_at: consentedAt,
-                });
-              } catch {}
+              supabase.from("booth_consent_logs").insert({
+                session_id: pendingSessionId,
+                event_id: selectedEvent?.id || "unknown",
+                booth_id: selectedEvent?.boothId || null,
+                consent_version: consentVersion,
+                consented_at: consentedAt,
+              }).catch(() => {});
               setScreen("TEMPLATE");
             }}
           />
