@@ -4645,7 +4645,7 @@ app.whenReady().then(async () => {
       // v7 also writes the patched DEVMODE directly to HKCU\Printers\DevModes2\{dst}
       // in addition to SetPrinter level 9, to ensure the registry (which Printing
       // Preferences reads) gets the right value regardless of spooler caching.
-      const helperExe = path2.join(userData, "ph_devmode_helper_v7.exe");
+      const helperExe = path2.join(userData, "ph_devmode_helper_v7b.exe");
 
       if (!fs2.existsSync(helperExe)) {
         const csSource = [
@@ -4708,7 +4708,7 @@ app.whenReady().then(async () => {
           "        short dmExt=(short)Marshal.ReadInt16(dm,70);",
           "        Console.Error.WriteLine(\"dmFixed=\"+dmFix+\" dmExtra=\"+dmExt);",
           "        if(dmExt>0&&dmFix>0&&dmFix+dmExt<=dmLen){",
-          "          int ts=dmFix+Math.Max(0,dmExt-32);int tl=Math.Min(32,dmExt);",
+          "          int ts=dmFix+Math.Max(0,(int)dmExt-32);int tl=Math.Min(32,(int)dmExt);",
           "          byte[] tb=new byte[tl];",
           "          Marshal.Copy(new IntPtr(dm.ToInt64()+ts),tb,0,tl);",
           "          Console.Error.WriteLine(\"extraTail=\"+BitConverter.ToString(tb));",
@@ -4746,7 +4746,7 @@ app.whenReady().then(async () => {
           "}",
         ].join("\r\n");
 
-        const csFile = path2.join(userData, "ph_devmode_helper_v7.cs");
+        const csFile = path2.join(userData, "ph_devmode_helper_v7b.cs");
         fs2.writeFileSync(csFile, csSource, "utf8");
 
         // Find csc.exe — .NET Framework 4.x is always present on Win10/11
