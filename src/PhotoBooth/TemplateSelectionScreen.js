@@ -418,7 +418,7 @@ export default function TemplateSelectionScreen({
 
       {/* ── Body: 2-column (landscape) or reordered stack (portrait) ── */}
       <div
-        className={`flex-1 min-h-0 ${isPortrait ? "flex flex-col" : "grid grid-cols-[.8fr_.8fr] pb-[50px]"}`}
+        className={`flex-1 min-h-0 ${isPortrait ? "flex flex-col" : "grid grid-cols-2 pb-[50px]"}`}
       >
         {/* LEFT column: photo grid + counter + next button */}
         <div
@@ -427,7 +427,7 @@ export default function TemplateSelectionScreen({
         >
           {/* Photo grid */}
           <div
-            className={`flex-1 min-h-0 overflow-y-auto light-scroll ${isPortrait ? "" : "pt-4 px-20"}`}
+            className={`flex-1 min-h-0 overflow-y-auto light-scroll ${isPortrait ? "" : "pt-4 px-8"}`}
             style={isPortrait ? { padding: '2vh 4vw 1vh' } : undefined}
           >
             <div className={`grid gap-3 ${isPortrait ? "grid-cols-3" : "grid-cols-2"}`}>
@@ -457,7 +457,7 @@ export default function TemplateSelectionScreen({
 
           {/* Counter + buttons — pinned below photo grid */}
           <div
-            className={`shrink-0 flex items-center justify-between ${isPortrait ? "" : "px-20 py-4"}`}
+            className={`shrink-0 flex items-center justify-between ${isPortrait ? "" : "px-8 py-4"}`}
             style={isPortrait ? { padding: '1vh 4vw 2vh' } : undefined}
           >
             <span
@@ -511,7 +511,7 @@ export default function TemplateSelectionScreen({
         <div
           className={isPortrait
             ? "shrink-0 overflow-hidden flex items-center justify-center"
-            : "col-span-1 h-full overflow-y-auto light-scroll px-10 pt-4 pb-16"
+            : "col-span-1 h-full flex items-center justify-center px-8 pt-4 pb-8"
           }
           style={isPortrait ? { padding: '1vh 4vw', order: 1, height: '42vh' } : undefined}
         >
@@ -543,10 +543,10 @@ export default function TemplateSelectionScreen({
               }
             }
             switch (layoutKey) {
-              case "2x6": return "w-full max-w-[230px]";
-              case "6x2": return "w-full max-w-[620px]";
-              case "6x4": return "w-full max-w-[620px]";
-              default:    return "w-full max-w-[460px]";
+              case "2x6": return "h-[72vh] w-auto";
+              case "6x2": return "w-full max-w-[90%]";
+              case "6x4": return "w-full max-w-[90%]";
+              default:    return "h-[72vh] w-auto";
             }
           })();
 
