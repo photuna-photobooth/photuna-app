@@ -15,6 +15,13 @@ const mime = require('mime');
 const { HealthMonitor } = require('./healthMonitor');
 const ffmpegPath = require('ffmpeg-static');
 const ffmpeg = require('fluent-ffmpeg');
+// The motion-composite graph is shared with the render service so both produce
+// the same clip; see shared/motionComposite.js.
+const {
+  FINAL_MOTION_DURATION_SECONDS,
+  buildMotionCompositePlan,
+  resolveSlotSourceIndices,
+} = require('../shared/motionComposite');
 function resolveExecutablePath(executablePath) {
   const raw = String(executablePath || "");
   if (!raw) return raw;
@@ -85,7 +92,6 @@ const { PayMongoService, PaymentPollManager, GenericPollManager, XenditService, 
 
 const { createClient } = require("@supabase/supabase-js");
 
-const FINAL_MOTION_DURATION_SECONDS = 5;
 
 // Public configuration baked in at build time (scripts/generate-env.js). A
 // packaged app ships no .env, so without this main has no Supabase URL or anon
@@ -353,40 +359,8 @@ async function transcodeSlotClip(videoDir, slotIndex) {
   return { raw: rawFs, mp4: mp4Fs, gif: gifFs };
 }
 
-function clamp01(n, fallback = 0) {
-  const v = Number(n);
-  if (!Number.isFinite(v)) return fallback;
-  return Math.max(0, Math.min(1, v));
-}
-
 function clamp(n, min, max) {
   return Math.max(min, Math.min(max, n));
-}
-
-function toEven(n, min = 2) {
-  const v = Math.max(min, Math.round(Number(n) || min));
-  return v % 2 === 0 ? v : v + 1;
-}
-
-function toSlotPixels(slot, canvasW, canvasH, frame = null) {
-  const pad = Number(frame?.padding || 0);
-
-  const innerX = pad;
-  const innerY = pad;
-  const innerW = Math.max(2, canvasW - pad * 2);
-  const innerH = Math.max(2, canvasH - pad * 2);
-
-  return {
-    x: Math.round(innerX + clamp01(slot?.x) * innerW),
-    y: Math.round(innerY + clamp01(slot?.y) * innerH),
-    w: toEven(clamp01(slot?.w, 0.1) * innerW),
-    h: toEven(clamp01(slot?.h, 0.1) * innerH),
-    rotation: Number(slot?.rotation || 0),
-
-    scale: Math.max(1, Number(slot?.transform?.scale || 1)),
-    offsetX: Math.round(Number(slot?.transform?.offsetX || 0)),
-    offsetY: Math.round(Number(slot?.transform?.offsetY || 0)),
-  };
 }
 
 async function createAnimatedComposite({
@@ -407,47 +381,9 @@ async function createAnimatedComposite({
     storagePath,
   });
 
-  const slots = Array.isArray(layout?.slots) ? layout.slots : [];
-  if (!slots.length) {
+  if (!Array.isArray(layout?.slots) || !layout.slots.length) {
     throw new Error("Missing layout slots for animated composite.");
   }
-
-  const layoutKey = String(layout?.layoutKey || layout?.layout || "4x6").toLowerCase();
-
-  const SHEET_4x6 = { w: 1200, h: 1800 };
-  const SHEET_6x4 = { w: 1800, h: 1200 };
-  const STRIP_2x6 = { w: 600, h: 1800 };
-  const STRIP_6x2 = { w: 1800, h: 600 };
-
-  const isTallStrip = layoutKey === "2x6";
-  const isWideStrip = layoutKey === "6x2";
-  const isStripLayout = isTallStrip || isWideStrip;
-
-  // renderArea = the single strip area where slots are calculated
-  const renderAreaW = isTallStrip
-    ? STRIP_2x6.w
-    : isWideStrip
-      ? STRIP_6x2.w
-      : toEven(Number(layout?.width) || 1200);
-
-  const renderAreaH = isTallStrip
-    ? STRIP_2x6.h
-    : isWideStrip
-      ? STRIP_6x2.h
-      : toEven(Number(layout?.height) || 1800);
-
-  // final output sheet
-  const canvasW = isTallStrip
-    ? SHEET_4x6.w
-    : isWideStrip
-      ? SHEET_6x4.w
-      : renderAreaW;
-
-  const canvasH = isTallStrip
-    ? SHEET_4x6.h
-    : isWideStrip
-      ? SHEET_6x4.h
-      : renderAreaH;
 
   const outputFs = path.join(finalDir, "final-motion-1.mp4");
   if (fs.existsSync(outputFs)) {
@@ -457,215 +393,42 @@ async function createAnimatedComposite({
   let overlayFs = null;
   if (frameOverlayDataUrl && String(frameOverlayDataUrl).startsWith("data:image/")) {
     overlayFs = writeDataUrlToFile(finalDir, "motion-frame-overlay.png", frameOverlayDataUrl);
+    if (!fs.existsSync(overlayFs)) overlayFs = null;
   }
 
-  const activeSlots = [];
-  const resolvedSlotVideoMap = Array.isArray(slotVideoMap)
-    ? slotVideoMap
-    : Array.isArray(layout?.slotVideoMap)
-      ? layout.slotVideoMap
-      : [];
-
-  for (let i = 0; i < slots.length; i++) {
-    const slot = slots[i];
-
-    // Which original captured slot should be used for this final slot?
-    const mappedSourceIndex =
-      Number.isInteger(resolvedSlotVideoMap[i]) ? resolvedSlotVideoMap[i] : i;
-
+  // Guests reorder poses after shooting, so final slot i is not necessarily
+  // source clip i. Resolve the mapping, then find where each clip landed.
+  const slotFiles = resolveSlotSourceIndices(layout, slotVideoMap).map((sourceIndex) => {
     const candidates = [
-      path.join(burstDir, `slot${mappedSourceIndex}.mp4`),
-      path.join(burstDir, `slot${mappedSourceIndex}.webm`),
-      path.join(burstDir, `slot${mappedSourceIndex}_raw.webm`),
+      path.join(burstDir, `slot${sourceIndex}.mp4`),
+      path.join(burstDir, `slot${sourceIndex}.webm`),
+      path.join(burstDir, `slot${sourceIndex}_raw.webm`),
     ];
+    return candidates.find((p) => fs.existsSync(p)) || null;
+  });
 
-    const file = candidates.find((p) => fs.existsSync(p));
-    if (!file) continue;
-
-    activeSlots.push({
-      inputIndex: activeSlots.length + 1,
-      file,
-      slot,
-      px: toSlotPixels(slot, renderAreaW, renderAreaH, layout?.frame || null),
-    });
-  }
-
-  if (!activeSlots.length) {
-    throw new Error("No burst slot videos found to compose.");
-  }
+  const plan = buildMotionCompositePlan({
+    layout,
+    slotFiles,
+    overlayFile: overlayFs,
+    backgroundColor,
+    watermark,
+  });
 
   const command = ffmpeg();
-
-  const safeBg = String(backgroundColor || "#ffffff");
-  command.input(`color=c=${safeBg}@0:s=${renderAreaW}x${renderAreaH}:d=${FINAL_MOTION_DURATION_SECONDS}`);
-  command.inputFormat("lavfi");
-
-  activeSlots.forEach(({ file }) => {
-    command.input(file);
-  });
-
-  if (overlayFs && fs.existsSync(overlayFs)) {
-    command.input(overlayFs);
-  }
-
-  const filters = [];
-  let last = "[0:v]";
-
-  activeSlots.forEach((entry, i) => {
-    const inLabel = `[${entry.inputIndex}:v]`;
-    const zoomed = `[s${i}a]`;
-    const placed = `[s${i}b]`;
-    const slotted = `[s${i}c]`;
-    const rotated = `[s${i}d]`;
-    const overlaid = `[s${i}e]`;
-
-    const {
-      x,
-      y,
-      w,
-      h,
-      rotation,
-      scale = 1,
-      offsetX = 0,
-      offsetY = 0,
-    } = entry.px;
-
-    const radians = ((rotation || 0) * Math.PI) / 180;
-    const zoomH = toEven(h * scale);
-
-    // 1) fit by height first, matching preview behavior better than "increase"
-    filters.push(
-      `${inLabel}setpts=N/(30*TB),fps=30,trim=duration=${FINAL_MOTION_DURATION_SECONDS},scale=-2:${zoomH}${zoomed}`
-    );
-
-    // 2) create a working frame that is never smaller than the zoomed input
-    const padW = `max(iw\\,${w})`;
-    const padH = `max(ih\\,${h})`;
-    const padX = `max(0\\,(ow-iw)/2+${offsetX})`;
-    const padY = `max(0\\,(oh-ih)/2+${offsetY})`;
-
-    filters.push(
-      `${zoomed}pad=${padW}:${padH}:${padX}:${padY}:color=white@0${placed}`
-    );
-
-    // 3) crop the final slot window from the centered working frame
-    const cropX = `max(0\\,(iw-${w})/2)`;
-    const cropY = `max(0\\,(ih-${h})/2)`;
-
-    filters.push(
-      `${placed}crop=${w}:${h}:${cropX}:${cropY}${slotted}`
-    );
-
-    // 4) rotate if needed
-    if (rotation) {
-      filters.push(
-        `${slotted}rotate=${radians}:fillcolor=none:ow=${w}:oh=${h}${rotated}`
-      );
+  for (const input of plan.inputs) {
+    if (input.kind === "lavfi") {
+      command.input(input.spec);
+      command.inputFormat("lavfi");
     } else {
-      filters.push(`${slotted}null${rotated}`);
+      command.input(input.path);
     }
-
-    // 5) overlay and keep last frame
-    filters.push(
-      `${last}${rotated}overlay=${x}:${y}:eof_action=repeat:repeatlast=1${overlaid}`
-    );
-
-    last = overlaid;
-  });
-
-  if (overlayFs && fs.existsSync(overlayFs)) {
-    const overlayInputIndex = activeSlots.length + 1;
-
-    if (isStripLayout) {
-      const stripFrameScaled = `[stripFrameScaled]`;
-      const stripFramed = `[stripFramed]`;
-
-      // Match final.png: overlay is drawn on the single strip first
-      filters.push(
-        `[${overlayInputIndex}:v]scale=${renderAreaW}:${renderAreaH}${stripFrameScaled}`,
-        `${last}${stripFrameScaled}overlay=0:0${stripFramed}`
-      );
-
-      last = stripFramed;
-    } else {
-      const frameScaled = `[frameScaled]`;
-      const finalOut = `[finalOut]`;
-
-      filters.push(
-        `[${overlayInputIndex}:v]scale=${canvasW}:${canvasH}${frameScaled}`,
-        `${last}${frameScaled}overlay=0:0${finalOut}`
-      );
-
-      last = finalOut;
-    }
-  }
-
-  if (isStripLayout) {
-    const stripA = `[stripDupA]`;
-    const stripB = `[stripDupB]`;
-    const duplicated = `[duplicatedSheet]`;
-
-    filters.push(
-      `${last}split=2${stripA}${stripB}`
-    );
-
-    if (isTallStrip) {
-      filters.push(
-        `color=c=white:s=${canvasW}x${canvasH}:d=${FINAL_MOTION_DURATION_SECONDS}[stripSheetBase]`,
-        `[stripSheetBase]${stripA}overlay=0:0[tmpStrip1]`,
-        `[tmpStrip1]${stripB}overlay=${renderAreaW}:0${duplicated}`
-      );
-    } else if (isWideStrip) {
-      filters.push(
-        `color=c=white:s=${canvasW}x${canvasH}:d=${FINAL_MOTION_DURATION_SECONDS}[stripSheetBase]`,
-        `[stripSheetBase]${stripA}overlay=0:0[tmpStrip1]`,
-        `[tmpStrip1]${stripB}overlay=0:${renderAreaH}${duplicated}`
-      );
-    }
-
-    // first move last to the duplicated sheet
-    last = duplicated;
-
-    // then add divider on the duplicated sheet
-    const dividerOut = `[dividerOut]`;
-
-    if (isTallStrip) {
-      filters.push(
-        `color=c=black@0.15:s=2x${canvasH}:d=${FINAL_MOTION_DURATION_SECONDS}[dividerLine]`,
-        `${last}[dividerLine]overlay=${renderAreaW}:0${dividerOut}`
-      );
-    } else if (isWideStrip) {
-      filters.push(
-        `color=c=black@0.15:s=${canvasW}x2:d=${FINAL_MOTION_DURATION_SECONDS}[dividerLine]`,
-        `${last}[dividerLine]overlay=0:${renderAreaH}${dividerOut}`
-      );
-    }
-
-    last = dividerOut;
-  }
-
-  if (watermark) {
-    const watermarkedOut = "[watermarkedOut]";
-    const fontSize = Math.max(36, Math.round(Math.min(canvasW, canvasH) * 0.045));
-    filters.push(
-      `${last}drawtext=text='STUDIO PHOTUNA TRIAL':fontcolor=white@0.70:bordercolor=black@0.45:borderw=3:fontsize=${fontSize}:x=(w-text_w)/2:y=h-(text_h*2.2)${watermarkedOut}`
-    );
-    last = watermarkedOut;
   }
 
   await new Promise((resolve, reject) => {
     command
-      .complexFilter(filters, last.replace(/^\[|\]$/g, ""))
-      .outputOptions([
-        `-t ${FINAL_MOTION_DURATION_SECONDS}`,
-        "-an",
-        "-r 30",
-        "-c:v libx264",
-        "-pix_fmt yuv420p",
-        "-preset veryfast",
-        "-crf 23",
-        "-movflags +faststart",
-      ])
+      .complexFilter(plan.filters, plan.outputLabel)
+      .outputOptions(plan.outputOptions)
       .on("start", (cmd) => console.log("[buildFinalMotion] ffmpeg:", cmd))
       .on("end", resolve)
       .on("error", reject)

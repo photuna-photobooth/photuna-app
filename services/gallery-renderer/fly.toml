@@ -1,0 +1,33 @@
+# Tokyo: nearest Fly region to the Supabase project in ap-northeast-2 (Seoul).
+# The heavy traffic is service-to-database, not booth-to-service.
+app = "photuna-gallery-renderer"
+primary_region = "nrt"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  STORAGE_BUCKET = "studiophotuna"
+  MAX_CONCURRENT = "2"
+  SWEEP_INTERVAL_MS = "120000"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # Scale to zero when idle, which is most of the time at current volume. The
+  # sweeper is what catches anything that arrives while the machine is stopped:
+  # it runs on the next start, so a missed nudge costs minutes, not the clip.
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [[http_service.checks]]
+    grace_period = "10s"
+    interval = "30s"
+    method = "GET"
+    path = "/health"
+    timeout = "5s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "1gb"
