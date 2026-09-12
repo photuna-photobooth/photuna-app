@@ -183,7 +183,9 @@ const apiImpl = {
     const settings = await ipcRenderer.invoke("store:getSettings", ctx);
     const storagePath = settings?.storagePath ?? "";
 
-    const accessToken = readSupabaseAccessToken();
+    // The caller's token has been refreshed if it needed it; the stored one
+    // is only a fallback for callers that do not supply one.
+    const accessToken = payload?.accessToken || readSupabaseAccessToken();
 
     return ipcRenderer.invoke("gallery:create", {
       ...payload,

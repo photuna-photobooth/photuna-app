@@ -6,6 +6,7 @@ import { normalizeToFileUrl } from "../utils/mediaUrl";
 import { loadGoogleFont } from "../utils/fontLoader";
 import { useLayout } from "../utils/useLayout";
 import { isNativeApp } from "../platform/deviceIdentity";
+import { supabase } from "../services/supabase";
 
 /* ----------------------- Minimal i18n labels ----------------------- */
 const LOCALES = {
@@ -206,7 +207,19 @@ export default function PrintPreviewScreen({
         setIsPreparing(true);
         setGalleryError("");
 
+        // Ask the client for the session rather than reading the stored token:
+        // this refreshes it if it has expired, which on a booth left running
+        // through a long event it usually has. Main cannot do this itself.
+        let accessToken = null;
+        try {
+          const { data } = await supabase.auth.getSession();
+          accessToken = data?.session?.access_token || null;
+        } catch (sessionErr) {
+          console.warn("[gallery] could not read the session", sessionErr);
+        }
+
         const result = await api?.createOnlineGallery?.({
+          accessToken,
           composedImage,
           composedImagePath,
           composedImageUrl,
