@@ -129,6 +129,43 @@ function isSupabaseAdminConfigured() {
   );
 }
 
+const GALLERY_LOG_MAX_BYTES = 2 * 1024 * 1024;
+
+function galleryLog(step, detail) {
+  const line = JSON.stringify({ at: new Date().toISOString(), step, ...detail }) + "\n";
+  try {
+    console.log("[gallery]", step, detail);
+    const logDir = path.join(app.getPath("userData"), "logs");
+    fs.mkdirSync(logDir, { recursive: true });
+    const file = path.join(logDir, "gallery.log");
+    // Keep one rotation, so a busy booth cannot fill the disk with its own log.
+    try {
+      if (fs.statSync(file).size > GALLERY_LOG_MAX_BYTES) {
+        fs.renameSync(file, file + ".1");
+      }
+    } catch (_) {}
+    fs.appendFileSync(file, line);
+  } catch (_) {
+    // Logging must never be the reason an upload fails.
+  }
+}
+
+// Packaged builds ship no service-role key, so anything that reaches Supabase
+// from main has to go through the signed-in operator's token. getSupabaseAdmin()
+// throws when the key is absent; this is the accessor to use on any path a
+// normal operator takes.
+function getSupabaseAsUser(accessToken) {
+  const asUser = getSupabaseWithToken(accessToken);
+  if (asUser) return asUser;
+  // Development machines have the key and can still fall back to it.
+  if (isSupabaseAdminConfigured()) return getSupabaseAdmin();
+  // Otherwise the operator is signed out, or their session has expired. Say so,
+  // rather than "not configured on this build", which sends them nowhere.
+  throw new Error(
+    "You are signed out, so this session could not be uploaded. Sign in again and retry."
+  );
+}
+
 // Build an authenticated Supabase client using the user's JWT (no service-role key needed).
 function getSupabaseWithToken(accessToken) {
   const supabaseUrl = getPrivateConfigValue("SUPABASE_URL") || getPrivateConfigValue("REACT_APP_SUPABASE_URL");
@@ -861,8 +898,18 @@ async function createOnlineGalleryInMain(payload = {}) {
     console.warn("[gallery:create] burst video collection skipped:", burstErr?.message);
   }
 
-  const supabaseAdminClient =
-    getSupabaseWithToken(accessToken) || getSupabaseAdmin();
+  const usingToken = Boolean(getSupabaseWithToken(accessToken));
+  galleryLog("client", {
+    sessionId,
+    eventId,
+    hasUserId: Boolean(userId),
+    hasAccessToken: Boolean(accessToken),
+    // Never log the token itself, only whether one arrived.
+    client: usingToken ? "user-token" : "service-role",
+    serviceRoleAvailable: isSupabaseAdminConfigured(),
+  });
+
+  const supabaseAdminClient = getSupabaseAsUser(accessToken);
 
   const uploadResult = await uploadSessionImages({
     supabase: supabaseAdminClient,
@@ -874,7 +921,12 @@ async function createOnlineGalleryInMain(payload = {}) {
     burstVideoBlobs,
   });
 
-  console.log("[gallery:create] uploadResult:", uploadResult);
+  galleryLog("uploaded", {
+    sessionId,
+    finalUrl: Boolean(uploadResult?.finalUrl),
+    photoCount: uploadResult?.photoUrls?.length || 0,
+    burstErrors: uploadResult?.burstUploadErrors || [],
+  });
 
   // Fetch plan-aware expiry from DB; falls back to 7 days if the RPC fails (e.g. free plan / no row)
   let expiresAt;
@@ -909,9 +961,17 @@ async function createOnlineGalleryInMain(payload = {}) {
 
   if (galleryError) {
     galleryWarning = galleryError.message || "Unable to save gallery metadata";
-    console.error("[gallery:create] metadata upsert failed:", galleryWarning);
+    galleryLog("metadata-failed", {
+      sessionId,
+      message: galleryWarning,
+      code: galleryError.code || null,
+      details: galleryError.details || null,
+      hint: galleryError.hint || null,
+    });
     throw new Error(`Unable to save gallery metadata: ${galleryWarning}`);
   }
+
+  galleryLog("done", { sessionId, slug });
 
   return {
     ok: true,
@@ -1880,7 +1940,13 @@ ipcMain.handle("gallery:create", async (_event, payload) => {
 
     return await createOnlineGalleryInMain(payload);
   } catch (err) {
-    console.error("[gallery:create] failed:", err);
+    galleryLog("failed", {
+      sessionId: payload?.sessionId || null,
+      eventId: payload?.eventId || null,
+      message: err?.message || String(err),
+      name: err?.name || null,
+      stack: err?.stack ? String(err.stack).split("\n").slice(0, 4).join(" | ") : null,
+    });
     return {
       ok: false,
       error: err?.message || "Failed to create online gallery",
@@ -1888,10 +1954,10 @@ ipcMain.handle("gallery:create", async (_event, payload) => {
   }
 });
 
-ipcMain.handle("gallery:get-event-sessions", async (_event, { eventId, userId } = {}) => {
+ipcMain.handle("gallery:get-event-sessions", async (_event, { eventId, userId, accessToken } = {}) => {
   try {
     if (!eventId) return { ok: false, sessions: [], error: "eventId required" };
-    const admin = getSupabaseAdmin();
+    const admin = getSupabaseAsUser(accessToken);
     let query = admin
       .from("galleries")
       .select("slug, session_id, final_url, final_video_url, expires_at, created_at")
@@ -1919,10 +1985,10 @@ ipcMain.handle("gallery:get-event-sessions", async (_event, { eventId, userId } 
 
 // Create (or retrieve) a pre-session event-level gallery QR — no photos needed.
 // Allows the admin to show clients a QR code before any sessions start.
-ipcMain.handle("gallery:create-event-qr", async (_event, { eventId, userId } = {}) => {
+ipcMain.handle("gallery:create-event-qr", async (_event, { eventId, userId, accessToken } = {}) => {
   try {
     if (!eventId) return { ok: false, error: "eventId required" };
-    const admin = getSupabaseAdmin();
+    const admin = getSupabaseAsUser(accessToken);
     const galleryBaseUrl = "https://gallery.studiophotuna.com/gallery";
 
     // Look up the user's gallery tier so branding is not gated off

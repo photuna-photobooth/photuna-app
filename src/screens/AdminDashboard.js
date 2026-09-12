@@ -14,7 +14,7 @@ import WebFont from "webfontloader";
 import PlanCards from "../components/subscription/PlanCards";
 import { useAuth } from "../context/AuthContext";
 import * as licensingApi from "../services/licensingApi";
-import { getDeviceIdentity, deviceTypeLabel, deviceDisplayName, takesSeat } from "../platform/deviceIdentity";
+import { getDeviceIdentity, deviceTypeLabel, deviceDisplayName, takesSeat, isNativeApp } from "../platform/deviceIdentity";
 import { buildReceiptHtml, loadLogoDataUrl, formatReceiptMoney, formatReceiptDate } from "../lib/receiptDocument";
 import SubscriptionSummary from "../components/subscription/SubscriptionSummary";
 import TemplateEditor from "../components/TemplateEditor";
@@ -30,8 +30,10 @@ const native =
 
 // True when running inside the Capacitor iOS app (iPad). window.Capacitor is
 // injected by the Capacitor runtime and is absent in Electron.
-const isIpadApp =
-  typeof window !== "undefined" && typeof window.Capacitor !== "undefined";
+// Whether this really is the iOS/Android build. window.Capacitor exists in
+// every build that bundles @capacitor/core, so the old test made a Windows
+// booth show "AirPrint (iOS)" in place of its own printers.
+const isIpadApp = isNativeApp();
 
 // A small, sensible starter list — add/remove as you like:
 const GOOGLE_FONTS = [

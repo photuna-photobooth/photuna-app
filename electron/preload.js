@@ -18,6 +18,25 @@ async function withIdentityCtx(ctx) {
 }
 
 /**
+ * The renderer holds the Supabase session; main does not. Reading the access
+ * token here lets main talk to Supabase as the signed-in operator, which is the
+ * only way a packaged build can reach the database: it ships no service-role
+ * key, and must not.
+ */
+function readSupabaseAccessToken() {
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith("sb-") && key.endsWith("-auth-token")) {
+        const session = JSON.parse(localStorage.getItem(key) || "{}");
+        return session?.access_token || null;
+      }
+    }
+  } catch (_) {}
+  return null;
+}
+
+/**
  * Helper: convert a File (<input type="file">) to a Uint8Array of bytes.
  */
 async function fileToBytes(file) {
@@ -164,19 +183,7 @@ const apiImpl = {
     const settings = await ipcRenderer.invoke("store:getSettings", ctx);
     const storagePath = settings?.storagePath ?? "";
 
-    // Read the Supabase access token from localStorage so main.js can upload
-    // as an authenticated user (without needing the service-role key).
-    let accessToken = null;
-    try {
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key && key.startsWith('sb-') && key.endsWith('-auth-token')) {
-          const session = JSON.parse(localStorage.getItem(key) || '{}');
-          accessToken = session?.access_token || null;
-          break;
-        }
-      }
-    } catch (_) {}
+    const accessToken = readSupabaseAccessToken();
 
     return ipcRenderer.invoke("gallery:create", {
       ...payload,
@@ -191,6 +198,7 @@ const apiImpl = {
     return ipcRenderer.invoke("gallery:get-event-sessions", {
       eventId,
       userId: userId ?? ctx?.userId ?? null,
+      accessToken: readSupabaseAccessToken(),
     });
   },
 
@@ -199,6 +207,7 @@ const apiImpl = {
     return ipcRenderer.invoke("gallery:create-event-qr", {
       eventId,
       userId: userId ?? ctx?.userId ?? null,
+      accessToken: readSupabaseAccessToken(),
     });
   },
 

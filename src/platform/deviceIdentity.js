@@ -98,6 +98,20 @@ export async function getDeviceIdentity() {
   return null;
 }
 
+// Is this the app running natively on iOS or Android?
+//
+// Not "does window.Capacitor exist": @capacitor/core defines that global
+// wherever it is loaded, Electron and browser included, so testing for it told
+// a Windows booth it was an iPad and offered AirPrint instead of its printers.
+// Not a screen-size guess either — a resized window on Windows is not a tablet.
+export function isNativeApp() {
+  try {
+    return Capacitor.isNativePlatform();
+  } catch {
+    return false;
+  }
+}
+
 // Human label for a device_type, shared by every screen that lists devices.
 export function deviceTypeLabel(type, platformFallback) {
   switch (String(type || "").toLowerCase()) {

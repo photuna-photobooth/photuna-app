@@ -5,6 +5,7 @@ import QRCode from "react-qr-code";
 import { normalizeToFileUrl } from "../utils/mediaUrl";
 import { loadGoogleFont } from "../utils/fontLoader";
 import { useLayout } from "../utils/useLayout";
+import { isNativeApp } from "../platform/deviceIdentity";
 
 /* ----------------------- Minimal i18n labels ----------------------- */
 const LOCALES = {
@@ -97,7 +98,11 @@ export default function PrintPreviewScreen({
       ? window.api || window.electron || null
       : null;
   const { isPortrait, isUnsupported, isTablet } = useLayout();
-  const isIpadApp = isTablet;
+  // The printing path follows the platform, never the window size: a Windows
+  // booth in a smaller window matched the tablet layout test and would take the
+  // AirPrint route instead of printing to its own printer. isTablet still
+  // decides layout, which is what it is for.
+  const isIpadApp = isNativeApp();
 
   /* ---------------------------- Load AdminDashboard state ---------------------------- */
   const [currentEvent, setCurrentEvent] = useState(event ?? null);
@@ -548,7 +553,7 @@ export default function PrintPreviewScreen({
       ipadPrintedRef.current = true;
       handleIpadPrint();
     }
-  }, [isTablet, uploadMode, composedImage, composedImageUrl, handleIpadPrint]);
+  }, [isIpadApp, uploadMode, composedImage, composedImageUrl, handleIpadPrint]);
 
   // Navigate to next page once the page timer hits zero (do NOT print again here)
   useEffect(() => {
