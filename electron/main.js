@@ -776,18 +776,31 @@ async function createOnlineGalleryInMain(payload = {}) {
     : composedSource.startsWith("http") ? "http-url"
     : "absolute-path";
 
-  console.log("[gallery:create] composedSource", {
+  galleryLog("source", {
+    sessionId,
     type: srcType,
-    length: composedSource?.length,
-    prefix: composedSource?.substring(0, 80),
+    length: composedSource?.length || 0,
+    // A path or file URL is safe to record and is usually what identifies the
+    // problem; a data URL is truncated so the log cannot grow a whole image.
+    prefix: srcType === "data-url" ? "data:…" : composedSource?.substring(0, 120),
   });
 
   if (!composedSource) {
     throw new Error("No valid composed image found for upload.");
   }
 
-  const finalBlob = toBlobLike(await sourceToBuffer(composedSource));
-  console.log("[gallery:create] finalBlob built", { size: finalBlob?.size, type: finalBlob?.type });
+  let finalBlob;
+  try {
+    finalBlob = toBlobLike(await sourceToBuffer(composedSource));
+  } catch (readErr) {
+    galleryLog("source-unreadable", {
+      sessionId,
+      type: srcType,
+      message: readErr?.message || String(readErr),
+    });
+    throw new Error(`Could not read the composed photo (${srcType}): ${readErr?.message || readErr}`);
+  }
+  galleryLog("final-blob", { sessionId, size: finalBlob?.size || 0, type: finalBlob?.type || null });
 
   const photoSources = Array.isArray(payload?.photos) ? payload.photos.filter(Boolean) : [];
   console.log("[gallery:create] photoSources", photoSources.map((s) => ({

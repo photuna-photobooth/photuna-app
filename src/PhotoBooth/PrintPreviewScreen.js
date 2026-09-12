@@ -747,7 +747,15 @@ export default function PrintPreviewScreen({
               </div>
             )}
             {galleryError && (
-              <div className="mt-2 text-center text-xs text-red-600">Gallery upload failed</div>
+              // The reason matters more than the fact. This used to print a
+              // fixed "Gallery upload failed" and discard the real message,
+              // which left an operator — and us — with nothing to act on.
+              <div className="mt-2 text-center">
+                <div className="text-xs text-red-600">Gallery upload failed</div>
+                <div className="mt-1 text-[10px] leading-snug text-red-500 break-words max-w-[256px] mx-auto">
+                  {galleryError}
+                </div>
+              </div>
             )}
           </div>
         )}
