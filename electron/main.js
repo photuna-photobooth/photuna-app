@@ -87,8 +87,19 @@ const { createClient } = require("@supabase/supabase-js");
 
 const FINAL_MOTION_DURATION_SECONDS = 5;
 
+// Public configuration baked in at build time (scripts/generate-env.js). A
+// packaged app ships no .env, so without this main has no Supabase URL or anon
+// key and cannot talk to Supabase at all.
+let bakedConfig = {};
+try {
+  bakedConfig = require("./env.generated.js") || {};
+} catch (_) {
+  // Absent in a source checkout that has not been built; .env covers that case.
+}
+
 function getPrivateConfigValue(key) {
-  const value = process.env[key] ?? "";
+  // A real environment variable still wins, so a machine can override a build.
+  const value = process.env[key] ?? bakedConfig[key] ?? "";
   return typeof value === "string" ? value.trim() : value;
 }
 

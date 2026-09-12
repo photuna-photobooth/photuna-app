@@ -70,3 +70,6 @@ yarn-error.log*
 # Created by the Supabase CLI / Deno when bundling edge functions
 supabase/functions/.npm-cache/
 supabase/.temp/
+
+# Baked build-time public config (scripts/generate-env.js)
+electron/env.generated.js

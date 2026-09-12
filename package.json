@@ -66,8 +66,8 @@
     "build": "cross-env CI=false REACT_APP_VERSION=$npm_package_version react-scripts build",
     "build:pwa": "cross-env PUBLIC_URL=/ CI=false REACT_APP_VERSION=$npm_package_version react-scripts build",
     "test": "react-scripts test",
-    "dist": "cross-env CI=false REACT_APP_VERSION=$npm_package_version react-scripts build && electron-builder",
-    "dist:win": "cross-env CI=false REACT_APP_VERSION=$npm_package_version react-scripts build && electron-builder --win",
+    "dist": "node scripts/generate-env.js && cross-env CI=false REACT_APP_VERSION=$npm_package_version react-scripts build && electron-builder",
+    "dist:win": "node scripts/generate-env.js && cross-env CI=false REACT_APP_VERSION=$npm_package_version react-scripts build && electron-builder --win",
     "eject": "react-scripts eject",
     "start:all": "concurrently -n WEB,ELECTRON -c \"bgBlue.bold,bgMagenta.bold\" \"npm:react-start\" \"npm:electron-start\"",
     "rebuild:native": "electron-rebuild -f -w better-sqlite3"
