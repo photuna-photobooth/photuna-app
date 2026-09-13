@@ -37,13 +37,17 @@ const TIMEOUTS_MS = {
   capture: 15_000,
   getSettings: 5_000,
   setSetting: 5_000,
+  startLiveView: 10_000,
+  stopLiveView: 5_000,
+  liveViewFrame: 4_000,
   shutdown: 3_000,
 };
 
 const STARTUP_TIMEOUT_MS = 10_000;
 const RESTART_WINDOW_MS = 60_000;
 const MAX_EXITS_IN_WINDOW = 3;
-const MAX_LINE_LENGTH = 1_000_000;
+// A live view frame arrives as base64 JPEG in one line.
+const MAX_LINE_LENGTH = 12_000_000;
 
 function resolveHelperPath({ resourcesPath, appPath } = {}) {
   const here = __dirname;
@@ -141,6 +145,9 @@ class CameraHelper extends EventEmitter {
   disconnect() { return this.request("disconnect"); }
   getSettings() { return this.request("getSettings"); }
   setSetting(key, value) { return this.request("setSetting", { key, value }); }
+  startLiveView() { return this.request("startLiveView"); }
+  stopLiveView() { return this.request("stopLiveView"); }
+  liveViewFrame() { return this.request("liveViewFrame"); }
 
   capture({ directory, fileName, timeoutMs = 10_000 }) {
     // The helper gets its own deadline slightly inside ours, so it can report

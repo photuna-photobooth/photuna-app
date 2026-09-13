@@ -37,6 +37,11 @@ public sealed class SonyBackend : ICameraBackend
     private bool _connected;
     private string? _model;
 
+    private bool _liveView;
+    private byte[] _frameBuffer = new byte[2 * 1024 * 1024];
+    private uint _lastFrameNo = uint.MaxValue;
+    private long _frameCount;
+
     public string Name => "sony";
 
     private static bool SdkPresent =>
@@ -193,6 +198,46 @@ public sealed class SonyBackend : ICameraBackend
         return GetSettings();
     }
 
+    public void StartLiveView()
+    {
+        RequireConnected();
+        var rc = _bridge!.StartLiveView();
+        if (rc != SonyBridge.Ok)
+            throw new CameraException("LIVE_VIEW_UNAVAILABLE",
+                $"The Sony camera did not start live view (bridge {rc}, SDK 0x{_bridge.LastSdkError():X}).");
+        _lastFrameNo = uint.MaxValue;
+        _liveView = true;
+    }
+
+    public void StopLiveView()
+    {
+        if (!_liveView || _bridge is null) return;
+        _liveView = false;
+        try { _bridge.StopLiveView(); } catch (Exception ex) { Log($"stop live view failed: {ex.Message}"); }
+    }
+
+    public LiveViewFrame? GetLiveViewFrame()
+    {
+        RequireConnected();
+        if (!_liveView)
+            throw new CameraException("LIVE_VIEW_OFF", "Live view is not started.");
+
+        var rc = _bridge!.LiveViewFrame(_frameBuffer, _frameBuffer.Length, out var size, out var frameNo);
+        if (rc == SonyBridge.BufferTooSmall && size > _frameBuffer.Length && size <= 16 * 1024 * 1024)
+        {
+            _frameBuffer = new byte[size];
+            rc = _bridge.LiveViewFrame(_frameBuffer, _frameBuffer.Length, out size, out frameNo);
+        }
+        if (rc == SonyBridge.NoFrame) return null;
+        if (rc != SonyBridge.Ok || size <= 0)
+            throw new CameraException("LIVE_VIEW_UNAVAILABLE",
+                $"The Sony camera's live view stopped (bridge {rc}, SDK 0x{_bridge.LastSdkError():X}).");
+        if (frameNo == _lastFrameNo) return null;
+
+        _lastFrameNo = frameNo;
+        return new LiveViewFrame(_frameBuffer[..size], ++_frameCount);
+    }
+
     public void Dispose()
     {
         Disconnect();
@@ -344,6 +389,8 @@ internal sealed class SonyBridge
     public const int RawOnly = 5;
     public const int CameraBusy = 7;
     public const int Disconnected = 8;
+    public const int BufferTooSmall = 10;
+    public const int NoFrame = 14;
 
     public const int SettingIso = 0;
     public const int SettingShutterSpeed = 1;
@@ -367,6 +414,9 @@ internal sealed class SonyBridge
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     public delegate int SetSettingFn(int setting, ulong value);
 
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    public delegate int LiveViewFrameFn([Out] byte[] buffer, int capacity, out int size, out uint frameNo);
+
     public IntFn Init { get; }
     public VoidFn Release { get; }
     public IntFn IsConnected { get; }
@@ -376,9 +426,15 @@ internal sealed class SonyBridge
     public GetSettingFn GetSetting { get; }
     public SetSettingFn SetSetting { get; }
     public IntFn LastSdkError { get; }
+    public IntFn StartLiveView { get; }
+    public IntFn StopLiveView { get; }
+    public LiveViewFrameFn LiveViewFrame { get; }
 
     private SonyBridge(IntPtr library)
     {
+        StartLiveView = Export<IntFn>(library, "psb_start_live_view");
+        StopLiveView = Export<IntFn>(library, "psb_stop_live_view");
+        LiveViewFrame = Export<LiveViewFrameFn>(library, "psb_live_view_frame");
         Init = Export<IntFn>(library, "psb_init");
         Release = Export<VoidFn>(library, "psb_release");
         IsConnected = Export<IntFn>(library, "psb_is_connected");

@@ -37,6 +37,22 @@ if (process.argv.includes("--hardware")) {
     const connected = await step("connect", () => h.connect());
     if (connected.ok) {
       await step("settings", () => h.getSettings());
+      const liveView = await step("start live view", () => h.startLiveView());
+      if (liveView.ok) {
+        let frame = null;
+        for (let i = 0; i < 50 && !frame?.ok; i += 1) {
+          frame = await h.liveViewFrame();
+          if (!frame.ok) await new Promise((res) => setTimeout(res, 100));
+        }
+        if (frame?.ok) {
+          const framePath = path.join(workDir, "hardware_liveview.jpg");
+          fs.writeFileSync(framePath, Buffer.from(frame.result.jpeg, "base64"));
+          console.log(`ok    live view frame #${frame.result.frameNo} saved at ${framePath}\n`);
+        } else {
+          console.log(`FAIL  live view frame\n${JSON.stringify(frame, null, 2)}\n`);
+        }
+        await step("stop live view", () => h.stopLiveView());
+      }
       const shot = await step("capture", () => h.capture({ directory: workDir, fileName: "hardware_test.jpg", timeoutMs: 15_000 }));
       if (shot.ok) console.log(`Photo saved at ${shot.result.path} — open it to check it.`);
       await step("disconnect", () => h.disconnect());

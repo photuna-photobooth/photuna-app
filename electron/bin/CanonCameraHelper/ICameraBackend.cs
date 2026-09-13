@@ -37,6 +37,9 @@ public sealed record CaptureResult(
 /// </summary>
 public sealed record SettingValue(string Current, IReadOnlyList<string> Allowed);
 
+/// <summary>One live view frame: a JPEG, and a number that increases with every new frame.</summary>
+public sealed record LiveViewFrame(byte[] Jpeg, long FrameNo);
+
 public static class SettingKeys
 {
     public const string Iso = "iso";
@@ -72,4 +75,15 @@ public interface ICameraBackend : IDisposable
     /// setting's current allowed list.
     /// </summary>
     IReadOnlyDictionary<string, SettingValue> SetSetting(string key, string value);
+
+    /// <summary>
+    /// Starts the camera's live view, so guests see what the lens sees rather than a
+    /// webcam next to it.
+    /// </summary>
+    void StartLiveView();
+
+    void StopLiveView();
+
+    /// <summary>The newest frame not yet returned, or null when no new frame has arrived.</summary>
+    LiveViewFrame? GetLiveViewFrame();
 }

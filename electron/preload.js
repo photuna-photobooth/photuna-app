@@ -438,6 +438,11 @@ const apiImpl = {
     connect: () => ipcRenderer.invoke("camera:connect"),
     getSettings: () => ipcRenderer.invoke("camera:get-settings"),
     setSetting: (key, value) => ipcRenderer.invoke("camera:set-setting", { key, value }),
+    // Live view: start, then pull frames ({ ok, jpeg: Uint8Array, frameNo }) one at a
+    // time; NO_FRAME means none newer yet, BUSY means a photo is being taken.
+    startLiveView: () => ipcRenderer.invoke("camera:live-view-start"),
+    stopLiveView: () => ipcRenderer.invoke("camera:live-view-stop"),
+    liveViewFrame: () => ipcRenderer.invoke("camera:live-view-frame"),
     // Takes one shot for a session slot. Resolves { ok, dataUrl, width, height }
     // or { ok:false, error:{ code } }, in which case the booth uses the webcam.
     captureStill: async ({ sessionId, slotIndex, eventId } = {}) => {

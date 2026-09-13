@@ -45,6 +45,16 @@ public sealed class CanonBackend : ICameraBackend
     public IReadOnlyDictionary<string, SettingValue> SetSetting(string key, string value) =>
         throw new CameraException("SDK_NOT_INSTALLED", NotInstalled);
 
+    public void StartLiveView() =>
+        throw new CameraException("SDK_NOT_INSTALLED", NotInstalled);
+
+    public void StopLiveView()
+    {
+    }
+
+    public LiveViewFrame? GetLiveViewFrame() =>
+        throw new CameraException("SDK_NOT_INSTALLED", NotInstalled);
+
     public void Dispose()
     {
     }

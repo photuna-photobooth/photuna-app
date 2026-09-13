@@ -79,6 +79,12 @@ public sealed class AutoBackend : ICameraBackend
     public IReadOnlyDictionary<string, SettingValue> SetSetting(string key, string value) =>
         Active().SetSetting(key, value);
 
+    public void StartLiveView() => Active().StartLiveView();
+
+    public void StopLiveView() => _active?.StopLiveView();
+
+    public LiveViewFrame? GetLiveViewFrame() => Active().GetLiveViewFrame();
+
     public void Dispose()
     {
         foreach (var backend in _backends)

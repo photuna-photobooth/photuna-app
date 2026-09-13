@@ -16,7 +16,7 @@ falls back to the webcam for that shot.
 | 0 | Process, protocol, timeouts, restart limits, simulated camera | done |
 | 1 | A real camera backend: connect, full-resolution capture to the PC, battery | Nikon Z and Sony: built, **not yet tested with a camera**. Canon: waiting for the SDK |
 | 2 | ISO / shutter / aperture / white balance controls in the dashboard | done (Settings → Camera, from camera-reported values) |
-| 3 | Live view from the camera for preview and burst clips | |
+| 3 | Live view from the camera for preview and burst clips | done: `startLiveView` / `liveViewFrame` / `stopLiveView`; simulator-tested, not yet with a camera |
 | 4 | Booth flow integration with per-shot webcam fallback, beta flag | done (`cameraSource: "usb"`), simulator-tested |
 
 The booth side is brand-neutral (`electron/services/cameraCapture.js`,
@@ -223,6 +223,9 @@ The first line is always `{"event":"ready","backend":"...","protocol":1}`.
 | `capture` | `directory` (absolute, must exist), `fileName` (plain `.jpg`), `timeoutMs` 1000–30000 | path, width, height, bytes, elapsedMs |
 | `getSettings` | | `{ iso, shutterSpeed, aperture, whiteBalance }` each `{ current, allowed[] }` |
 | `setSetting` | `key`, `value` (must be in `allowed`) | all settings |
+| `startLiveView` | | `{ started }` |
+| `liveViewFrame` | | `{ jpeg (base64), frameNo }`; `NO_FRAME` when nothing newer |
+| `stopLiveView` | | `{ stopped }` |
 | `shutdown` | | helper exits |
 
 The helper writes only inside `directory`, and only a plain `.jpg` file name, so

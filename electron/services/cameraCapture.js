@@ -54,6 +54,7 @@ function failure(code, message) {
  */
 function createCameraCapture({ helper, resizeJpeg, log = () => {}, now = Date.now }) {
   let lastConnectFailure = null; // { at, result }
+  let captureInFlight = false;
 
   async function status() {
     const r = await helper.status();
@@ -94,7 +95,16 @@ function createCameraCapture({ helper, resizeJpeg, log = () => {}, now = Date.no
     return helper.setSetting(key, value);
   }
 
-  async function captureStill({ capturesDir, slotIndex } = {}) {
+  async function captureStill(request) {
+    captureInFlight = true;
+    try {
+      return await takeStill(request);
+    } finally {
+      captureInFlight = false;
+    }
+  }
+
+  async function takeStill({ capturesDir, slotIndex } = {}) {
     try {
       if (!Number.isInteger(slotIndex) || slotIndex < 0 || slotIndex > MAX_SLOT_INDEX) {
         return failure("BAD_REQUEST", "slotIndex must be a whole number from 0 to 99.");
@@ -150,7 +160,41 @@ function createCameraCapture({ helper, resizeJpeg, log = () => {}, now = Date.no
     }
   }
 
-  return { status, connect, getSettings, setSetting, captureStill };
+  // Starts the camera's live view, connecting first when needed — within the same
+  // retry cooldown as shots, so a missing camera does not delay the booth screen.
+  async function startLiveView() {
+    let r = await helper.startLiveView();
+    if (!r.ok && RECONNECT_CODES.has(r.error?.code)) {
+      if (lastConnectFailure && now() - lastConnectFailure.at < CONNECT_RETRY_COOLDOWN_MS) {
+        return lastConnectFailure.result;
+      }
+      const connected = await connect();
+      if (!connected.ok) return connected;
+      r = await helper.startLiveView();
+    }
+    return r;
+  }
+
+  function stopLiveView() {
+    return helper.stopLiveView();
+  }
+
+  // The newest live view frame as JPEG bytes. While a shot is being taken this
+  // answers BUSY without asking the helper: the helper handles one command at a
+  // time, and a frame request queued behind a slow shot would miss its deadline
+  // and get the helper killed in the middle of the shot.
+  async function liveViewFrame() {
+    if (captureInFlight) return failure("BUSY", "A photo is being taken.");
+    const r = await helper.liveViewFrame();
+    if (!r.ok) return r;
+    const jpeg = Buffer.from(r.result?.jpeg || "", "base64");
+    if (jpeg.length < 3 || jpeg[0] !== 0xff || jpeg[1] !== 0xd8) {
+      return failure("BAD_FRAME", "The camera sent a live view frame that is not a JPEG.");
+    }
+    return { ok: true, jpeg, frameNo: r.result?.frameNo ?? null };
+  }
+
+  return { status, connect, getSettings, setSetting, captureStill, startLiveView, stopLiveView, liveViewFrame };
 }
 
 module.exports = { createCameraCapture, BOOTH_COPY_MAX_EDGE, SHOT_TIMEOUT_MS, CONNECT_RETRY_COOLDOWN_MS };

@@ -20,6 +20,7 @@ namespace CanonCameraHelper;
 ///   hang            the call never returns — tests the app's kill-and-restart
 ///   crash           the helper process dies mid-capture
 ///   unplug-after-2  third and later captures fail as if the cable was pulled
+///   liveview        the camera offers no live view
 /// </summary>
 public sealed class SimulatedBackend : ICameraBackend
 {
@@ -39,6 +40,8 @@ public sealed class SimulatedBackend : ICameraBackend
 
     private bool _connected;
     private int _captureCount;
+    private bool _liveView;
+    private long _frameNo;
 
     public string Name => "simulator";
 
@@ -59,7 +62,11 @@ public sealed class SimulatedBackend : ICameraBackend
         return GetStatus();
     }
 
-    public void Disconnect() => _connected = false;
+    public void Disconnect()
+    {
+        _connected = false;
+        _liveView = false;
+    }
 
     public CaptureResult Capture(string destinationPath, TimeSpan timeout)
     {
@@ -127,15 +134,52 @@ public sealed class SimulatedBackend : ICameraBackend
         return GetSettings();
     }
 
+    public void StartLiveView()
+    {
+        if (!_connected)
+            throw new CameraException("NOT_CONNECTED", "Camera is not connected.");
+        if (_failMode == "liveview")
+            throw new CameraException("LIVE_VIEW_UNAVAILABLE", "This camera offers no live view (simulated).");
+        _liveView = true;
+    }
+
+    public void StopLiveView() => _liveView = false;
+
+    public LiveViewFrame? GetLiveViewFrame()
+    {
+        if (!_connected)
+            throw new CameraException("NOT_CONNECTED", "Camera is not connected.");
+        if (!_liveView)
+            throw new CameraException("LIVE_VIEW_OFF", "Live view is not started.");
+
+        _frameNo++;
+        using var bitmap = new Bitmap(960, 640);
+        using var graphics = Graphics.FromImage(bitmap);
+        using var font = new Font("Segoe UI", 36, FontStyle.Bold);
+        graphics.Clear(Color.FromArgb(24, 64, 96));
+        graphics.FillRectangle(Brushes.Orange, (int)(_frameNo * 12 % 960), 0, 40, 640);
+        graphics.DrawString($"SIMULATED LIVE VIEW {_frameNo}", font, Brushes.White, 40, 280);
+
+        using var stream = new MemoryStream();
+        SaveJpeg(bitmap, stream, quality: 70);
+        return new LiveViewFrame(stream.ToArray(), _frameNo);
+    }
+
     public void Dispose()
     {
     }
 
     private static void SaveJpeg(Image image, string path, long quality)
     {
+        using var stream = File.Create(path);
+        SaveJpeg(image, stream, quality);
+    }
+
+    private static void SaveJpeg(Image image, Stream stream, long quality)
+    {
         var encoder = ImageCodecInfo.GetImageEncoders().First(c => c.FormatID == ImageFormat.Jpeg.Guid);
         using var parameters = new EncoderParameters(1);
         parameters.Param[0] = new EncoderParameter(System.Drawing.Imaging.Encoder.Quality, quality);
-        image.Save(path, encoder, parameters);
+        image.Save(stream, encoder, parameters);
     }
 }

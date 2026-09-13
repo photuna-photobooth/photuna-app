@@ -164,17 +164,96 @@ export default function PhotoScreen({
       ? mirrorCamera
       : !!(event?.settings?.mirrorCamera ?? gs.mirrorCamera);
 
-  // "usb": shots come from a camera connected by USB (beta). The live preview and
-  // motion clips still come from the webcam, and any shot the USB camera cannot
-  // take is taken from the webcam, so a guest never loses a shot.
+  // "usb": photos come from a camera connected by USB (beta). Guests see the
+  // camera's own live view, drawn into usbPreviewCanvasRef, and motion clips are
+  // recorded from that canvas, so the preview matches the photos. The webcam is
+  // optional: if live view is unavailable or stops, the webcam preview takes over.
+  // A shot the USB camera misses is taken from its last live view frame (or the
+  // webcam), so a guest never loses a shot.
   const usbCameraApi = (window.api ?? window.electron)?.camera;
   const useUsbCamera = !!usbCameraApi?.captureStill
     && (event?.settings?.cameraSource ?? gs.cameraSource) === "usb";
+  const usbPreviewCanvasRef = useRef(null);
+  const usbPreviewStreamRef = useRef(null);
+  const usbCaptureBusyRef = useRef(false);
+  const [usbPreviewActive, setUsbPreviewActive] = useState(false);
+  const previewReady = cameraReady || usbPreviewActive;
 
-  // Open the camera session before the first countdown ends, so the first shot
-  // is not slowed by connecting. Failure here is fine — the shot retries it.
   useEffect(() => {
-    if (useUsbCamera) usbCameraApi.connect?.().catch?.(() => { });
+    if (!useUsbCamera || !usbCameraApi?.startLiveView) return undefined;
+    let cancelled = false;
+    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const FIRST_FRAME_DEADLINE_MS = 6000;
+    const MAX_FAILURES = 10;
+    const FRAME_INTERVAL_MS = 60; // about 15 frames a second at most
+
+    (async () => {
+      const started = await usbCameraApi.startLiveView().catch(() => null);
+      if (cancelled) return;
+      if (!started?.ok) {
+        console.warn("[PhotoScreen] USB camera live view unavailable; using the webcam preview:", started?.error?.code, started?.error?.message);
+        return;
+      }
+
+      const startedAt = Date.now();
+      let gotFrame = false;
+      let failures = 0;
+
+      while (!cancelled) {
+        if (usbCaptureBusyRef.current) {
+          await sleep(120);
+          continue;
+        }
+
+        const frame = await usbCameraApi.liveViewFrame().catch(() => null);
+        if (cancelled) break;
+
+        if (frame?.ok && frame.jpeg) {
+          try {
+            const bitmap = await createImageBitmap(new Blob([frame.jpeg], { type: "image/jpeg" }));
+            const canvas = usbPreviewCanvasRef.current;
+            if (canvas && !cancelled) {
+              if (canvas.width !== bitmap.width || canvas.height !== bitmap.height) {
+                canvas.width = bitmap.width;
+                canvas.height = bitmap.height;
+              }
+              canvas.getContext("2d").drawImage(bitmap, 0, 0);
+              if (!usbPreviewStreamRef.current && canvas.captureStream) {
+                usbPreviewStreamRef.current = canvas.captureStream(15);
+              }
+              if (!gotFrame) {
+                gotFrame = true;
+                setUsbPreviewActive(true);
+              }
+            }
+            bitmap.close?.();
+            failures = 0;
+          } catch {
+            failures += 1;
+          }
+          await sleep(FRAME_INTERVAL_MS);
+          continue;
+        }
+
+        const code = frame?.error?.code;
+        if (code !== "NO_FRAME" && code !== "BUSY") failures += 1;
+        const neverStarted = !gotFrame && Date.now() - startedAt > FIRST_FRAME_DEADLINE_MS;
+        if (failures >= MAX_FAILURES || neverStarted) {
+          console.warn("[PhotoScreen] USB camera live view stopped; using the webcam preview:", code, frame?.error?.message);
+          setUsbPreviewActive(false);
+          usbCameraApi.stopLiveView?.().catch?.(() => { });
+          break;
+        }
+        await sleep(code === "NO_FRAME" ? 40 : 250);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      usbPreviewStreamRef.current?.getTracks?.().forEach((track) => track.stop());
+      usbPreviewStreamRef.current = null;
+      usbCameraApi.stopLiveView?.().catch?.(() => { });
+    };
   }, [useUsbCamera]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const sessionIdRef = useRef(session?.sessionId || null);
@@ -360,7 +439,7 @@ export default function PhotoScreen({
   /* Countdown logic                                                    */
   /* ------------------------------------------------------------------ */
   useEffect(() => {
-    if (!cameraReady || isCapturing || photosTaken >= cfgShots) return;
+    if (!previewReady || isCapturing || photosTaken >= cfgShots) return;
 
     if (timer <= 0) {
       capturePhoto();
@@ -372,10 +451,10 @@ export default function PhotoScreen({
     }, 1000);
 
     return () => clearInterval(id);
-  }, [timer, cameraReady, isCapturing, photosTaken, cfgShots]);
+  }, [timer, previewReady, isCapturing, photosTaken, cfgShots]);
 
   useEffect(() => {
-    if (!cameraReady || isCapturing) return;
+    if (!previewReady || isCapturing) return;
     if (photosTaken >= cfgShots) return;
     if (timer > FINAL_MOTION_CAPTURE_SECONDS) return;
 
@@ -386,7 +465,7 @@ export default function PhotoScreen({
     const slotIdx = targetIndex ?? photosTaken;
 
     startPreShotRecording(slotIdx, sessionIdRef.current);
-  }, [timer, cameraReady, isCapturing, photosTaken, cfgShots, retakeIndices]);
+  }, [timer, previewReady, isCapturing, photosTaken, cfgShots, retakeIndices]);
 
   /* ------------------------------------------------------------------ */
   /* Capture helpers                                                    */
@@ -423,12 +502,19 @@ export default function PhotoScreen({
   };
 
   const captureFrame = async (targetIndex = null) => {
-    const video = videoRef.current;
     const canvas = canvasRef.current;
-    if (!video || !canvas) return null;
+    if (!canvas) return null;
 
-    const sourceW = video.videoWidth || 1920;
-    const sourceH = video.videoHeight || 1080;
+    // With the USB camera's live view running, a shot it missed is taken from its
+    // last frame: same framing as the photos around it, and no webcam needed.
+    const liveView = usbPreviewActive ? usbPreviewCanvasRef.current : null;
+    const video = videoRef.current;
+    const fromLiveView = !!liveView?.width;
+    const source = fromLiveView ? liveView : video;
+    if (!source) return null;
+
+    const sourceW = fromLiveView ? liveView.width : (video.videoWidth || 1920);
+    const sourceH = fromLiveView ? liveView.height : (video.videoHeight || 1080);
 
     // ✅ Capture the full camera frame only
     canvas.width = sourceW;
@@ -438,12 +524,12 @@ export default function PhotoScreen({
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    if (effectiveMirrorCamera) {
+    if (effectiveMirrorCamera && !fromLiveView) {
       ctx.translate(canvas.width, 0);
       ctx.scale(-1, 1);
     }
 
-    ctx.drawImage(video, 0, 0, sourceW, sourceH, 0, 0, canvas.width, canvas.height);
+    ctx.drawImage(source, 0, 0, sourceW, sourceH, 0, 0, canvas.width, canvas.height);
 
     const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
 
@@ -457,7 +543,7 @@ export default function PhotoScreen({
 
   const startPreShotRecording = (slotIndex, sessionId) => {
     try {
-      const stream = streamRef.current;
+      const stream = (usbPreviewActive && usbPreviewStreamRef.current) || streamRef.current;
       console.log("[startPreShotRecording]", { slotIndex, sessionId, hasStream: !!stream });
       if (!stream || !sessionId) return;
 
@@ -567,9 +653,11 @@ export default function PhotoScreen({
 
       let saved = null;
       if (useUsbCamera && session?.sessionId) {
+        usbCaptureBusyRef.current = true;
         const shot = await usbCameraApi
           .captureStill({ sessionId: session.sessionId, slotIndex: slotIdx, eventId })
-          .catch((err) => ({ ok: false, error: { code: "IPC_FAILED", message: err?.message } }));
+          .catch((err) => ({ ok: false, error: { code: "IPC_FAILED", message: err?.message } }))
+          .finally(() => { usbCaptureBusyRef.current = false; });
         if (shot?.ok && shot.dataUrl) {
           saved = {
             dataUrl: shot.dataUrl,
@@ -578,7 +666,7 @@ export default function PhotoScreen({
             height: shot.height,
           };
         } else {
-          console.warn("[PhotoScreen] USB camera shot failed; using the webcam for this shot:", shot?.error?.code, shot?.error?.message);
+          console.warn("[PhotoScreen] USB camera shot failed; using the live view frame or webcam for this shot:", shot?.error?.code, shot?.error?.message);
         }
       }
       if (!saved) saved = await captureFrame(targetIndex);
@@ -729,8 +817,14 @@ export default function PhotoScreen({
               autoPlay
               playsInline
               muted
-              className={`absolute inset-0 w-full h-full object-cover ${effectiveMirrorCamera ? "scale-x-[-1]" : ""}`}
+              className={`absolute inset-0 w-full h-full object-cover ${effectiveMirrorCamera ? "scale-x-[-1]" : ""} ${usbPreviewActive ? "invisible" : ""}`}
             />
+            {useUsbCamera && (
+              <canvas
+                ref={usbPreviewCanvasRef}
+                className={`absolute inset-0 w-full h-full object-cover ${effectiveMirrorCamera ? "scale-x-[-1]" : ""} ${usbPreviewActive ? "" : "invisible"}`}
+              />
+            )}
           </div>
 
           {/* Countdown */}
@@ -775,7 +869,7 @@ export default function PhotoScreen({
       </div>
 
       {/* Camera error display + action row */}
-      {cameraError && (
+      {cameraError && !usbPreviewActive && (
         <div className="absolute inset-x-0 top-28 z-40 flex flex-col items-center">
           <div className="px-4 py-2 rounded-full bg-red-600/80 text-white text-sm shadow">
             {t.cameraError}

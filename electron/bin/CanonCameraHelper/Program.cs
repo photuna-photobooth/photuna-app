@@ -120,6 +120,24 @@ internal static class Program
                     return true;
                 }
 
+                case "startLiveView":
+                    backend.StartLiveView();
+                    Reply(id, new { started = true });
+                    return true;
+
+                case "stopLiveView":
+                    backend.StopLiveView();
+                    Reply(id, new { stopped = true });
+                    return true;
+
+                case "liveViewFrame":
+                {
+                    var frame = backend.GetLiveViewFrame()
+                        ?? throw new CameraException("NO_FRAME", "No new live view frame yet.");
+                    Reply(id, new { jpeg = Convert.ToBase64String(frame.Jpeg), frameNo = frame.FrameNo });
+                    return true;
+                }
+
                 case "shutdown":
                     Reply(id, new { stopping = true });
                     return false;

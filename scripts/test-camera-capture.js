@@ -162,6 +162,40 @@ function freshCapturesDir(name) {
     await h.stop();
   });
 
+  await check("live view connects the camera if needed and returns fresh JPEG frames", async () => {
+    const { h, capture } = makeCapture();
+    const started = await capture.startLiveView();
+    assert.strictEqual(started.ok, true, JSON.stringify(started));
+    const first = await capture.liveViewFrame();
+    const second = await capture.liveViewFrame();
+    assert.strictEqual(first.ok, true, JSON.stringify(first));
+    assert.strictEqual(first.jpeg[0], 0xff);
+    assert.strictEqual(first.jpeg[1], 0xd8);
+    assert.ok(second.frameNo > first.frameNo, "frames did not advance");
+    assert.strictEqual((await capture.stopLiveView()).ok, true);
+    const after = await capture.liveViewFrame();
+    assert.strictEqual(after.error?.code, "LIVE_VIEW_OFF");
+    await h.stop();
+  });
+
+  await check("no live view frame is requested from the helper while a shot is being taken", async () => {
+    const { h, capture } = makeCapture();
+    await capture.startLiveView();
+    const shot = capture.captureStill({ capturesDir: freshCapturesDir("liveview-busy"), slotIndex: 0 });
+    const during = await capture.liveViewFrame();
+    assert.strictEqual(during.error?.code, "BUSY");
+    assert.strictEqual((await shot).ok, true);
+    assert.strictEqual((await capture.liveViewFrame()).ok, true, "live view did not continue after the shot");
+    await h.stop();
+  });
+
+  await check("a camera without live view says so, so the booth uses the webcam preview", async () => {
+    const { h, capture } = makeCapture({ env: { PHOTUNA_CAMERA_SIM_FAIL: "liveview" } });
+    const r = await capture.startLiveView();
+    assert.strictEqual(r.error?.code, "LIVE_VIEW_UNAVAILABLE");
+    await h.stop();
+  });
+
   await check("a build without the helper answers HELPER_NOT_FOUND", async () => {
     const helper = new CameraHelper({ helperPath: null, simulate: true });
     helper.helperPath = null;

@@ -50,6 +50,7 @@ enum PsbResult : int
     PSB_SDK_ERROR = 11,
     PSB_NOT_INITIALIZED = 12,
     PSB_NOT_WRITABLE = 13,
+    PSB_NO_FRAME = 14,
 };
 
 // Settings the booth uses, so the helper never needs Sony's property codes.
@@ -473,4 +474,72 @@ PSB_API int psb_capture(const wchar_t* saveDirectory, wchar_t* fileOut, int file
 
         g_callback.changed.wait_for(wait, 250ms);
     }
+}
+
+// Live view is pulled: the helper asks for the newest frame when it wants one.
+PSB_API int psb_start_live_view()
+{
+    std::lock_guard<std::mutex> guard(g_apiLock);
+    if (!IsConnected()) return PSB_NOT_CONNECTED;
+    // Some cameras stream live view to the PC regardless and refuse this setting;
+    // whether frames arrive is what counts.
+    auto error = SDK::SetDeviceSetting(g_device, SDK::Setting_Key_EnableLiveView, 1);
+    if (CR_FAILED(error)) g_lastSdkError = error;
+    return PSB_OK;
+}
+
+PSB_API int psb_stop_live_view()
+{
+    std::lock_guard<std::mutex> guard(g_apiLock);
+    if (!IsConnected()) return PSB_OK;
+    SDK::SetDeviceSetting(g_device, SDK::Setting_Key_EnableLiveView, 0);
+    return PSB_OK;
+}
+
+namespace
+{
+std::vector<CrInt8u> g_frameBuffer;
+}
+
+// Copies the newest live view JPEG into out. PSB_NO_FRAME when the camera has no
+// newer frame; PSB_BUFFER_TOO_SMALL with *size set when out is too small.
+PSB_API int psb_live_view_frame(unsigned char* out, int capacity, int* size, unsigned int* frameNo)
+{
+    std::lock_guard<std::mutex> guard(g_apiLock);
+    *size = 0;
+    *frameNo = 0;
+    if (!IsConnected()) return PSB_NOT_CONNECTED;
+
+    SDK::CrImageInfo info;
+    auto error = SDK::GetLiveViewImageInfo(g_device, &info);
+    if (CR_FAILED(error))
+    {
+        g_lastSdkError = error;
+        return PSB_SDK_ERROR;
+    }
+    const auto bufferSize = info.GetBufferSize();
+    if (bufferSize < 1) return PSB_NO_FRAME;
+
+    g_frameBuffer.resize(bufferSize);
+    SDK::CrImageDataBlock block;
+    block.SetSize(bufferSize);
+    block.SetData(g_frameBuffer.data());
+
+    error = SDK::GetLiveViewImage(g_device, &block);
+    if (error == SDK::CrWarning_Frame_NotUpdated || error == SDK::CrError_Memory_Insufficient) return PSB_NO_FRAME;
+    if (CR_FAILED(error))
+    {
+        g_lastSdkError = error;
+        return PSB_SDK_ERROR;
+    }
+
+    const auto imageSize = block.GetImageSize();
+    const auto* image = block.GetImageData();
+    if (imageSize == 0 || image == nullptr) return PSB_NO_FRAME;
+
+    *size = static_cast<int>(imageSize);
+    *frameNo = block.GetFrameNo();
+    if (static_cast<int>(imageSize) > capacity) return PSB_BUFFER_TOO_SMALL;
+    std::memcpy(out, image, imageSize);
+    return PSB_OK;
 }

@@ -1899,6 +1899,11 @@ ipcMain.handle("camera:status", () => getCameraCapture().status());
 ipcMain.handle("camera:connect", () => getCameraCapture().connect());
 ipcMain.handle("camera:get-settings", () => getCameraCapture().getSettings());
 ipcMain.handle("camera:set-setting", (_event, { key, value } = {}) => getCameraCapture().setSetting(key, value));
+ipcMain.handle("camera:live-view-start", () => getCameraCapture().startLiveView());
+ipcMain.handle("camera:live-view-stop", () => getCameraCapture().stopLiveView());
+// Pulled by the renderer one frame at a time, so a slow camera slows the preview
+// instead of queueing frames.
+ipcMain.handle("camera:live-view-frame", () => getCameraCapture().liveViewFrame());
 
 ipcMain.handle("camera:capture-still", async (_event, payload = {}) => {
   const { sessionId, slotIndex, eventId = "default", userId = null, storagePath = "" } = payload || {};

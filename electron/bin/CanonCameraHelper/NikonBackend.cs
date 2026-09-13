@@ -51,13 +51,22 @@ public sealed class NikonBackend : ICameraBackend
     private bool _connected;
     private string? _model;
 
+    // Live view frames arrive on an SDK thread; the newest is kept until asked for.
+    private readonly object _frameLock = new();
+    private volatile bool _liveView;
+    private byte[]? _latestFrame;
+    private long _latestFrameNo;
+    private long _returnedFrameNo;
+    private int _invalidFrames;
+    private const int MaxInvalidFrames = 30;
+
     public NikonBackend()
     {
         _eventProc = OnEvent;
         _uiRequestProc = OnUiRequest;
         _progressProc = (_, _, _, _, _) => { };
         _dataProc = (_, _, _) => NikonSdk.NoError;
-        _liveViewDataProc = (_, _) => { };
+        _liveViewDataProc = OnLiveViewData;
     }
 
     public string Name => "nikon";
@@ -102,6 +111,7 @@ public sealed class NikonBackend : ICameraBackend
     {
         if (!_connected || _sdk is null) return;
         _connected = false;
+        _liveView = false; // DisconnectDevice also ends the SDK's live view thread
         try { _sdk.DisconnectDevice(); } catch (Exception ex) { Log($"disconnect failed: {ex.Message}"); }
     }
 
@@ -210,6 +220,61 @@ public sealed class NikonBackend : ICameraBackend
         }
 
         return GetSettings();
+    }
+
+    public void StartLiveView()
+    {
+        if (!_connected || _sdk is null)
+            throw new CameraException("NOT_CONNECTED", "Camera is not connected.");
+
+        lock (_frameLock)
+        {
+            _latestFrame = null;
+            _returnedFrameNo = _latestFrameNo;
+            _invalidFrames = 0;
+        }
+        _liveView = true;
+
+        // Null completion proc, as for shooting: returns once live view has started.
+        var rc = _sdk.StartLiveView(IntPtr.Zero, IntPtr.Zero);
+        if (rc != NikonSdk.NoError && rc != NikonSdk.ResultLiveViewAlreadyStarted)
+        {
+            _liveView = false;
+            throw new CameraException("LIVE_VIEW_UNAVAILABLE", $"The Nikon camera did not start live view (NKERROR {rc}).");
+        }
+    }
+
+    public void StopLiveView()
+    {
+        if (!_liveView || _sdk is null) return;
+        _liveView = false;
+        try
+        {
+            var rc = _sdk.StopLiveView(IntPtr.Zero, IntPtr.Zero);
+            if (rc != NikonSdk.NoError && rc != NikonSdk.ResultLiveViewAlreadyStopped)
+                Log($"StopLiveView answered NKERROR {rc}");
+        }
+        catch (Exception ex)
+        {
+            Log($"StopLiveView failed: {ex.Message}");
+        }
+    }
+
+    public LiveViewFrame? GetLiveViewFrame()
+    {
+        if (!_connected || _sdk is null)
+            throw new CameraException("NOT_CONNECTED", "Camera is not connected.");
+        if (!_liveView)
+            throw new CameraException("LIVE_VIEW_OFF", "Live view is not started.");
+
+        lock (_frameLock)
+        {
+            if (_invalidFrames >= MaxInvalidFrames)
+                throw new CameraException("LIVE_VIEW_UNAVAILABLE", "The Nikon camera's live view frames could not be read.");
+            if (_latestFrame is null || _latestFrameNo == _returnedFrameNo) return null;
+            _returnedFrameNo = _latestFrameNo;
+            return new LiveViewFrame(_latestFrame, _latestFrameNo);
+        }
     }
 
     public void Dispose()
@@ -428,6 +493,53 @@ public sealed class NikonBackend : ICameraBackend
         }
     }
 
+    /// <summary>
+    /// Copies the frame out and releases the SDK's allocation. The image pointer is
+    /// only dereferenced once the process confirms that memory is readable and it
+    /// starts with a JPEG marker: the offset comes from a hand-computed struct layout,
+    /// and a wrong one must stop live view rather than crash the helper.
+    /// </summary>
+    private void OnLiveViewData(IntPtr refProc, IntPtr liveViewData)
+    {
+        if (liveViewData == IntPtr.Zero) return;
+        try
+        {
+            var size = Marshal.ReadInt32(liveViewData, NikonSdk.LiveViewImageSizeOffset);
+            var image = Marshal.ReadIntPtr(liveViewData, NikonSdk.LiveViewImageDataOffset);
+            var valid = size > 2 && size <= NikonSdk.LiveViewMaxImageBytes
+                && NativeMemory.IsReadable(image, size)
+                && Marshal.ReadByte(image, 0) == 0xFF && Marshal.ReadByte(image, 1) == 0xD8;
+
+            if (valid)
+            {
+                if (_liveView)
+                {
+                    var bytes = new byte[size];
+                    Marshal.Copy(image, bytes, 0, size);
+                    lock (_frameLock)
+                    {
+                        _latestFrame = bytes;
+                        _latestFrameNo++;
+                        _invalidFrames = 0;
+                    }
+                }
+                _sdk?.Free(image);
+            }
+            else
+            {
+                lock (_frameLock) _invalidFrames++;
+                if (_invalidFrames == MaxInvalidFrames)
+                    Log("live view frames do not match the expected layout; live view disabled");
+            }
+
+            _sdk?.Free(liveViewData);
+        }
+        catch (Exception ex)
+        {
+            Log($"live view frame handling failed: {ex.Message}");
+        }
+    }
+
     private void FailShot(string message)
     {
         lock (_shotLock) _shotFailure ??= message;
@@ -601,6 +713,41 @@ public sealed class NikonBackend : ICameraBackend
     {
         Console.Error.WriteLine($"[canon-camera-helper] nikon: {message}");
         Console.Error.Flush();
+    }
+}
+
+/// <summary>Checks that native memory can be read before touching it.</summary>
+internal static class NativeMemory
+{
+    private const uint MemCommit = 0x1000;
+    private const uint PageNoAccess = 0x01;
+    private const uint PageGuard = 0x100;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MemoryBasicInformation
+    {
+        public IntPtr BaseAddress;
+        public IntPtr AllocationBase;
+        public uint AllocationProtect;
+        public ushort PartitionId;
+        public UIntPtr RegionSize;
+        public uint State;
+        public uint Protect;
+        public uint Type;
+    }
+
+    [DllImport("kernel32.dll")]
+    private static extern UIntPtr VirtualQuery(IntPtr address, out MemoryBasicInformation buffer, UIntPtr length);
+
+    public static bool IsReadable(IntPtr address, int length)
+    {
+        if (address == IntPtr.Zero || length <= 0) return false;
+        var info = new MemoryBasicInformation();
+        var size = (UIntPtr)(uint)Marshal.SizeOf<MemoryBasicInformation>();
+        if (VirtualQuery(address, out info, size) == UIntPtr.Zero) return false;
+        if (info.State != MemCommit || (info.Protect & (PageNoAccess | PageGuard)) != 0 || info.Protect == 0) return false;
+        var regionEnd = (ulong)info.BaseAddress + (ulong)info.RegionSize;
+        return (ulong)address + (ulong)length <= regionEnd;
     }
 }
 

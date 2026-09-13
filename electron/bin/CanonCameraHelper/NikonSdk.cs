@@ -101,6 +101,16 @@ internal static class NikonSdk
     public const int UiRequestDefaultOffset = 4;
     public const int UiRequestPromptOffset = 12;
 
+    // NkMAIDLiveViewData under pack(2): ULONG ulLvImageSize@0, UWORD×2@4,
+    // NKMAIDLiveViewHeader@8 — 884 bytes: 22 chars, 2 WORDs, 13 SIZEINFO,
+    // 4×SIZEINFO[96], CTimeCode(4), 2×uint32, stSpiritLevel[3](12), 4 chars, 2×uint32,
+    // 4 chars, 6×uint32 — then LPVOID pImageData@892.
+    public const int LiveViewImageSizeOffset = 0;
+    public const int LiveViewImageDataOffset = 892;
+    public const int LiveViewMaxImageBytes = 8 * 1024 * 1024;
+    public const int ResultLiveViewAlreadyStopped = -111;
+    public const int ResultLiveViewAlreadyStarted = -112;
+
     /// <summary>Six pointers, so the layout is the same under any packing.</summary>
     [StructLayout(LayoutKind.Sequential)]
     public struct CsCallback
@@ -127,6 +137,9 @@ internal static class NikonSdk
 
     [UnmanagedFunctionPointer(CallingConvention.Winapi)]
     public delegate int StartShootingFn(IntPtr shootingStructure, IntPtr completionProc, IntPtr completionRef);
+
+    [UnmanagedFunctionPointer(CallingConvention.Winapi)]
+    public delegate int AsyncCallFn(IntPtr completionProc, IntPtr completionRef);
 
     [UnmanagedFunctionPointer(CallingConvention.Winapi)]
     public delegate int GetCapabilityFn(uint capabilityId, int requestType, ref IntPtr data, ref int dataType);
@@ -166,6 +179,8 @@ internal sealed class NikonNative
     public NikonSdk.StartShootingFn StartShooting { get; }
     public NikonSdk.GetCapabilityFn GetCapability { get; }
     public NikonSdk.SetCapabilityFn SetCapability { get; }
+    public NikonSdk.AsyncCallFn StartLiveView { get; }
+    public NikonSdk.AsyncCallFn StopLiveView { get; }
 
     /// <summary>
     /// The SDK allocates what it hands back with the allocator the client registers and
@@ -186,6 +201,8 @@ internal sealed class NikonNative
         StartShooting = Export<NikonSdk.StartShootingFn>(library, "StartShooting");
         GetCapability = Export<NikonSdk.GetCapabilityFn>(library, "GetCapability");
         SetCapability = Export<NikonSdk.SetCapabilityFn>(library, "SetCapability");
+        StartLiveView = Export<NikonSdk.AsyncCallFn>(library, "StartLiveView");
+        StopLiveView = Export<NikonSdk.AsyncCallFn>(library, "StopLiveView");
 
         CrtMalloc = NativeLibrary.GetExport(crt, "malloc");
         CrtFree = NativeLibrary.GetExport(crt, "free");
