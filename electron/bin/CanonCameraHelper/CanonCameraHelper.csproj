@@ -23,4 +23,14 @@
     <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
 
+  <!--
+    Camera makers' SDKs are unpacked under sdk/ (git-ignored, licensed to the
+    business). Their sample code must never be compiled in by the default **/*.cs
+    glob; each backend includes exactly the wrapper files it needs.
+  -->
+  <ItemGroup>
+    <Compile Remove="sdk/**" />
+    <None Remove="sdk/**" />
+  </ItemGroup>
+
 </Project>
