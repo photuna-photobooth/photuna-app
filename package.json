@@ -1,6 +1,6 @@
 {
   "name": "photuna-app",
-  "version": "0.4.11",
+  "version": "0.4.10",
   "private": true,
   "homepage": ".",
   "main": "electron/main.js",
