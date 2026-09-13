@@ -1,196 +1,180 @@
+// src/services/settingsSync.js
+//
+// Syncs booth setups (events, templates, frames, palettes, settings, appearance)
+// between this device and Supabase. The procedure and merge rules live in
+// settingsSyncCore.js and syncMerge.js; this file connects them to the real store,
+// localStorage and Supabase, and tells other devices when something changed.
+//
+// Other devices are told with a tiny broadcast carrying no data — a frames list
+// can exceed a megabyte — and fetch and merge the row themselves.
+
 import { supabase } from './supabase.js';
+import { createSettingsSyncCore } from './settingsSyncCore.js';
 
-let _userId = null;
-let _pendingTimer = null;
+const PUSH_DEBOUNCE_MS = 2000;
+const REMOTE_SIGNAL_DELAY_MS = 750;
+const META_KEY_PREFIX = 'photuna.syncMeta.v1.';
 
-export function initSettingsSync(userId) {
-  _userId = userId;
-}
+// Identifies this app instance, so it ignores its own "changed" broadcasts.
+const deviceId = (typeof crypto !== 'undefined' && crypto.randomUUID)
+  ? crypto.randomUUID()
+  : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 
 function getBridge() {
   if (typeof window === 'undefined') return null;
   return window.electron || window.api || null;
 }
 
-// Pull booth settings from Supabase → electron-store (call on app launch).
-// Merge strategy (all slots use local-wins):
-//   - Settings / Appearance: local always wins. Supabase is only used to seed
-//     a fresh install (when local has no data at all). This prevents a stale
-//     Supabase snapshot from wiping locally-saved business settings, provider
-//     selections, or appearance changes that were made between the last push
-//     and the current startup.
-//   - Events: local always wins. New Supabase events (web app) are appended.
-//   - Templates / Frames / Palettes: local always wins. New Supabase items are
-//     merged in, but local creations are never overwritten even within the
-//     2-second push debounce window.
-//   - After merging, push the final local state back so Supabase stays in sync.
-export async function pullSettings() {
-  if (!_userId) return null;
-
-  const { data, error } = await supabase
-    .from('booth_settings')
-    .select('*')
-    .eq('user_id', _userId)
-    .maybeSingle();
-
-  if (error) {
-    console.warn('[settingsSync] pull failed:', error.message);
-    return null;
-  }
-
-  if (!data) return null;
-
-  const store = getBridge();
-  if (!store) return data;
-
-  const ctx = { userId: _userId };
-  const nonEmpty = (v) => v && typeof v === 'object' && Object.keys(v).length > 0;
-  const hasItems = (v) => Array.isArray(v) && v.length > 0;
-
-  // Read all local data in parallel first — local is the source of truth
-  const [localSettings, localAppearance, localEvents, localTemplates, localFrames, localPalettes] =
-    await Promise.all([
-      store.getSettings?.(ctx),
-      store.getAppearance?.(ctx),
-      store.getEvents?.(ctx),
-      store.getTemplates?.(ctx),
-      store.getFrames?.(ctx),
-      store.getPalettes?.(ctx),
-    ]);
-
-  // Settings: local always wins.
-  if (!nonEmpty(localSettings) && nonEmpty(data.settings)) {
-    await store.setSettings?.(data.settings, ctx);
-  }
-
-  // Appearance: merge so that HTTPS URLs from Supabase win over local file:// paths.
-  // This lets cross-device logo/background uploads (stored as Supabase Storage URLs)
-  // propagate to other devices that may have stale local file paths.
-  if (nonEmpty(data.appearance)) {
-    const isWebSafe = (v) => !v || v.startsWith('https://') || v.startsWith('http://') || v.startsWith('data:');
-    if (!nonEmpty(localAppearance)) {
-      // Fresh install — seed entirely from Supabase
-      await store.setAppearance?.(data.appearance, ctx);
-    } else {
-      // Merge: keep local values except prefer Supabase HTTPS URLs for logo/background
-      const merged = { ...localAppearance };
-      if (!isWebSafe(localAppearance.logoPath) && isWebSafe(data.appearance.logoPath) && data.appearance.logoPath) {
-        merged.logoPath = data.appearance.logoPath;
-      }
-      if (!isWebSafe(localAppearance.backgroundMediaPath) && isWebSafe(data.appearance.backgroundMediaPath) && data.appearance.backgroundMediaPath) {
-        merged.backgroundMediaPath = data.appearance.backgroundMediaPath;
-      }
-      await store.setAppearance?.(merged, ctx);
+const metaStore = {
+  load(userId) {
+    try {
+      const raw = localStorage.getItem(META_KEY_PREFIX + userId);
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
     }
-  }
-
-  // Events: local always wins — the desktop is the authority for booth events.
-  // Edits saved locally are preserved through a Ctrl+R even if the 2-second
-  // push debounce hadn't fired yet. New events from Supabase (created on the
-  // web app) are added to local, but existing local events are never overwritten.
-  const localArr = Array.isArray(localEvents) ? localEvents : [];
-  if (hasItems(data.events)) {
-    const localById = new Map(localArr.map(le => [String(le.id), le]));
-    const onlyInSupabase = data.events.filter(e => !localById.has(String(e.id)));
-    if (onlyInSupabase.length > 0) {
-      await store.setEvents?.([...localArr, ...onlyInSupabase], ctx);
+  },
+  save(userId, meta) {
+    try {
+      localStorage.setItem(META_KEY_PREFIX + userId, JSON.stringify(meta));
+    } catch (err) {
+      console.warn('[settingsSync] could not save sync metadata:', err?.message);
     }
-  }
+  },
+};
 
-  // Templates / Frames / Palettes: local always wins.
-  // Only templates/frames/palettes that exist in Supabase but NOT locally are
-  // merged in (same strategy as events). Local creations are never overwritten
-  // by a Supabase pull, even if the 2-second push debounce hasn't fired yet.
-  const localTplArr = Array.isArray(localTemplates) ? localTemplates : [];
-  if (hasItems(data.templates)) {
-    const localTplById = new Map(localTplArr.map(t => [String(t.id), t]));
-    const onlyInSupabase = data.templates.filter(t => !localTplById.has(String(t.id)));
-    if (onlyInSupabase.length > 0) {
-      await store.setTemplates?.([...localTplArr, ...onlyInSupabase], ctx);
-    }
-  }
-
-  const localFrameArr = Array.isArray(localFrames) ? localFrames : [];
-  if (hasItems(data.frames)) {
-    const localFrameById = new Map(localFrameArr.map(f => [String(f.id), f]));
-    const onlyInSupabase = data.frames.filter(f => !localFrameById.has(String(f.id)));
-    if (onlyInSupabase.length > 0) {
-      await store.setFrames?.([...localFrameArr, ...onlyInSupabase], ctx);
-    }
-  }
-
-  const localPaletteArr = Array.isArray(localPalettes) ? localPalettes : [];
-  if (hasItems(data.palettes)) {
-    const localPaletteById = new Map(localPaletteArr.map(p => [String(p.id), p]));
-    const onlyInSupabase = data.palettes.filter(p => !localPaletteById.has(String(p.id)));
-    if (onlyInSupabase.length > 0) {
-      await store.setPalettes?.([...localPaletteArr, ...onlyInSupabase], ctx);
-    }
-  }
-
-  // Upload local → Supabase so the cloud stays in sync with whatever is local.
-  // Uses the 2-second debounce, so it's a no-op if a push is already queued.
-  pushSettings({});
-
-  console.log('[settingsSync] pulled from Supabase (local-first)');
-  return data;
-}
-
-// Push electron-store → Supabase (debounced 2 s to batch rapid saves)
-export function pushSettings(patch = {}) {
-  if (!_userId) return;
-
-  if (_pendingTimer) clearTimeout(_pendingTimer);
-
-  _pendingTimer = setTimeout(async () => {
-    const store = getBridge();
-    const ctx = { userId: _userId };
-    const payload = {
-      user_id: _userId,
-      settings: patch.settings ?? await store?.getSettings?.(ctx) ?? {},
-      appearance: patch.appearance ?? await store?.getAppearance?.(ctx) ?? {},
-      events: patch.events ?? await store?.getEvents?.(ctx) ?? [],
-      templates: patch.templates ?? await store?.getTemplates?.(ctx) ?? [],
-      frames: patch.frames ?? await store?.getFrames?.(ctx) ?? [],
-      palettes: patch.palettes ?? await store?.getPalettes?.(ctx) ?? [],
-      synced_at: new Date().toISOString(),
-    };
-
+const remote = {
+  async fetch(userId) {
+    const { data, error } = await supabase
+      .from('booth_settings')
+      .select('*')
+      .eq('user_id', userId)
+      .maybeSingle();
+    return { row: data, error };
+  },
+  // Writes only if the row is still the version this device merged against.
+  async update(userId, expectedUpdatedAt, values) {
+    const { data, error } = await supabase
+      .from('booth_settings')
+      .update(values)
+      .eq('user_id', userId)
+      .eq('updated_at', expectedUpdatedAt)
+      .select('updated_at');
+    return { updated: Array.isArray(data) && data.length > 0, error };
+  },
+  async insert(userId, values) {
     const { error } = await supabase
       .from('booth_settings')
-      .upsert(payload, { onConflict: 'user_id' });
+      .insert({ user_id: userId, ...values });
+    return { inserted: !error, conflict: error?.code === '23505', error: error?.code === '23505' ? null : error };
+  },
+};
 
-    if (error) {
-      console.warn('[settingsSync] push failed:', error.message);
-    } else {
-      console.log('[settingsSync] pushed to Supabase');
+const storeProxy = new Proxy({}, {
+  get(_target, name) {
+    const bridge = getBridge();
+    const fn = bridge?.[name];
+    return typeof fn === 'function' ? fn.bind(bridge) : undefined;
+  },
+});
+
+const core = createSettingsSyncCore({
+  store: storeProxy,
+  remote,
+  metaStore,
+  log: (message) => console.log(`[settingsSync] ${message}`),
+});
+
+let pendingTimer = null;
+let channel = null;
+const listeners = new Set();
+
+function notify(changed) {
+  if (!changed?.length) return;
+  for (const listener of listeners) {
+    try {
+      listener(changed);
+    } catch (err) {
+      console.warn('[settingsSync] listener failed:', err?.message);
     }
-  }, 2000);
+  }
 }
 
-// Call when a specific slice changes (e.g. after store.setSettings)
+async function runSync(reason) {
+  const result = await core.syncNow();
+  if (!result.ok) {
+    console.warn(`[settingsSync] ${reason} sync failed:`, result.error || 'unknown');
+  } else if (result.pushed) {
+    signalOtherDevices();
+  }
+  notify(result.changed);
+  return result;
+}
+
+function signalOtherDevices() {
+  if (!channel) return;
+  channel
+    .send({ type: 'broadcast', event: 'settings-changed', payload: { deviceId, at: Date.now() } })
+    .catch?.(() => {});
+}
+
+function subscribe(userId) {
+  if (channel) {
+    try { channel.unsubscribe(); } catch {}
+    channel = null;
+  }
+  channel = supabase.channel(`booth-settings:${userId}`, { config: { broadcast: { self: true } } });
+  channel
+    .on('broadcast', { event: 'settings-changed' }, ({ payload }) => {
+      if (payload?.deviceId === deviceId) return;
+      clearTimeout(pendingTimer);
+      pendingTimer = setTimeout(() => runSync('remote change'), REMOTE_SIGNAL_DELAY_MS);
+    })
+    .subscribe();
+}
+
+export function initSettingsSync(userId) {
+  const changedUser = core.userId !== (userId ? String(userId) : null);
+  core.init(userId);
+  if (userId && changedUser) subscribe(String(userId));
+}
+
+// Called at startup. Returns the merged lists, which the dashboard uses as a
+// fallback when this device has nothing saved yet.
+export async function pullSettings() {
+  if (!core.userId) return null;
+  const result = await runSync('startup');
+  return result.items || null;
+}
+
+// Called after local saves. The argument is ignored: the store is read directly,
+// so a partial patch can never overwrite the other lists.
+export function pushSettings(_patch = {}) {
+  if (!core.userId) return;
+  clearTimeout(pendingTimer);
+  pendingTimer = setTimeout(() => runSync('save'), PUSH_DEBOUNCE_MS);
+}
+
 export const pushSettingsSlice = (key, value) => pushSettings({ [key]: value });
 
-// Immediate (non-debounced) push — use after explicit user deletions so the
-// removal reaches Supabase before a page refresh wipes the pending debounce.
-export async function pushSettingsNow(patch = {}) {
-  if (!_userId) return;
-  if (_pendingTimer) { clearTimeout(_pendingTimer); _pendingTimer = null; }
-  const store = getBridge();
-  const ctx = { userId: _userId };
-  const payload = {
-    user_id: _userId,
-    settings:   patch.settings   ?? await store?.getSettings?.(ctx)   ?? {},
-    appearance: patch.appearance ?? await store?.getAppearance?.(ctx) ?? {},
-    events:     patch.events     ?? await store?.getEvents?.(ctx)     ?? [],
-    templates:  patch.templates  ?? await store?.getTemplates?.(ctx)  ?? [],
-    frames:     patch.frames     ?? await store?.getFrames?.(ctx)     ?? [],
-    palettes:   patch.palettes   ?? await store?.getPalettes?.(ctx)   ?? [],
-    synced_at: new Date().toISOString(),
-  };
-  const { error } = await supabase
-    .from('booth_settings')
-    .upsert(payload, { onConflict: 'user_id' });
-  if (error) console.warn('[settingsSync] immediate push failed:', error.message);
-  else console.log('[settingsSync] immediate push OK');
+// Immediate sync — used after deletions so they reach the cloud before a restart.
+export async function pushSettingsNow(_patch = {}) {
+  if (!core.userId) return;
+  clearTimeout(pendingTimer);
+  pendingTimer = null;
+  await runSync('immediate');
+}
+
+// Call when the operator deletes an event, template, frame or palette, before
+// persisting the shorter list. Without it the item would come back from other
+// devices, which still have it.
+export function recordSettingsDeletion(slice, id) {
+  core.recordDeletion(slice, id);
+}
+
+// Called with the list names ("events", "templates", …) that changed on this
+// device because of another device. Returns an unsubscribe function.
+export function onSettingsSynced(listener) {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
 }

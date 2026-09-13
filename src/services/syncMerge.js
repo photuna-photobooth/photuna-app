@@ -124,6 +124,40 @@ export function stampLocalChanges(local, meta, now) {
   return next;
 }
 
+/**
+ * Booths on app versions before this sync push their whole arrays without
+ * touching the metadata, so a cloud item can change while its recorded
+ * fingerprint stays the same. Left alone, the merge would treat that edit as old
+ * and discard it. Where an item's content no longer matches its fingerprint,
+ * credit the change to the time the cloud row was last written.
+ */
+export function reconcileRemoteMeta(items, meta, rowUpdatedAtMs) {
+  const next = normalizeMeta(meta);
+  const at = Number.isFinite(rowUpdatedAtMs) ? rowUpdatedAtMs : 0;
+
+  for (const slice of SLICES) {
+    for (const item of Array.isArray(items?.[slice]) ? items[slice] : []) {
+      const id = idOf(item);
+      if (!id) continue;
+      const hash = contentHash(slice, item);
+      const known = next.slices[slice][id];
+      if (known && known.hash !== hash) {
+        next.slices[slice][id] = { hash, updatedAt: Math.max(known.updatedAt || 0, at) };
+      }
+    }
+  }
+
+  for (const key of OBJECTS) {
+    const value = items?.[key];
+    const known = next.objects[key];
+    if (!known || !value || typeof value !== "object") continue;
+    const hash = fnv1a(stableStringify(value));
+    if (known.hash !== hash) next.objects[key] = { hash, updatedAt: Math.max(known.updatedAt || 0, at) };
+  }
+
+  return next;
+}
+
 /** The operator deleted an item on this device. */
 export function recordDeletion(meta, slice, id, now) {
   const next = normalizeMeta(meta);

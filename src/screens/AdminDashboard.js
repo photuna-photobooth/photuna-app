@@ -18,7 +18,7 @@ import { getDeviceIdentity, deviceTypeLabel, deviceDisplayName, takesSeat, isNat
 import { buildReceiptHtml, loadLogoDataUrl, formatReceiptMoney, formatReceiptDate } from "../lib/receiptDocument";
 import SubscriptionSummary from "../components/subscription/SubscriptionSummary";
 import TemplateEditor from "../components/TemplateEditor";
-import { initSettingsSync, pullSettings, pushSettings, pushSettingsNow } from "../services/settingsSync.js";
+import { initSettingsSync, pullSettings, pushSettings, pushSettingsNow, recordSettingsDeletion, onSettingsSynced } from "../services/settingsSync.js";
 import AnalyticsDashboard from "../components/AnalyticsDashboard";
 import OnboardingTour from "../components/OnboardingTour";
 import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
@@ -7632,6 +7632,35 @@ This cannot be undone.`
     showToast('Event saved');
   };
 
+  // Another device changed events, templates, frames or palettes and the sync has
+  // already saved them locally: show them. Settings and appearance are not
+  // reloaded here — they keep this device's values (see settingsSyncCore.js).
+  useEffect(() => {
+    if (!native || !ready || !hydrated) return undefined;
+    return onSettingsSynced(async (changed) => {
+      try {
+        if (changed.includes("events")) {
+          const next = await native.getEvents?.(ctx);
+          if (Array.isArray(next)) setEvents(next);
+        }
+        if (changed.includes("templates")) {
+          const next = await native.getTemplates?.(ctx);
+          if (Array.isArray(next)) setTemplates(next);
+        }
+        if (changed.includes("frames")) {
+          const next = await native.getFrames?.(ctx);
+          if (Array.isArray(next)) setFrames(next);
+        }
+        if (changed.includes("palettes")) {
+          const next = await native.getPalettes?.(ctx);
+          if (Array.isArray(next)) setPalettes(next);
+        }
+      } catch (err) {
+        console.warn("[AdminDashboard] reload after sync failed:", err?.message);
+      }
+    });
+  }, [native, ready, hydrated, ctx]);
+
   // Persist state (electron-store + Supabase)
   useEffect(() => {
     if (!native?.setEvents || !ready || !hydrated) return;
@@ -14642,6 +14671,8 @@ This cannot be undone.`
 
                         try {
                           if (deleteTarget.type === "event") {
+                            // Record it first, or other devices still holding the event bring it back.
+                            recordSettingsDeletion("events", deleteTarget.id);
                             const nextEvents = events.filter((e) => e.id !== deleteTarget.id);
                             await persistEvents(nextEvents);
                             // Push immediately so Supabase reflects the deletion before any
@@ -14664,6 +14695,7 @@ This cannot be undone.`
                           }
 
                           else if (deleteTarget.type === "template") {
+                            recordSettingsDeletion("templates", deleteTarget.id);
                             const nextTemplates = templates.filter((t) => t.id !== deleteTarget.id);
 
                             const nextEvents = events.map((ev) => {
@@ -14684,6 +14716,7 @@ This cannot be undone.`
                           }
 
                           else if (deleteTarget.type === "frame") {
+                            recordSettingsDeletion("frames", deleteTarget.id);
                             const nextFrames = frames.filter((f) => f.id !== deleteTarget.id);
 
                             const nextEvents = events.map((ev) => {
@@ -14702,6 +14735,7 @@ This cannot be undone.`
                           }
 
                           else if (deleteTarget.type === "bgColor") {
+                            recordSettingsDeletion("palettes", deleteTarget.id);
                             const nextPalettes = (palettes ?? []).filter((p) => p.id !== deleteTarget.id);
 
                             const nextEvents = (events ?? []).map((ev) => {

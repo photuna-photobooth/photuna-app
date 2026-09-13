@@ -15,7 +15,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const source = path.join(here, "..", "src", "services", "syncMerge.js");
 const copy = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "sync-merge-")), "syncMerge.mjs");
 fs.copyFileSync(source, copy);
-const { mergeSync, stampLocalChanges, recordDeletion, emptyMeta, TOMBSTONE_TTL_MS } = await import(pathToFileURL(copy).href);
+const { mergeSync, stampLocalChanges, recordDeletion, reconcileRemoteMeta, emptyMeta, TOMBSTONE_TTL_MS } = await import(pathToFileURL(copy).href);
 
 const results = [];
 function check(name, fn) {
@@ -218,6 +218,17 @@ check("this device's item order is kept", () => {
   const laptop = device({ templates: [tpl("t3"), tpl("t1"), tpl("t2")] });
   const out = sync(laptop, { items: { ...blank(), templates: [tpl("t1"), tpl("t4")] }, meta: null }, 1000);
   assert.deepEqual(out.items.templates.map((t) => t.id), ["t3", "t1", "t2", "t4"]);
+});
+
+check("an edit saved by an older app version (no metadata) is not ignored", () => {
+  const laptop = device({ events: [ev("a")] });
+  let cloud = sync(laptop, emptyCloud(), 1000);
+  // A 0.4.10 booth renames the event in the cloud and pushes its arrays, leaving sync_meta as it was.
+  const oldVersionItems = { ...cloud.items, events: [ev("a", { name: "Renamed on an old booth" })] };
+  const reconciled = reconcileRemoteMeta(oldVersionItems, cloud.meta, 5000);
+  assert.equal(reconciled.slices.events.a.updatedAt, 5000);
+  sync(laptop, { items: oldVersionItems, meta: reconciled }, 6000);
+  assert.equal(laptop.items.events[0].name, "Renamed on an old booth");
 });
 
 check("large frame data (1.4 MB) hashes quickly", () => {
