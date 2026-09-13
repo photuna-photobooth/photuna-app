@@ -10,6 +10,7 @@ import { useLicense } from "./context/LicenseContext";
 import * as licensingApi from "./services/licensingApi";
 import { registerBooth, unregisterBooth } from './services/boothRegistry';
 import { sendRemoteAck, subscribeToRemoteCommands } from './services/remoteControl';
+import { supabase } from './services/supabase';
 
 const native = () => window.electron || window.api || null;
 
@@ -324,6 +325,39 @@ export default function App() {
       unregisterBooth();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
+
+  // Upload guest galleries that were queued while the booth had no internet.
+  // Lives here because App stays mounted in both admin and booth mode, and the
+  // renderer is the only side that can refresh the operator's session token.
+  useEffect(() => {
+    if (!user?.id) return;
+    const api = window.api || window.electron;
+    if (!api?.retryQueuedGalleries) return;
+
+    let cancelled = false;
+    const run = async (wake = false) => {
+      try {
+        const { data } = await supabase.auth.getSession();
+        const accessToken = data?.session?.access_token;
+        if (!accessToken || cancelled) return;
+        await api.retryQueuedGalleries({ accessToken, wake });
+      } catch (err) {
+        console.warn("[gallery-queue] retry failed", err?.message || err);
+      }
+    };
+
+    const startTimer = setTimeout(() => run(), 15_000);
+    const interval = setInterval(() => run(), 120_000);
+    const onOnline = () => run(true);
+    window.addEventListener("online", onOnline);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(startTimer);
+      clearInterval(interval);
+      window.removeEventListener("online", onOnline);
+    };
   }, [user?.id]);
 
   // Called by AdminDashboard when user chooses to start photobooth for an event

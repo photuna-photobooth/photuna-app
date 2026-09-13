@@ -21,6 +21,7 @@ const LOCALES = {
       " to create this special memory. To download your photos and GIF samples, simply scan the QR code.",
     remainingSuffix: "secs",
     qrFallback: "QR",
+    galleryPending: "Your photos will be ready once we're back online.",
     posterFallback: "Poster",
     localSaved: "Your photos are saved locally by the booth operator.",
     tabletSaved: "Your session has been saved to your account.",
@@ -36,6 +37,7 @@ const LOCALES = {
       " para lumikha ng espesyal na alaala. Para i-download ang iyong mga larawan at GIF, i-scan lang ang QR code.",
     remainingSuffix: "seg",
     qrFallback: "QR",
+    galleryPending: "Makukuha ang iyong mga litrato kapag muling nakakonekta sa internet.",
     posterFallback: "Poster",
     localSaved: "Naka-save ang mga larawan sa lokal na storage ng booth operator.",
     tabletSaved: "Na-save ang iyong session sa iyong account.",
@@ -113,6 +115,8 @@ export default function PrintPreviewScreen({
   const [isPreparing, setIsPreparing] = useState(true);
   const [resolvedQrUrl, setResolvedQrUrl] = useState(qrUrl || null);
   const [galleryError, setGalleryError] = useState("");
+  // The upload was queued for when the booth reconnects; the QR link is final.
+  const [galleryPending, setGalleryPending] = useState(false);
   const [localSavedPath, setLocalSavedPath] = useState(null);
   const [printError, setPrintError] = useState(null);
 
@@ -206,6 +210,7 @@ export default function PrintPreviewScreen({
       try {
         setIsPreparing(true);
         setGalleryError("");
+        setGalleryPending(false);
 
         // Ask the client for the session rather than reading the stored token:
         // this refreshes it if it has expired, which on a booth left running
@@ -237,6 +242,14 @@ export default function PrintPreviewScreen({
         });
 
         if (!mounted) return;
+
+        if (result?.queued && result?.qrUrl) {
+          // No internet: the booth uploads this session when it reconnects. The
+          // link will not change, so the guest gets it now instead of an error.
+          setResolvedQrUrl(result.qrUrl);
+          setGalleryPending(true);
+          return;
+        }
 
         if (!result?.ok) {
           throw new Error(result?.error || "Gallery creation failed");
@@ -744,6 +757,11 @@ export default function PrintPreviewScreen({
             ) : (
               <div className="flex items-center justify-center text-gray-400 bg-gray-100 rounded-lg" style={{ width: isPortrait ? 180 : 256, height: isPortrait ? 180 : 256 }}>
                 {isPreparing ? "Preparing" : i18n.qrFallback}
+              </div>
+            )}
+            {galleryPending && !galleryError && (
+              <div className="mt-2 text-center text-[11px] leading-snug text-gray-600 max-w-[256px] mx-auto">
+                {i18n.galleryPending}
               </div>
             )}
             {galleryError && (

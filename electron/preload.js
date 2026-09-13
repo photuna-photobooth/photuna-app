@@ -195,6 +195,22 @@ const apiImpl = {
     });
   },
 
+  // Galleries that could not upload are queued by the main process; the renderer
+  // drives retries because only it can refresh the operator's session token.
+  retryQueuedGalleries: async ({ accessToken, wake = false } = {}) => {
+    const ctx = await withIdentityCtx();
+    return ipcRenderer.invoke("gallery:retry-queued", {
+      userId: ctx?.userId ?? null,
+      accessToken: accessToken || readSupabaseAccessToken(),
+      wake,
+    });
+  },
+
+  getGalleryQueueStatus: async () => {
+    const ctx = await withIdentityCtx();
+    return ipcRenderer.invoke("gallery:queue-status", { userId: ctx?.userId ?? null });
+  },
+
   getEventGallerySessions: async ({ eventId, userId } = {}) => {
     const ctx = await withIdentityCtx();
     return ipcRenderer.invoke("gallery:get-event-sessions", {

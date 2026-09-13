@@ -198,6 +198,11 @@ function getSupabaseWithToken(accessToken) {
 const { Blob } = require("buffer");
 
 const { uploadSessionImages } = require("./uploadSessionImages");
+// Guest galleries that could not upload (no internet) wait here and are retried
+// when the connection returns; see electron/services/galleryQueue.js.
+const { createGalleryQueue } = require("./services/galleryQueue");
+const galleryQueue = createGalleryQueue({ baseDir: () => app.getPath("userData") });
+const GALLERY_BASE_URL = "https://gallery.studiophotuna.com/gallery";
 
 /* -------------------------------------------------------
  * Global safety for unhandled rejections (dev-friendly)
@@ -1779,11 +1784,75 @@ ipcMain.handle("gallery:create", async (_event, payload) => {
       name: err?.name || null,
       stack: err?.stack ? String(err.stack).split("\n").slice(0, 4).join(" | ") : null,
     });
+    // A booth that loses its connection mid-upload must not lose the guest's
+    // gallery. Keep the session and upload it when the connection returns. The
+    // gallery link is the session id, so the guest can be given it right now and
+    // it starts working once the upload lands.
+    const job = galleryQueue.enqueue(payload, err);
+    if (job) {
+      galleryLog("queued", { sessionId: job.id, attempts: job.attempts });
+      return {
+        ok: false,
+        queued: true,
+        qrUrl: `${GALLERY_BASE_URL}/${job.id}`,
+        error: err?.message || "Failed to create online gallery",
+      };
+    }
+
     return {
       ok: false,
       error: err?.message || "Failed to create online gallery",
     };
   }
+});
+
+// Upload queued galleries. Driven by the renderer, which is the only side that
+// can refresh the operator's session token. Single-flight, so overlapping timers
+// or a reconnect event cannot upload the same session twice at once.
+let galleryRetryInFlight = null;
+
+ipcMain.handle("gallery:retry-queued", async (_event, { userId, accessToken, wake = false } = {}) => {
+  if (!userId) return { ok: false, error: "userId required" };
+  if (!accessToken) return { ok: false, error: "no session token" };
+  if (galleryRetryInFlight) return galleryRetryInFlight;
+
+  galleryRetryInFlight = (async () => {
+    if (wake) galleryQueue.wake(userId);
+    const due = galleryQueue.due(userId);
+    let uploaded = 0;
+
+    for (const job of due) {
+      try {
+        await createOnlineGalleryInMain({ ...job.payload, userId, accessToken });
+        galleryQueue.complete(job.id);
+        uploaded += 1;
+        galleryLog("queue-uploaded", { sessionId: job.id, attempts: job.attempts + 1 });
+      } catch (err) {
+        const updated = galleryQueue.fail(job.id, err);
+        galleryLog("queue-retry-failed", {
+          sessionId: job.id,
+          attempts: updated?.attempts ?? null,
+          permanent: Boolean(updated?.permanent),
+          message: err?.message || String(err),
+        });
+        // Still offline: the rest would fail the same way, so wait for the next
+        // retry instead of burning through the whole queue.
+        if (galleryQueue.isRetryable(err)) break;
+      }
+    }
+
+    return { ok: true, attempted: due.length, uploaded, ...galleryQueue.status(userId) };
+  })().finally(() => {
+    galleryRetryInFlight = null;
+  });
+
+  return galleryRetryInFlight;
+});
+
+ipcMain.handle("gallery:queue-status", async (_event, { userId } = {}) => {
+  const id = userId || getUserIdFromStore();
+  if (!id) return { ok: false, error: "userId required" };
+  return { ok: true, ...galleryQueue.status(id) };
 });
 
 ipcMain.handle("gallery:get-event-sessions", async (_event, { eventId, userId, accessToken } = {}) => {
@@ -2048,6 +2117,9 @@ ipcMain.handle("storage:cleanup", async (_event, payload = {}) => {
     const cutoffMs = Date.now() - autoDeleteDays * 24 * 60 * 60 * 1000;
     let deletedCount = 0;
     let failedCount = 0;
+    // Same rule as the automatic cleanup: never delete a session that is still
+    // waiting to upload its gallery.
+    const queuedSessions = galleryQueue.protectedSessionIds();
 
     async function walkAndCleanup(currentPath) {
       const entries = await fs.readdir(currentPath, { withFileTypes: true });
@@ -2056,6 +2128,7 @@ ipcMain.handle("storage:cleanup", async (_event, payload = {}) => {
         const fullPath = path.join(currentPath, entry.name);
 
         if (entry.isDirectory()) {
+          if (path.basename(currentPath) === "sessions" && queuedSessions.has(entry.name)) continue;
           await walkAndCleanup(fullPath);
           continue;
         }
@@ -2116,13 +2189,20 @@ async function runAutoStorageCleanup() {
 
     const cutoffMs = Date.now() - autoDeleteDays * 24 * 60 * 60 * 1000;
     let deletedCount = 0;
+    // A session still waiting to upload must keep its files however old they are,
+    // or a booth offline for longer than autoDeleteDays would lose the gallery.
+    const queuedSessions = galleryQueue.protectedSessionIds();
 
     async function walk(dir) {
       let entries;
       try { entries = await fsp.readdir(dir, { withFileTypes: true }); } catch { return; }
       for (const entry of entries) {
         const fullPath = path.join(dir, entry.name);
-        if (entry.isDirectory()) { await walk(fullPath); continue; }
+        if (entry.isDirectory()) {
+          if (path.basename(dir) === "sessions" && queuedSessions.has(entry.name)) continue;
+          await walk(fullPath);
+          continue;
+        }
         if (!entry.isFile()) continue;
         try {
           const stat = await fsp.stat(fullPath);
