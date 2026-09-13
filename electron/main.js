@@ -708,6 +708,50 @@ async function createOnlineGalleryInMain(payload = {}) {
     burstVideoBlobs,
   });
 
+  // Upload what the clips cannot carry: slot geometry, the frame graphic,
+  // background and watermark. The render service needs these to build the same
+  // composite this booth just built.
+  //
+  // This is additive. A Windows booth still encodes its own clip, so the row
+  // arrives with final_video_url set and the service's claim skips it. It
+  // matters for two cases: a tablet, which cannot encode and leaves the field
+  // null, and a booth whose own encode failed -- which today silently ends up
+  // with no clip and can now be finished server-side.
+  if (layoutForMotion && Array.isArray(layoutForMotion.slots) && layoutForMotion.slots.length) {
+    try {
+      const recipe = {
+        layout: layoutForMotion,
+        slotVideoMap: Array.isArray(payload?.slotVideoMap) ? payload.slotVideoMap : null,
+        backgroundColor: payload?.motionBackgroundColor || "#ffffff",
+        watermark: Boolean(payload?.watermark),
+      };
+
+      const { error: recipeError } = await supabaseAdminClient.storage
+        .from("studiophotuna")
+        .upload(`${eventId}/${sessionId}/render.json`,
+          toBlobLike({ buffer: Buffer.from(JSON.stringify(recipe)), mime: "application/json" }),
+          { contentType: "application/json", upsert: true });
+      if (recipeError) throw recipeError;
+
+      const overlaySource = payload?.frameOverlayDataUrl;
+      const hasOverlay = Boolean(overlaySource) && String(overlaySource).startsWith("data:image/");
+      if (hasOverlay) {
+        const overlay = dataUrlToBuffer(overlaySource);
+        const { error: overlayError } = await supabaseAdminClient.storage
+          .from("studiophotuna")
+          .upload(`${eventId}/${sessionId}/overlay.png`, toBlobLike(overlay),
+            { contentType: overlay.mime || "image/png", upsert: true });
+        if (overlayError) throw overlayError;
+      }
+
+      galleryLog("recipe-uploaded", { sessionId, hasOverlay });
+    } catch (recipeErr) {
+      // The recipe is only needed if something else has to render this session,
+      // so a failure here must never cost the operator their gallery.
+      galleryLog("recipe-failed", { sessionId, message: recipeErr?.message || String(recipeErr) });
+    }
+  }
+
   galleryLog("uploaded", {
     sessionId,
     finalUrl: Boolean(uploadResult?.finalUrl),
