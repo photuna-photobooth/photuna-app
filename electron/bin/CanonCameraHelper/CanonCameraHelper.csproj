@@ -46,4 +46,20 @@
     <None Include="@(NikonSdkFile)" Link="nikon\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
   </ItemGroup>
 
+  <!--
+    Sony Camera Remote SDK. Copied next to the helper, into sony/, only when both the
+    business's SDK (sdk/sony/RemoteCli) and Photuna's bridge DLL (built by
+    scripts/build-sony-bridge.ps1 into sdk/_build) are present.
+  -->
+  <PropertyGroup>
+    <SonySdkBin>sdk\sony\RemoteCli\external\crsdk\</SonySdkBin>
+    <SonyBridgeDll>sdk\_build\sony-bridge\Release\photuna_sony_bridge.dll</SonyBridgeDll>
+  </PropertyGroup>
+  <ItemGroup Condition="Exists('$(SonyBridgeDll)') And Exists('$(SonySdkBin)Cr_Core.dll')">
+    <SonySdkFile Include="$(SonyBridgeDll);$(SonySdkBin)Cr_Core.dll;$(SonySdkBin)monitor_protocol.dll;$(SonySdkBin)monitor_protocol_pf.dll" />
+    <SonyAdapterFile Include="$(SonySdkBin)CrAdapter\*.dll" />
+    <None Include="@(SonySdkFile)" Link="sony\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
+    <None Include="@(SonyAdapterFile)" Link="sony\CrAdapter\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
+  </ItemGroup>
+
 </Project>

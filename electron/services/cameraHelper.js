@@ -30,7 +30,9 @@ const EXE_NAME = "canon-camera-helper.exe";
 
 const TIMEOUTS_MS = {
   status: 5_000,
-  connect: 15_000,
+  // Each camera brand whose SDK is installed is tried in turn, and with no camera
+  // attached each takes several seconds to say so.
+  connect: 25_000,
   disconnect: 5_000,
   capture: 15_000,
   getSettings: 5_000,

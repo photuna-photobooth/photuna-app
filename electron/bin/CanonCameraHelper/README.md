@@ -14,7 +14,7 @@ falls back to the webcam for that shot.
 | Phase | What | State |
 |---|---|---|
 | 0 | Process, protocol, timeouts, restart limits, simulated camera | done |
-| 1 | A real camera backend: connect, full-resolution capture to the PC, battery | Nikon Z: built, **not yet tested with a camera**. Canon: waiting for the SDK. Sony: needs a C++ bridge |
+| 1 | A real camera backend: connect, full-resolution capture to the PC, battery | Nikon Z and Sony: built, **not yet tested with a camera**. Canon: waiting for the SDK |
 | 2 | ISO / shutter / aperture / white balance controls in the dashboard | done (Settings → Camera, from camera-reported values) |
 | 3 | Live view from the camera for preview and burst clips | |
 | 4 | Booth flow integration with per-shot webcam fallback, beta flag | done (`cameraSource: "usb"`), simulator-tested |
@@ -94,6 +94,50 @@ Behaviour:
 Nikon's documents are marked confidential and the SDK is licensed to the business:
 keep all of it under `sdk/` (git-ignored). Confirm the licence allows bundling the
 DLLs before they go in the installer.
+
+## Sony (Alpha / ZV / FX)
+
+Sony's Camera Remote SDK is C++: connecting needs an `IDeviceCallback` object the SDK
+calls from its own threads. C# cannot implement a C++ interface, so
+`SonyBridge/photuna_sony_bridge.cpp` (Photuna's own code) owns that object and
+exposes a few plain C functions; `SonyBackend.cs` calls them. Checked on a PC with no
+camera: the SDK loads and starts and connect answers `NO_CAMERA`. **Taking a real
+photo has not been tested.**
+
+Building (Visual Studio 2022 Build Tools with the C++ workload):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/build-sony-bridge.ps1
+dotnet build -c Release electron/bin/CanonCameraHelper
+```
+
+The script builds against Sony's headers and `Cr_Core.lib` from
+`sdk/sony/RemoteCli` into `sdk/_build` (git-ignored). The helper build then copies the
+bridge, `Cr_Core.dll`, `monitor_protocol*.dll` and `CrAdapter/` into `sony/` — only
+when both the SDK and the bridge exist.
+
+Setup on the camera and PC:
+
+- On the camera: turn **PC Remote** on and set the USB connection mode to PC Remote.
+- Close Imaging Edge Desktop / Remote (`CAMERA_IN_USE` otherwise).
+- Some models need Sony's USB driver (`sdk/sony/Driver`) on the booth PC.
+- USB only: network-connected cameras need pairing the booth has no screen for.
+
+Behaviour:
+
+- On connect the PC is given priority over the camera's dials (Priority Key = PC
+  Remote) and photos are sent to the PC (Still Image Store Destination = Host PC).
+- A shot is a half-press for autofocus, a full press, then waiting for Sony's
+  download-complete callback. Files land in a private temp folder; only the JPEG is
+  moved to the requested path. RAW only fails with `IMAGE_NOT_JPEG`.
+- ISO, shutter speed, aperture and white balance come from the camera's candidate
+  values (multi-frame noise reduction ISO modes are hidden); battery is reported in
+  the quarter/third steps Sony provides.
+
+Licensing: Sony's licence allows including the SDK library in a commercial app, as
+long as users are not led to think Sony made it. `CrAdapter/libusb-1.0.dll` is LGPL and
+`libssh2.dll` BSD — the installer must carry their notices (Sony's `RemoteCli/README.md`
+has the text).
 
 ## Resuming: `PHOTUNA-CANON-PHASE1`
 

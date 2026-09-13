@@ -41,7 +41,7 @@ internal static class Program
 
         ICameraBackend backend = args.Contains("--simulate")
             ? new SimulatedBackend()
-            : new AutoBackend(new NikonBackend(), new CanonBackend());
+            : new AutoBackend(new NikonBackend(), new SonyBackend(), new CanonBackend());
 
         Log($"starting with backend {backend.Name}");
         Emit(new JsonObject

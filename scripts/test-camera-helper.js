@@ -219,7 +219,7 @@ if (!process.argv.includes("--hardware")) (async () => {
     const r = await h.connect();
     const expected = status.result.sdkAvailable ? ["NO_CAMERA", "CAMERA_IN_USE"] : ["SDK_NOT_INSTALLED"];
     assert.ok(expected.includes(r.error?.code), `sdkAvailable=${status.result.sdkAvailable}, got ${JSON.stringify(r)}`);
-    assert.ok(Date.now() - started < 15_000, "connect took too long to give up");
+    assert.ok(Date.now() - started < 25_000, "connect took too long to give up");
     const after = await h.status();
     assert.strictEqual(after.ok, true, "helper stopped answering after trying the real SDKs");
     await h.stop();
