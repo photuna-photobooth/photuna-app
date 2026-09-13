@@ -164,6 +164,19 @@ export default function PhotoScreen({
       ? mirrorCamera
       : !!(event?.settings?.mirrorCamera ?? gs.mirrorCamera);
 
+  // "usb": shots come from a camera connected by USB (beta). The live preview and
+  // motion clips still come from the webcam, and any shot the USB camera cannot
+  // take is taken from the webcam, so a guest never loses a shot.
+  const usbCameraApi = (window.api ?? window.electron)?.camera;
+  const useUsbCamera = !!usbCameraApi?.captureStill
+    && (event?.settings?.cameraSource ?? gs.cameraSource) === "usb";
+
+  // Open the camera session before the first countdown ends, so the first shot
+  // is not slowed by connecting. Failure here is fine — the shot retries it.
+  useEffect(() => {
+    if (useUsbCamera) usbCameraApi.connect?.().catch?.(() => { });
+  }, [useUsbCamera]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const sessionIdRef = useRef(session?.sessionId || null);
   useEffect(() => { sessionIdRef.current = session?.sessionId || null; }, [session]);
 
@@ -552,7 +565,23 @@ export default function PhotoScreen({
       const clipPromise = stopPreShotRecording();
       pendingClipPromisesRef.current.push(clipPromise);
 
-      const saved = await captureFrame(targetIndex);
+      let saved = null;
+      if (useUsbCamera && session?.sessionId) {
+        const shot = await usbCameraApi
+          .captureStill({ sessionId: session.sessionId, slotIndex: slotIdx, eventId })
+          .catch((err) => ({ ok: false, error: { code: "IPC_FAILED", message: err?.message } }));
+        if (shot?.ok && shot.dataUrl) {
+          saved = {
+            dataUrl: shot.dataUrl,
+            index: targetIndex ?? photosTaken,
+            width: shot.width,
+            height: shot.height,
+          };
+        } else {
+          console.warn("[PhotoScreen] USB camera shot failed; using the webcam for this shot:", shot?.error?.code, shot?.error?.message);
+        }
+      }
+      if (!saved) saved = await captureFrame(targetIndex);
 
       if (saved) {
         capturesRef.current.push(

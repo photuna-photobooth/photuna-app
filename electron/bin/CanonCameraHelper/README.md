@@ -14,13 +14,36 @@ falls back to the webcam for that shot.
 | Phase | What | State |
 |---|---|---|
 | 0 | Process, protocol, timeouts, restart limits, simulated camera | done |
-| 1 | Canon EDSDK: connect, full-resolution capture to the PC, battery | needs the SDK |
-| 2 | ISO / shutter / aperture / white balance controls in the dashboard | |
+| 1 | A real camera backend: connect, full-resolution capture to the PC, battery | needs a brand's SDK + a test camera |
+| 2 | ISO / shutter / aperture / white balance controls in the dashboard | done (Settings → Camera, from camera-reported values) |
 | 3 | Live view from the camera for preview and burst clips | |
-| 4 | Booth flow integration with per-shot webcam fallback, beta flag | |
+| 4 | Booth flow integration with per-shot webcam fallback, beta flag | done (`cameraSource: "usb"`), simulator-tested |
 
-Until the SDK is added, the real backend reports `sdkAvailable: false` and every
-call fails with `SDK_NOT_INSTALLED`. Nothing in the booth uses it yet.
+The booth side is brand-neutral (`electron/services/cameraCapture.js`,
+`camera:*` IPC, `PhotoScreen.js`, the dashboard's Photo source setting). A brand
+is added by implementing one `ICameraBackend` here; nothing else changes.
+
+Until a backend has its SDK, the real backend reports `sdkAvailable: false`, the
+dashboard does not offer the USB camera option, and every call fails with
+`SDK_NOT_INSTALLED`.
+
+**Not shipped yet.** The helper is not in the installer: it is a self-contained
+.NET exe (the print helper is ~160 MB) and does nothing without a backend. Add it
+to `extraResources` in the release where the first real backend works.
+
+Full-resolution originals are saved to the session's `originals/` folder, never
+`captures/` — `captures:list` and the booth pipeline treat every image there as
+a booth shot. The booth gets a copy at most 3000 px on the long edge.
+
+## Other brands
+
+Both are free, and both are licensed to the business, which must download them.
+Neither can be tested without that brand's camera attached.
+
+| Brand | SDK | Getting it | Notes |
+|---|---|---|---|
+| Sony | Camera Remote SDK | Registration form on Sony's SDK download page, download is immediate | Licence allows bundling the library inside a commercial app; end users must be told Sony did not make the app. Alpha / ZV / FX bodies. |
+| Nikon | Camera Remote SDK (unified module) | Apply at sdk.nikonimaging.com | Windows 11 64-bit only; Z9, Z8, Z6III, Z7II, Z6II, Z7, Z6, Z5II, Z5, Zf, Z50II, Z50, Z30, Zfc, ZR. Read the licence's redistribution terms when downloading. |
 
 ## Resuming: `PHOTUNA-CANON-PHASE1`
 

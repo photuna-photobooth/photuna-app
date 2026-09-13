@@ -1855,6 +1855,76 @@ ipcMain.handle("gallery:queue-status", async (_event, { userId } = {}) => {
   return { ok: true, ...galleryQueue.status(id) };
 });
 
+/* --------------------
+   USB camera (beta)
+   --------------------
+   Shots from a camera connected by USB, taken by the camera helper process so a
+   camera SDK crash or hang can never take the booth down (cameraHelper.js). The
+   webcam stays the default; PhotoScreen uses the webcam for any shot this fails. */
+const { nativeImage } = require("electron");
+const { CameraHelper } = require("./services/cameraHelper");
+const { createCameraCapture } = require("./services/cameraCapture");
+
+const CAMERA_SAFE_ID = /^[A-Za-z0-9_-]{1,120}$/;
+let cameraHelperInstance = null;
+let cameraCaptureService = null;
+
+async function resizeJpegWithNativeImage(filePath, { maxEdge, quality }) {
+  const image = nativeImage.createFromPath(filePath);
+  if (image.isEmpty()) throw new Error("the image could not be decoded");
+  const { width, height } = image.getSize();
+  const scale = Math.min(1, maxEdge / Math.max(width, height));
+  const copy = scale < 1
+    ? image.resize({ width: Math.round(width * scale), height: Math.round(height * scale), quality: "best" })
+    : image;
+  const size = copy.getSize();
+  return { buffer: copy.toJPEG(quality), width: size.width, height: size.height };
+}
+
+// Created on first use, so booths that never use a USB camera never start the helper.
+function getCameraCapture() {
+  if (!cameraCaptureService) {
+    cameraHelperInstance = new CameraHelper({ resourcesPath: process.resourcesPath, appPath: app.getAppPath() });
+    cameraHelperInstance.on("log", (line) => { if (line) console.log(`[camera] ${line}`); });
+    cameraCaptureService = createCameraCapture({
+      helper: cameraHelperInstance,
+      resizeJpeg: resizeJpegWithNativeImage,
+      log: (message) => console.log(`[camera] ${message}`),
+    });
+  }
+  return cameraCaptureService;
+}
+
+ipcMain.handle("camera:status", () => getCameraCapture().status());
+ipcMain.handle("camera:connect", () => getCameraCapture().connect());
+ipcMain.handle("camera:get-settings", () => getCameraCapture().getSettings());
+ipcMain.handle("camera:set-setting", (_event, { key, value } = {}) => getCameraCapture().setSetting(key, value));
+
+ipcMain.handle("camera:capture-still", async (_event, payload = {}) => {
+  const { sessionId, slotIndex, eventId = "default", userId = null, storagePath = "" } = payload || {};
+  if (!CAMERA_SAFE_ID.test(String(sessionId ?? "")) || !CAMERA_SAFE_ID.test(String(eventId ?? ""))) {
+    return { ok: false, error: { code: "BAD_REQUEST", message: "Invalid session or event id." } };
+  }
+  try {
+    const { sessionDir } = resolveBoothOutputDirs({ userId, eventId, sessionId, storagePath });
+    // Full-resolution originals live beside captures/, not in it: captures:list
+    // and the booth pipeline treat every image in captures/ as a booth shot.
+    const originalsDir = path.join(sessionDir, "originals");
+    ensureDir(originalsDir);
+    const result = await getCameraCapture().captureStill({ capturesDir: originalsDir, slotIndex });
+    if (!result.ok) {
+      console.warn(`[camera] slot ${slotIndex} of session ${sessionId} failed: ${result.error?.code} ${result.error?.message || ""}`);
+    }
+    return result;
+  } catch (err) {
+    return { ok: false, error: { code: "INTERNAL", message: err?.message || String(err) } };
+  }
+});
+
+app.on("before-quit", () => {
+  if (cameraHelperInstance) cameraHelperInstance.stop().catch(() => {});
+});
+
 ipcMain.handle("gallery:get-event-sessions", async (_event, { eventId, userId, accessToken } = {}) => {
   try {
     if (!eventId) return { ok: false, sessions: [], error: "eventId required" };

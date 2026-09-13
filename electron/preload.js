@@ -431,6 +431,28 @@ const apiImpl = {
     });
   },
 
+  // USB camera (beta) — a camera driven through the camera helper process. Every
+  // call resolves to an answer, never rejects; see electron/services/cameraCapture.js.
+  camera: {
+    status: () => ipcRenderer.invoke("camera:status"),
+    connect: () => ipcRenderer.invoke("camera:connect"),
+    getSettings: () => ipcRenderer.invoke("camera:get-settings"),
+    setSetting: (key, value) => ipcRenderer.invoke("camera:set-setting", { key, value }),
+    // Takes one shot for a session slot. Resolves { ok, dataUrl, width, height }
+    // or { ok:false, error:{ code } }, in which case the booth uses the webcam.
+    captureStill: async ({ sessionId, slotIndex, eventId } = {}) => {
+      const ctx = await withIdentityCtx();
+      const settings = await ipcRenderer.invoke("store:getSettings", ctx);
+      return ipcRenderer.invoke("camera:capture-still", {
+        sessionId,
+        slotIndex,
+        eventId,
+        userId: ctx?.userId ?? null,
+        storagePath: settings?.storagePath ?? "",
+      });
+    },
+  },
+
   // Cloud storage — Google Drive & Dropbox
   cloudGoogleDrive: {
     status:     () => ipcRenderer.invoke("cloud:google-drive:status"),
