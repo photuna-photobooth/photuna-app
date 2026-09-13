@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Canon camera helper. Runs as a long-lived child process of the booth app and
+    speaks line-delimited JSON over stdin/stdout. Kept out of the Electron process
+    on purpose: camera SDKs are native code, and if one crashes or hangs only this
+    process dies — the booth kills it, restarts it, and falls back to the webcam.
+
+    Same shape as photo-print-helper so it builds and ships the same way.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>canon-camera-helper</AssemblyName>
+    <RootNamespace>CanonCameraHelper</RootNamespace>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+</Project>

@@ -86,6 +86,7 @@
       "shared/**/*",
       "electron/**/*",
       "!electron/bin/PhotoPrintHelper/**/*",
+      "!electron/bin/CanonCameraHelper/**/*",
       "!electron/bin/photo-print-helper.exe"
     ],
     "asarUnpack": [

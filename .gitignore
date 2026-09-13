@@ -29,6 +29,13 @@
 /electron/bin/photo-print-helper.exe
 /electron/bin/PhotoPrintHelper/bin
 /electron/bin/PhotoPrintHelper/obj
+/electron/bin/canon-camera-helper.exe
+/electron/bin/CanonCameraHelper/bin
+/electron/bin/CanonCameraHelper/obj
+
+# Canon EDSDK is licensed by Canon and obtained per business through its
+# developer programme. Its DLLs and headers must never be committed.
+/electron/bin/CanonCameraHelper/sdk/
 
 # local app databases
 /photuna-licensing-api/db.sqlite
