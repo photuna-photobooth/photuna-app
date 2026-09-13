@@ -78,18 +78,30 @@ export function AuthProvider({ children }) {
 
     init();
 
-    const { data: listener } = supabase.auth.onAuthStateChange(async (event, session) => {
+    const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
       if (session?.user) {
         const u = session.user;
         setUser(u);
         window.secureStore?.setCurrentUser?.(u.id)?.catch?.(() => {});
 
-        // For OAuth sign-ins, ensure a profile row exists (first-time Google login)
-        if (event === 'SIGNED_IN') {
-          await ensureProfile(u);
-        }
-
-        await loadProfile(u.id);
+        // Never await a Supabase call inside this callback. Supabase runs it
+        // while still holding its auth lock -- mid token refresh, for example --
+        // and waits for it to return, while any Supabase request made here queues
+        // behind that same lock. Each waits on the other forever, and from then
+        // on every request in the app stalls: installed booths hung on "Preparing
+        // your gallery" this way whenever a refresh coincided with startup.
+        // Deferring lets the callback return and the lock go first.
+        setTimeout(async () => {
+          try {
+            // For OAuth sign-ins, ensure a profile row exists (first-time Google login)
+            if (event === 'SIGNED_IN') {
+              await ensureProfile(u);
+            }
+            await loadProfile(u.id);
+          } catch (e) {
+            console.warn('[AuthContext] profile refresh failed:', e?.message);
+          }
+        }, 0);
       } else {
         setUser(null);
         setProfile(null);
