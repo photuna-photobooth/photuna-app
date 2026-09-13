@@ -300,10 +300,48 @@ function buildMotionCompositePlan({
   };
 }
 
+/**
+ * Reduce a layout to exactly the fields buildMotionCompositePlan reads, for
+ * sending to the render service.
+ *
+ * A template's slots carry a great deal the video never uses: the first recipe
+ * sent whole was 349 kB, larger than the photo strip. Keep this beside the plan
+ * builder — if the builder starts reading another field it must be added here,
+ * or the server will quietly render a different clip from the booth.
+ */
+function toRenderLayout(layout) {
+  if (!layout || typeof layout !== "object") return null;
+  const slots = Array.isArray(layout.slots) ? layout.slots : [];
+
+  return {
+    layoutKey: layout.layoutKey,
+    layout: typeof layout.layout === "string" ? layout.layout : undefined,
+    width: layout.width,
+    height: layout.height,
+    frame: layout.frame ? { padding: layout.frame.padding } : undefined,
+    slotVideoMap: Array.isArray(layout.slotVideoMap) ? layout.slotVideoMap : undefined,
+    slots: slots.map((slot) => ({
+      x: slot?.x,
+      y: slot?.y,
+      w: slot?.w,
+      h: slot?.h,
+      rotation: slot?.rotation,
+      transform: slot?.transform
+        ? {
+            scale: slot.transform.scale,
+            offsetX: slot.transform.offsetX,
+            offsetY: slot.transform.offsetY,
+          }
+        : undefined,
+    })),
+  };
+}
+
 module.exports = {
   FINAL_MOTION_DURATION_SECONDS,
   buildMotionCompositePlan,
   resolveSlotSourceIndices,
+  toRenderLayout,
   toSlotPixels,
   toEven,
   clamp01,

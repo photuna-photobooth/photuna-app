@@ -21,6 +21,7 @@ const {
   FINAL_MOTION_DURATION_SECONDS,
   buildMotionCompositePlan,
   resolveSlotSourceIndices,
+  toRenderLayout,
 } = require('../shared/motionComposite');
 function resolveExecutablePath(executablePath) {
   const raw = String(executablePath || "");
@@ -720,7 +721,7 @@ async function createOnlineGalleryInMain(payload = {}) {
   if (layoutForMotion && Array.isArray(layoutForMotion.slots) && layoutForMotion.slots.length) {
     try {
       const recipe = {
-        layout: layoutForMotion,
+        layout: toRenderLayout(layoutForMotion),
         slotVideoMap: Array.isArray(payload?.slotVideoMap) ? payload.slotVideoMap : null,
         backgroundColor: payload?.motionBackgroundColor || "#ffffff",
         watermark: Boolean(payload?.watermark),

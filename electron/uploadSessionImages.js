@@ -1,6 +1,13 @@
 // Private bucket — create a long-lived signed URL (365 days) instead of a public URL
 const SIGNED_URL_EXPIRY_SECONDS = 365 * 24 * 60 * 60;
 
+// Uploads run a few at a time. They used to run strictly one after another, and
+// a session is ~14 files each needing an upload and then a signing request. The
+// files are tens of kilobytes, so almost all of the ~8 s that took was waiting
+// on round trips, not bandwidth. Six at once is enough to collapse that without
+// swamping a weak venue connection.
+const UPLOAD_CONCURRENCY = 6;
+
 async function getSafeUrl(supabase, bucket, path) {
   try {
     const { data, error } = await supabase.storage
@@ -45,6 +52,36 @@ function detectVideoMeta(blob, index = 0, prefix = "slot") {
   };
 }
 
+// Runs tasks with at most `limit` in flight and returns their results in task
+// order, whatever order they finish in. The first task to throw stops any that
+// have not started yet and becomes the rejection.
+async function runLimited(tasks, limit) {
+  const results = new Array(tasks.length);
+  let next = 0;
+  let failed = false;
+  let failure;
+
+  async function worker() {
+    while (!failed && next < tasks.length) {
+      const index = next;
+      next += 1;
+      try {
+        results[index] = await tasks[index]();
+      } catch (err) {
+        if (!failed) {
+          failed = true;
+          failure = err;
+        }
+      }
+    }
+  }
+
+  const workers = Array.from({ length: Math.min(limit, tasks.length) }, worker);
+  await Promise.all(workers);
+  if (failed) throw failure;
+  return results;
+}
+
 async function uploadSessionImages({
   supabase,
   eventId,
@@ -79,108 +116,93 @@ async function uploadSessionImages({
     finalPath,
   });
 
-  const finalRes = await supabase.storage
-    .from(bucket)
-    .upload(finalPath, finalBlob, {
-      contentType: normalizeImageContentType(finalBlob, "image/png"),
-      upsert: true,
-    });
+  // The strip, its motion clip and the photos are required: any failure fails
+  // the gallery, as it always has.
+  async function uploadRequired(path, blob, contentType, label) {
+    const res = await supabase.storage
+      .from(bucket)
+      .upload(path, blob, { contentType, upsert: true });
 
-  if (finalRes.error) {
-    console.error("[uploadSessionImages] final upload failed", {
-      error: finalRes.error,
-      status: finalRes.error?.status,
-      statusCode: finalRes.error?.statusCode,
-      message: finalRes.error?.message,
-      supabaseUrl,
-      bucket,
-      finalPath,
-    });
-    throw finalRes.error;
+    if (res.error) {
+      console.error(`[uploadSessionImages] ${label} upload failed`, {
+        error: res.error,
+        status: res.error?.status,
+        statusCode: res.error?.statusCode,
+        message: res.error?.message,
+        supabaseUrl,
+        bucket,
+        path,
+      });
+      throw res.error;
+    }
+
+    return getSafeUrl(supabase, bucket, path);
   }
 
-  const finalUrl = await getSafeUrl(supabase, bucket, finalPath);
+  const tasks = [];
 
-  let finalVideoUrl = null;
+  const finalTask = tasks.push(() =>
+    uploadRequired(finalPath, finalBlob, normalizeImageContentType(finalBlob, "image/png"), "final")
+  ) - 1;
+
+  let motionTask = -1;
   if (finalVideoBlob && finalVideoBlob.size) {
     const motionMeta = detectVideoMeta(finalVideoBlob, 0, "final-motion");
     const finalVideoPath = `${eventId}/${sessionId}/${motionMeta.fileName}`;
-
-    const finalVideoRes = await supabase.storage
-      .from(bucket)
-      .upload(finalVideoPath, finalVideoBlob, {
-        contentType: motionMeta.contentType,
-        upsert: true,
-      });
-
-    if (finalVideoRes.error) {
-      console.error("[uploadSessionImages] final video upload failed", finalVideoRes.error);
-      throw finalVideoRes.error;
-    }
-
-    finalVideoUrl = await getSafeUrl(supabase, bucket, finalVideoPath);
+    motionTask = tasks.push(() =>
+      uploadRequired(finalVideoPath, finalVideoBlob, motionMeta.contentType, "final video")
+    ) - 1;
   }
 
-  const photoUrls = [];
-  for (let i = 0; i < photoBlobs.length; i += 1) {
-    const photoBlob = photoBlobs[i];
+  const photoTasks = [];
+  photoBlobs.forEach((photoBlob, i) => {
     if (!photoBlob || !photoBlob.size) {
       console.warn(`[uploadSessionImages] skipping empty photo blob at index ${i}`);
-      continue;
+      return;
     }
-
     const photoPath = `${eventId}/${sessionId}/photos/photo-${i + 1}.png`;
+    photoTasks.push(tasks.push(() =>
+      uploadRequired(photoPath, photoBlob, normalizeImageContentType(photoBlob, "image/png"), `photo ${i}`)
+    ) - 1);
+  });
 
-    const photoRes = await supabase.storage
-      .from(bucket)
-      .upload(photoPath, photoBlob, {
-        contentType: normalizeImageContentType(photoBlob, "image/png"),
-        upsert: true,
-      });
-
-    if (photoRes.error) {
-      console.error(`[uploadSessionImages] photo upload failed at index ${i}`, photoRes.error);
-      throw photoRes.error;
-    }
-
-    const url = await getSafeUrl(supabase, bucket, photoPath);
-    if (url) photoUrls.push(url);
-  }
-
-  const burstVideoUrls = [];
-  const burstUploadErrors = [];
-
-  for (let i = 0; i < burstVideoBlobs.length; i += 1) {
-    const videoBlob = burstVideoBlobs[i];
-
+  // Burst clips are best-effort: a failure is recorded, never thrown.
+  const burstTasks = [];
+  burstVideoBlobs.forEach((videoBlob, i) => {
     if (!videoBlob || !videoBlob.size) {
       console.warn(`[uploadSessionImages] skipping empty burst blob at index ${i}`);
-      continue;
+      return;
     }
-
     const meta = detectVideoMeta(videoBlob, i);
     const videoPath = `${eventId}/${sessionId}/burst-video/${meta.fileName}`;
 
-    try {
-      const videoRes = await supabase.storage
-        .from(bucket)
-        .upload(videoPath, videoBlob, {
-          contentType: meta.contentType,
-          upsert: true,
-        });
+    burstTasks.push(tasks.push(async () => {
+      try {
+        const videoRes = await supabase.storage
+          .from(bucket)
+          .upload(videoPath, videoBlob, { contentType: meta.contentType, upsert: true });
+        if (videoRes.error) throw videoRes.error;
 
-      if (videoRes.error) throw videoRes.error;
-
-      const url = await getSafeUrl(supabase, bucket, videoPath);
-      if (url) {
-        burstVideoUrls.push(url);
-      } else {
-        burstUploadErrors.push(`No signed URL returned for burst index ${i}`);
+        const url = await getSafeUrl(supabase, bucket, videoPath);
+        return url ? { url } : { error: `No signed URL returned for burst index ${i}` };
+      } catch (err) {
+        console.error(`[uploadSessionImages] burst upload failed at index ${i}`, err);
+        return { error: err?.message || `Burst upload failed at index ${i}` };
       }
-    } catch (err) {
-      console.error(`[uploadSessionImages] burst upload failed at index ${i}`, err);
-      burstUploadErrors.push(err?.message || `Burst upload failed at index ${i}`);
-    }
+    }) - 1);
+  });
+
+  const results = await runLimited(tasks, UPLOAD_CONCURRENCY);
+
+  const finalUrl = results[finalTask];
+  const finalVideoUrl = motionTask >= 0 ? results[motionTask] : null;
+  const photoUrls = photoTasks.map((t) => results[t]).filter(Boolean);
+
+  const burstVideoUrls = [];
+  const burstUploadErrors = [];
+  for (const t of burstTasks) {
+    if (results[t].url) burstVideoUrls.push(results[t].url);
+    else burstUploadErrors.push(results[t].error);
   }
 
   console.log("[uploadSessionImages] done", {
