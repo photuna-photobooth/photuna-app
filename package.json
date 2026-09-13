@@ -1,6 +1,6 @@
 {
   "name": "photuna-app",
-  "version": "0.4.10",
+  "version": "0.4.11",
   "private": true,
   "homepage": ".",
   "main": "electron/main.js",
@@ -67,7 +67,8 @@
     "build:pwa": "cross-env PUBLIC_URL=/ CI=false REACT_APP_VERSION=$npm_package_version react-scripts build",
     "test": "react-scripts test",
     "dist": "node scripts/generate-env.js && cross-env CI=false REACT_APP_VERSION=$npm_package_version react-scripts build && electron-builder",
-    "dist:win": "node scripts/generate-env.js && cross-env CI=false REACT_APP_VERSION=$npm_package_version react-scripts build && electron-builder --win",
+    "dist:win": "node scripts/generate-env.js && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-camera-helper.ps1 && cross-env CI=false REACT_APP_VERSION=$npm_package_version react-scripts build && electron-builder --win",
+    "build:camera-helper": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-camera-helper.ps1",
     "eject": "react-scripts eject",
     "start:all": "concurrently -n WEB,ELECTRON -c \"bgBlue.bold,bgMagenta.bold\" \"npm:react-start\" \"npm:electron-start\"",
     "rebuild:native": "electron-rebuild -f -w better-sqlite3"
@@ -96,6 +97,10 @@
       {
         "from": "electron/bin/photo-print-helper.exe",
         "to": "bin/photo-print-helper.exe"
+      },
+      {
+        "from": "electron/bin/CanonCameraHelper/bin/publish",
+        "to": "bin/camera-helper"
       }
     ],
     "directories": {

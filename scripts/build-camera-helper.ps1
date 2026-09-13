@@ -44,6 +44,49 @@ if (Test-Path (Join-Path $publish 'sony\photuna_sony_bridge.dll')) { $included +
 if ($hasNikon -and -not ($included -contains 'Nikon Z')) { throw 'Nikon SDK is present but was not copied into the build.' }
 if ($hasSony -and -not ($included -contains 'Sony')) { throw 'Sony SDK is present but was not copied into the build.' }
 
+# Third-party notices shipped with the helper. Sony's CrAdapter includes libusb
+# (LGPL-2.1, so its source goes along too), libssh2 (BSD) and OpenSSL (Apache-2.0);
+# Sony's licence also requires that users are not led to think Sony made the app.
+$notices = New-Object System.Collections.Generic.List[string]
+$notices.Add('Photuna Booth App - USB camera helper')
+$notices.Add('')
+$notices.Add('The camera helper uses camera makers'' software development kits. Photuna is not made,')
+$notices.Add('endorsed or supported by Nikon Corporation or Sony Group Corporation. Camera')
+$notices.Add('support is provided by Photuna, not by the camera makers.')
+$notices.Add('')
+if ($included -contains 'Sony') {
+    $sonyReadme = Join-Path $helper 'sdk\sony\RemoteCli\README.md'
+    $lines = Get-Content $sonyReadme
+    $start = ($lines | Select-String -Pattern '^## copyright notice and disclaimer for OSS' | Select-Object -First 1).LineNumber
+    if (-not $start) { throw "Could not find the open-source notices in $sonyReadme." }
+    $notices.Add('=' * 78)
+    $notices.Add('Open-source components included with the Sony Camera Remote SDK')
+    $notices.Add('=' * 78)
+    $notices.AddRange([string[]]$lines[($start - 1)..($lines.Count - 1)])
+
+    # libusb-1.0.dll is LGPL-2.1: ship its licence and complete source with it.
+    $ossDir = Join-Path $helper 'sdk\sony\SourceCodeOfOpenSourceSoftware'
+    $libusbZip = Join-Path $ossDir 'libusb.zip'
+    if (-not (Test-Path $libusbZip)) { throw "libusb source ($libusbZip) is required to ship Sony support." }
+    $sourceDir = Join-Path $publish 'third-party-source'
+    New-Item -ItemType Directory -Force $sourceDir | Out-Null
+    Copy-Item $libusbZip $sourceDir
+    Copy-Item (Join-Path $ossDir 'libssh2.zip') $sourceDir -ErrorAction SilentlyContinue
+
+    $temp = Join-Path ([IO.Path]::GetTempPath()) ("photuna-libusb-" + [Guid]::NewGuid().ToString('N'))
+    Expand-Archive $libusbZip $temp
+    $copying = Get-ChildItem $temp -Recurse -File -Filter 'COPYING' | Select-Object -First 1
+    if (-not $copying) { Remove-Item -Recurse -Force $temp; throw 'libusb.zip has no COPYING file.' }
+    $notices.Add('')
+    $notices.Add('=' * 78)
+    $notices.Add('libusb (sony\CrAdapter\libusb-1.0.dll) - GNU Lesser General Public License 2.1')
+    $notices.Add('Complete source: third-party-source\libusb.zip')
+    $notices.Add('=' * 78)
+    $notices.AddRange([string[]](Get-Content $copying.FullName))
+    Remove-Item -Recurse -Force $temp
+}
+Set-Content -Path (Join-Path $publish 'THIRD_PARTY_NOTICES.txt') -Value $notices -Encoding utf8
+
 $sizeMb = [math]::Round(((Get-ChildItem $publish -Recurse -File | Measure-Object Length -Sum).Sum / 1MB), 1)
 Write-Host ''
 Write-Host "Camera helper built: $publish ($sizeMb MB)"

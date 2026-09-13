@@ -55,11 +55,14 @@ function resolveHelperPath({ resourcesPath, appPath } = {}) {
   const devBuild = path.join(electronDir, "bin", "CanonCameraHelper", "bin", "Release", "net8.0-windows", "win-x64");
 
   const candidates = [
+    // Installed app: scripts/build-camera-helper.ps1 output, shipped via extraResources.
+    resourcesPath && path.join(resourcesPath, "bin", "camera-helper", EXE_NAME),
     resourcesPath && path.join(resourcesPath, "bin", EXE_NAME),
     resourcesPath && path.join(resourcesPath, EXE_NAME),
     appPath && path.join(appPath, "electron", "bin", EXE_NAME),
     path.join(electronDir, "bin", EXE_NAME),
     path.join(devBuild, "publish", EXE_NAME),
+    path.join(electronDir, "bin", "CanonCameraHelper", "bin", "publish", EXE_NAME),
     path.join(devBuild, EXE_NAME),
   ].filter(Boolean);
 
