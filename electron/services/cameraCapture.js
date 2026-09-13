@@ -51,8 +51,10 @@ function failure(code, message) {
  *                                       app, a stand-in in tests
  * @param {Function} [options.log]
  * @param {Function} [options.now]       clock, for tests
+ * @param {Function} [options.desiredSettings]  () => { iso, shutterSpeed, … } the
+ *                                       operator saved for this booth, or null
  */
-function createCameraCapture({ helper, resizeJpeg, log = () => {}, now = Date.now }) {
+function createCameraCapture({ helper, resizeJpeg, log = () => {}, now = Date.now, desiredSettings = () => null }) {
   let lastConnectFailure = null; // { at, result }
   let captureInFlight = false;
 
@@ -79,7 +81,31 @@ function createCameraCapture({ helper, resizeJpeg, log = () => {}, now = Date.no
   async function connect() {
     const r = await helper.connect();
     lastConnectFailure = r.ok ? null : { at: now(), result: r };
+    if (r.ok) await applyDesiredSettings();
     return r;
+  }
+
+  // Exposure the operator saved for this booth, applied again whenever the camera
+  // connects: a camera switched off in between has forgotten it. A value the camera
+  // does not offer right now (another lens, the mode dial) is left alone.
+  async function applyDesiredSettings() {
+    let desired = null;
+    try { desired = desiredSettings(); } catch { desired = null; }
+    if (!desired || typeof desired !== "object") return;
+
+    const current = await helper.getSettings();
+    if (!current.ok) return;
+
+    for (const [key, value] of Object.entries(desired)) {
+      const setting = current.result?.[key];
+      if (typeof value !== "string" || !setting || setting.current === value) continue;
+      if (!Array.isArray(setting.allowed) || !setting.allowed.includes(value)) {
+        log(`saved ${key} ${value} is not offered by the camera now; left at ${setting.current}`);
+        continue;
+      }
+      const r = await helper.setSetting(key, value);
+      if (!r.ok) log(`could not apply saved ${key} ${value}: ${r.error?.code}`);
+    }
   }
 
   function getSettings() {

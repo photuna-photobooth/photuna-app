@@ -1003,7 +1003,19 @@ export default function AdminDashboard({ onLogout, onStartPhotobooth, jumpToUpda
   const [usbCameraSettings, setUsbCameraSettings] = useState(null);
   const [usbCameraBusy, setUsbCameraBusy] = useState(false);
   const [usbCameraMessage, setUsbCameraMessage] = useState("");
+  // Exposure the operator chose; saved with the booth settings and applied again
+  // whenever the camera connects (see electron/services/cameraCapture.js).
+  const [usbCameraExposure, setUsbCameraExposure] = useState({});
+  const [usbShotSummary, setUsbShotSummary] = useState(null);
+  const [usbTestShot, setUsbTestShot] = useState({ busy: false, dataUrl: null, info: "", error: "" });
   const usbCameraApi = typeof window !== "undefined" ? (window.api ?? window.electron)?.camera : null;
+
+  // Shown while the camera is not connected, for the brands this build supports.
+  const USB_CAMERA_SETUP_TIPS = [
+    { brand: "nikon", text: "Nikon Z: turn the camera on, and close NX Tether, Camera Control Pro and Nikon Transfer — the camera works with one app at a time." },
+    { brand: "sony", text: "Sony: on the camera turn PC Remote on and set the USB connection to PC Remote, and close Imaging Edge. Some models also need Sony's USB driver on this PC." },
+    { brand: "canon", text: "Canon: close EOS Utility and EOS Webcam Utility." },
+  ];
 
   const USB_CAMERA_SETTING_ROWS = [
     { key: "iso", label: "ISO", description: "Lower is cleaner; raise it in dim venues." },
@@ -1018,6 +1030,8 @@ export default function AdminDashboard({ onLogout, onStartPhotobooth, jumpToUpda
         return "No camera found. Check the USB cable, turn the camera on, and close the camera maker's own apps (they cannot share the camera).";
       case "CAMERA_IN_USE":
         return "The camera is being used by another app. Close the camera maker's apps (such as NX Tether or EOS Utility), then press Connect.";
+      case "LIVE_VIEW_UNAVAILABLE":
+        return "The camera's live view could not start, so guests will see the webcam preview instead.";
       case "IMAGE_NOT_JPEG":
         return "The camera is saving RAW only. Set its image quality to JPEG or RAW + JPEG.";
       case "SDK_NOT_INSTALLED":
@@ -1047,6 +1061,8 @@ export default function AdminDashboard({ onLogout, onStartPhotobooth, jumpToUpda
       }
       const status = await usbCameraApi.status();
       setUsbCamera({ checked: true, ...status });
+      const shots = await usbCameraApi.recentShots?.();
+      setUsbShotSummary(shots?.ok ? shots : null);
       if (status?.connected) {
         const settings = await usbCameraApi.getSettings();
         setUsbCameraSettings(settings?.ok ? settings.result : null);
@@ -1066,9 +1082,25 @@ export default function AdminDashboard({ onLogout, onStartPhotobooth, jumpToUpda
     const result = await usbCameraApi.setSetting(key, value);
     if (result?.ok) {
       setUsbCameraSettings(result.result);
+      setUsbCameraExposure((prev) => ({ ...(prev || {}), [key]: value }));
     } else {
       setUsbCameraMessage(usbCameraErrorText(result?.error));
     }
+  };
+
+  const takeUsbTestShot = async () => {
+    if (!usbCameraApi?.testShot) return;
+    setUsbTestShot({ busy: true, dataUrl: null, info: "", error: "" });
+    const result = await usbCameraApi.testShot()
+      .catch((err) => ({ ok: false, error: { code: "IPC_FAILED", message: err?.message } }));
+    if (result?.ok) {
+      const size = result.fullWidth ? `${result.fullWidth} × ${result.fullHeight}` : `${result.width} × ${result.height}`;
+      const took = result.elapsedMs != null ? ` · taken in ${(result.elapsedMs / 1000).toFixed(1)} s` : "";
+      setUsbTestShot({ busy: false, dataUrl: result.dataUrl, info: `${size}${took}`, error: "" });
+    } else {
+      setUsbTestShot({ busy: false, dataUrl: null, info: "", error: usbCameraErrorText(result?.error) });
+    }
+    refreshUsbCamera();
   };
 
   // === PRINTER STATE ==========================================
@@ -2856,7 +2888,7 @@ This cannot be undone.`
   const MACHINE_LEVEL_SETTING_KEYS = [
     // Camera
     "selectedCameraId", "mirrorCamera", "cameraResolution",
-    "cameraWidth", "cameraHeight", "facingMode", "cameraSource",
+    "cameraWidth", "cameraHeight", "facingMode", "cameraSource", "usbCameraExposure",
     // Printing
     "selectedPrinter", "paperSize", "printCopies", "printColorMode",
     "printQuality", "printOrientation", "printDuplexMode", "printDpi",
@@ -2881,6 +2913,7 @@ This cannot be undone.`
       cameraHeight,
       facingMode,
       cameraSource,
+      usbCameraExposure,
 
       // CAPTURE
       flashEnabled,
@@ -3043,6 +3076,7 @@ This cannot be undone.`
       setCameraHeight(s.cameraHeight ?? 1080);
       setFacingMode(s.facingMode ?? "user");
       setCameraSource(s.cameraSource === "usb" ? "usb" : "webcam");
+      setUsbCameraExposure(s.usbCameraExposure && typeof s.usbCameraExposure === "object" ? s.usbCameraExposure : {});
 
       // CAPTURE
       setFlashEnabled(s.flashEnabled ?? true);
@@ -3384,6 +3418,7 @@ This cannot be undone.`
         setCameraHeight(settings.cameraHeight ?? 1080);
         setFacingMode(settings.facingMode ?? "user");
         setCameraSource(settings.cameraSource === "usb" ? "usb" : "webcam");
+        setUsbCameraExposure(settings.usbCameraExposure && typeof settings.usbCameraExposure === "object" ? settings.usbCameraExposure : {});
 
         // Capture
         setFlashEnabled(settings.flashEnabled ?? true);
@@ -6899,6 +6934,7 @@ This cannot be undone.`
       operatorName,
       autoUpdateEnabled,
       cameraSource,
+      usbCameraExposure,
     } = input;
 
     const clampNum = (n, min, max, fallback = 0) => {
@@ -6964,6 +7000,11 @@ This cannot be undone.`
         ? facingMode
         : "user",
       cameraSource: cameraSource === "usb" ? "usb" : "webcam",
+      usbCameraExposure: Object.fromEntries(
+        ["iso", "shutterSpeed", "aperture", "whiteBalance"]
+          .filter((k) => typeof usbCameraExposure?.[k] === "string" && usbCameraExposure[k].length <= 40)
+          .map((k) => [k, usbCameraExposure[k]])
+      ),
 
       selectedPrinter: selectedPrinter ?? "",
       paperSize:
@@ -10457,7 +10498,7 @@ This cannot be undone.`
                             {(usbCamera.available || cameraSource === "usb") && (
                               <SettingRow
                                 label="Photo source"
-                                description="USB camera (beta) takes full-resolution photos from a camera connected by USB. The webcam still shows guests the live preview and takes any shot the camera misses."
+                                description="USB camera (beta) takes full-resolution photos from a camera connected by USB and shows guests its live view. A webcam, if connected, is only a backup."
                               >
                                 <SettingSegmented
                                   label="Photo source"
@@ -10496,6 +10537,22 @@ This cannot be undone.`
                                   </button>
                                 </div>
 
+                                {usbCamera.connected && usbCamera.batteryPercent != null && usbCamera.batteryPercent <= 20 && (
+                                  <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                                    Camera battery is low ({usbCamera.batteryPercent}%). Charge it or connect USB power before the event.
+                                  </div>
+                                )}
+
+                                {usbCamera.available && !usbCamera.connected && (
+                                  <ul className="mt-3 list-disc pl-5 space-y-1 text-xs text-gray-500 dark:text-slate-400">
+                                    {USB_CAMERA_SETUP_TIPS
+                                      .filter((tip) => String(usbCamera.backend || "").includes(tip.brand))
+                                      .map((tip) => (
+                                        <li key={tip.brand}>{tip.text}</li>
+                                      ))}
+                                  </ul>
+                                )}
+
                                 {usbCamera.checked && !usbCamera.available && (
                                   <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
                                     USB camera support is not included in this version, so the booth will use the webcam.
@@ -10528,8 +10585,61 @@ This cannot be undone.`
                                       );
                                     })}
                                     <div className="text-xs text-gray-500 dark:text-slate-400 mt-2">
-                                      These are applied to the camera immediately and only list values the camera currently allows.
+                                      Applied to the camera straight away. Save settings to keep them — they are set again whenever the camera connects.
                                     </div>
+                                  </div>
+                                )}
+
+                                {usbCamera.connected && (
+                                  <div className="mt-4 border-t border-gray-100 dark:border-slate-700 pt-3">
+                                    <div className="flex items-center justify-between gap-3">
+                                      <div className="min-w-0">
+                                        <div className="text-sm font-medium text-gray-900 dark:text-slate-100">Test photo</div>
+                                        <div className="text-xs text-gray-500 dark:text-slate-400 mt-1">
+                                          Takes a real photo to check focus and exposure. It is not added to any event.
+                                        </div>
+                                      </div>
+                                      <button
+                                        onClick={takeUsbTestShot}
+                                        disabled={usbTestShot.busy || usbCameraBusy}
+                                        className={`${BTN_GHOST} text-sm px-4 py-2 shrink-0`}
+                                      >
+                                        {usbTestShot.busy ? "Taking photo..." : "Take test photo"}
+                                      </button>
+                                    </div>
+                                    {usbTestShot.error && (
+                                      <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                                        {usbTestShot.error}
+                                      </div>
+                                    )}
+                                    {usbTestShot.dataUrl && (
+                                      <div className="mt-3">
+                                        <img
+                                          src={usbTestShot.dataUrl}
+                                          alt="Test photo from the USB camera"
+                                          className="w-full max-h-72 object-contain rounded-lg bg-black"
+                                        />
+                                        <div className="text-xs text-gray-500 dark:text-slate-400 mt-1">{usbTestShot.info}</div>
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+
+                                {usbShotSummary?.total > 0 && (
+                                  <div className="mt-4 border-t border-gray-100 dark:border-slate-700 pt-3 text-xs text-gray-600 dark:text-slate-400">
+                                    <div className="text-sm font-medium text-gray-900 dark:text-slate-100">Recent booth photos</div>
+                                    <div className="mt-1">
+                                      Last {usbShotSummary.total}: {usbShotSummary.fromCamera} from the camera
+                                      {usbShotSummary.fromLiveView > 0 && ` · ${usbShotSummary.fromLiveView} from its live view`}
+                                      {usbShotSummary.fromWebcam > 0 && ` · ${usbShotSummary.fromWebcam} from the webcam`}
+                                    </div>
+                                    {usbShotSummary.fromCamera < usbShotSummary.total && usbShotSummary.lastFailure && (
+                                      <div className="mt-1 text-amber-700 dark:text-amber-400">
+                                        Last missed shot
+                                        {usbShotSummary.lastFailure.at ? ` (${new Date(usbShotSummary.lastFailure.at).toLocaleString()})` : ""}
+                                        : {usbCameraErrorText(usbShotSummary.lastFailure)}
+                                      </div>
+                                    )}
                                   </div>
                                 )}
                               </div>
@@ -10537,8 +10647,10 @@ This cannot be undone.`
 
                             {/* Device list is dynamic and names are long — stays a select. */}
                             <SettingRow
-                              label="Camera device"
-                              description="Which connected camera the booth captures from."
+                              label={cameraSource === "usb" ? "Backup webcam" : "Camera device"}
+                              description={cameraSource === "usb"
+                                ? "Optional. Used only when the USB camera's live view or a shot is unavailable."
+                                : "Which connected camera the booth captures from."}
                               htmlFor="set-camera-device"
                             >
                               <SettingSelect
@@ -10555,6 +10667,7 @@ This cannot be undone.`
                               </SettingSelect>
                             </SettingRow>
 
+                            {cameraSource !== "usb" && (<>
                             <SettingRow
                               label="Resolution"
                               description={
@@ -10643,9 +10756,13 @@ This cannot be undone.`
                               )}
                             </SettingRow>
 
+                            </>)}
+
                             <SettingRow
                               label="Mirror camera preview"
-                              description="Shows guests a mirrored image, which feels more natural."
+                              description={cameraSource === "usb"
+                                ? "Mirrors the live preview guests see. USB camera photos are never mirrored."
+                                : "Shows guests a mirrored image, which feels more natural."}
                             >
                               <SettingToggle
                                 label="Mirror camera preview"

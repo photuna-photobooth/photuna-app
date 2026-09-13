@@ -1864,10 +1864,24 @@ ipcMain.handle("gallery:queue-status", async (_event, { userId } = {}) => {
 const { nativeImage } = require("electron");
 const { CameraHelper } = require("./services/cameraHelper");
 const { createCameraCapture } = require("./services/cameraCapture");
+const { createCameraShotLog } = require("./services/cameraShotLog");
 
 const CAMERA_SAFE_ID = /^[A-Za-z0-9_-]{1,120}$/;
 let cameraHelperInstance = null;
 let cameraCaptureService = null;
+const cameraShotLog = createCameraShotLog({ file: path.join(app.getPath("userData"), "camera-shots.json") });
+
+// Exposure saved in this booth's settings (Settings → Camera), re-applied on connect.
+function readUsbCameraExposure() {
+  try {
+    const uid = getUserIdFromStore();
+    const settings = uid && typeof store.get === "function" ? store.get(`users.${uid}.settings`) : null;
+    const exposure = settings?.usbCameraExposure;
+    return exposure && typeof exposure === "object" ? exposure : null;
+  } catch {
+    return null;
+  }
+}
 
 async function resizeJpegWithNativeImage(filePath, { maxEdge, quality }) {
   const image = nativeImage.createFromPath(filePath);
@@ -1890,6 +1904,7 @@ function getCameraCapture() {
       helper: cameraHelperInstance,
       resizeJpeg: resizeJpegWithNativeImage,
       log: (message) => console.log(`[camera] ${message}`),
+      desiredSettings: readUsbCameraExposure,
     });
   }
   return cameraCaptureService;
@@ -1904,6 +1919,22 @@ ipcMain.handle("camera:live-view-stop", () => getCameraCapture().stopLiveView())
 // Pulled by the renderer one frame at a time, so a slow camera slows the preview
 // instead of queueing frames.
 ipcMain.handle("camera:live-view-frame", () => getCameraCapture().liveViewFrame());
+
+// A real photo for the operator to check focus and exposure in the dashboard. It
+// goes to a scratch folder that is cleared each time, never into an event.
+ipcMain.handle("camera:test-shot", async () => {
+  try {
+    const dir = path.join(app.getPath("userData"), "camera-test");
+    fs.rmSync(dir, { recursive: true, force: true });
+    ensureDir(dir);
+    return await getCameraCapture().captureStill({ capturesDir: dir, slotIndex: 0 });
+  } catch (err) {
+    return { ok: false, error: { code: "INTERNAL", message: err?.message || String(err) } };
+  }
+});
+
+ipcMain.handle("camera:record-shot", (_event, outcome = {}) => cameraShotLog.record(outcome || {}));
+ipcMain.handle("camera:recent-shots", () => cameraShotLog.summary());
 
 ipcMain.handle("camera:capture-still", async (_event, payload = {}) => {
   const { sessionId, slotIndex, eventId = "default", userId = null, storagePath = "" } = payload || {};

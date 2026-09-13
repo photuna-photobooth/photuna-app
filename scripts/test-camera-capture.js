@@ -20,6 +20,7 @@ const os = require("os");
 const path = require("path");
 const { CameraHelper, resolveHelperPath } = require("../electron/services/cameraHelper");
 const { createCameraCapture } = require("../electron/services/cameraCapture");
+const { createCameraShotLog, MAX_ENTRIES } = require("../electron/services/cameraShotLog");
 
 const helperPath = resolveHelperPath({});
 if (!helperPath) {
@@ -194,6 +195,51 @@ function freshCapturesDir(name) {
     const r = await capture.startLiveView();
     assert.strictEqual(r.error?.code, "LIVE_VIEW_UNAVAILABLE");
     await h.stop();
+  });
+
+  await check("saved exposure is applied again when the camera connects, skipping values it does not offer", async () => {
+    const h = new CameraHelper({ helperPath, simulate: true });
+    const logged = [];
+    const capture = createCameraCapture({
+      helper: h,
+      resizeJpeg: fakeResizer().resizeJpeg,
+      log: (line) => logged.push(line),
+      desiredSettings: () => ({ iso: "800", whiteBalance: "cloudy", aperture: "f/99" }),
+    });
+    const r = await capture.connect();
+    assert.strictEqual(r.ok, true, JSON.stringify(r));
+    const s = await capture.getSettings();
+    assert.strictEqual(s.result.iso.current, "800");
+    assert.strictEqual(s.result.whiteBalance.current, "cloudy");
+    assert.strictEqual(s.result.aperture.current, "f/5.6", "an unavailable saved aperture changed the camera");
+    assert.ok(logged.some((line) => line.includes("f/99")), "skipped value was not logged");
+    await h.stop();
+  });
+
+  await check("the shot log summarises where recent booth photos came from", async () => {
+    let clock = 5_000;
+    const file = path.join(workDir, "shots", "camera-shots.json");
+    const shots = createCameraShotLog({ file, now: () => clock });
+    assert.deepStrictEqual(shots.summary(), { ok: true, total: 0, fromCamera: 0, fromLiveView: 0, fromWebcam: 0, lastFailure: null });
+
+    assert.strictEqual(shots.record({ source: "camera" }).ok, true);
+    clock += 1;
+    shots.record({ source: "liveview", code: "FOCUS_FAILED", message: "The camera could not focus." });
+    clock += 1;
+    shots.record({ source: "camera" });
+    assert.strictEqual(shots.record({ source: "somewhere" }).error?.code, "BAD_REQUEST");
+
+    const summary = shots.summary();
+    assert.strictEqual(summary.total, 3);
+    assert.strictEqual(summary.fromCamera, 2);
+    assert.strictEqual(summary.fromLiveView, 1);
+    assert.deepStrictEqual(summary.lastFailure, { at: 5_001, code: "FOCUS_FAILED", message: "The camera could not focus." });
+
+    for (let i = 0; i < MAX_ENTRIES + 10; i += 1) shots.record({ source: "webcam" });
+    assert.strictEqual(shots.summary().total, MAX_ENTRIES, "the log grows without limit");
+
+    fs.writeFileSync(file, "not json");
+    assert.strictEqual(shots.summary().total, 0, "a damaged log file broke the summary");
   });
 
   await check("a build without the helper answers HELPER_NOT_FOUND", async () => {

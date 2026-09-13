@@ -538,6 +538,7 @@ export default function PhotoScreen({
       index: targetIndex ?? photosTaken,
       width: sourceW,
       height: sourceH,
+      source: fromLiveView ? "liveview" : "webcam",
     };
   };
 
@@ -652,6 +653,7 @@ export default function PhotoScreen({
       pendingClipPromisesRef.current.push(clipPromise);
 
       let saved = null;
+      let usbFailure = null;
       if (useUsbCamera && session?.sessionId) {
         usbCaptureBusyRef.current = true;
         const shot = await usbCameraApi
@@ -666,10 +668,21 @@ export default function PhotoScreen({
             height: shot.height,
           };
         } else {
+          usbFailure = shot?.error || { code: "UNKNOWN", message: null };
           console.warn("[PhotoScreen] USB camera shot failed; using the live view frame or webcam for this shot:", shot?.error?.code, shot?.error?.message);
         }
       }
       if (!saved) saved = await captureFrame(targetIndex);
+
+      // Tell the dashboard where this photo came from, so missed camera shots are
+      // visible to the operator and not only in the photos.
+      if (useUsbCamera && session?.sessionId && saved) {
+        usbCameraApi.recordShot?.({
+          source: usbFailure ? (saved.source || "webcam") : "camera",
+          code: usbFailure?.code ?? null,
+          message: usbFailure?.message ?? null,
+        })?.catch?.(() => { });
+      }
 
       if (saved) {
         capturesRef.current.push(

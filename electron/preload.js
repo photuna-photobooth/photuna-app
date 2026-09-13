@@ -443,6 +443,10 @@ const apiImpl = {
     startLiveView: () => ipcRenderer.invoke("camera:live-view-start"),
     stopLiveView: () => ipcRenderer.invoke("camera:live-view-stop"),
     liveViewFrame: () => ipcRenderer.invoke("camera:live-view-frame"),
+    testShot: () => ipcRenderer.invoke("camera:test-shot"),
+    // Where a booth photo came from: "camera", "liveview" or "webcam".
+    recordShot: (outcome) => ipcRenderer.invoke("camera:record-shot", outcome),
+    recentShots: () => ipcRenderer.invoke("camera:recent-shots"),
     // Takes one shot for a session slot. Resolves { ok, dataUrl, width, height }
     // or { ok:false, error:{ code } }, in which case the booth uses the webcam.
     captureStill: async ({ sessionId, slotIndex, eventId } = {}) => {
