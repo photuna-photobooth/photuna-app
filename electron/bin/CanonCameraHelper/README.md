@@ -14,7 +14,7 @@ falls back to the webcam for that shot.
 | Phase | What | State |
 |---|---|---|
 | 0 | Process, protocol, timeouts, restart limits, simulated camera | done |
-| 1 | A real camera backend: connect, full-resolution capture to the PC, battery | needs a brand's SDK + a test camera |
+| 1 | A real camera backend: connect, full-resolution capture to the PC, battery | Nikon Z: built, **not yet tested with a camera**. Canon: waiting for the SDK. Sony: needs a C++ bridge |
 | 2 | ISO / shutter / aperture / white balance controls in the dashboard | done (Settings → Camera, from camera-reported values) |
 | 3 | Live view from the camera for preview and burst clips | |
 | 4 | Booth flow integration with per-shot webcam fallback, beta flag | done (`cameraSource: "usb"`), simulator-tested |
@@ -44,6 +44,56 @@ Neither can be tested without that brand's camera attached.
 |---|---|---|---|
 | Sony | Camera Remote SDK | Registration form on Sony's SDK download page, download is immediate | Licence allows bundling the library inside a commercial app; end users must be told Sony did not make the app. Alpha / ZV / FX bodies. |
 | Nikon | Camera Remote SDK (unified module) | Apply at sdk.nikonimaging.com | Windows 11 64-bit only; Z9, Z8, Z6III, Z7II, Z6II, Z7, Z6, Z5II, Z5, Zf, Z50II, Z50, Z30, Zfc, ZR. Read the licence's redistribution terms when downloading. |
+
+## Nikon (Z series)
+
+`NikonBackend.cs` drives Nikon's Remote SDK v2 "simplified API"
+(`ControlServiceLayer.dll`) by P/Invoke — Nikon's interface is plain C, so no C++
+bridge is needed. It was written from Nikon's headers, documents and sample
+program. On a PC with no camera it loads the SDK, starts it and reports
+`NO_CAMERA` cleanly (checked by `scripts/test-camera-helper.js`); **taking a real
+photo has not been tested**, because no Nikon body was available.
+
+With a Z camera attached and switched on:
+
+```bash
+node scripts/test-camera-helper.js --hardware
+```
+
+It connects, prints status and the camera's ISO / shutter / aperture / white
+balance lists, takes one photo and prints where it saved it.
+
+Setup:
+
+- Unpack Nikon's download under `sdk/nikon/`. The build copies
+  `S-SDKZ-200BF-ALLIN/Module/Win/BinaryFile/` (four DLLs, three `.config`
+  profiles) into `nikon/` next to the helper. A newer SDK folder name needs the
+  `NikonSdkBin` path in the csproj updated. The 40 older per-model folders
+  (D-series, individual Z models) are not used.
+- Booth PCs need 64-bit Windows 11 and the Microsoft Visual C++ 2022 runtime.
+- On first use the helper copies the three profiles into
+  `%LOCALAPPDATA%\Nikon\NXTether` if they are missing (Nikon requires them
+  there). The SDK also writes a daily log file into that folder.
+- Close NX Tether, Camera Control Pro and Nikon Transfer: the camera answers only
+  one app (`CAMERA_IN_USE`). The SDK controls one camera at a time.
+
+Behaviour:
+
+- Photos are sent to the PC only (Save media = SDRAM), so no memory card is
+  needed. They are saved in a private temporary folder first, because the SDK
+  names files itself and RAW + JPEG produces two; only the JPEG is moved to where
+  the booth asked. A camera set to RAW only fails with `IMAGE_NOT_JPEG`.
+- The single shot uses autofocus. Nikon's "out of focus" result maps to
+  `FOCUS_FAILED`, so the booth takes that shot from the webcam.
+- Settings list exactly the strings the camera reports (apertures shown as
+  `f/5.6`); a change the camera's mode dial locks comes back as `SETTING_REJECTED`.
+- The SDK prints diagnostics to stdout. `Program.cs` gives the protocol a private
+  copy of stdout and points everything else at stderr, so SDK output can never
+  corrupt a reply.
+
+Nikon's documents are marked confidential and the SDK is licensed to the business:
+keep all of it under `sdk/` (git-ignored). Confirm the licence allows bundling the
+DLLs before they go in the installer.
 
 ## Resuming: `PHOTUNA-CANON-PHASE1`
 

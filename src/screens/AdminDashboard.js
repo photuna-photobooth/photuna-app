@@ -1016,7 +1016,12 @@ export default function AdminDashboard({ onLogout, onStartPhotobooth, jumpToUpda
     switch (error?.code) {
       case "NO_CAMERA":
         return "No camera found. Check the USB cable, turn the camera on, and close the camera maker's own apps (they cannot share the camera).";
+      case "CAMERA_IN_USE":
+        return "The camera is being used by another app. Close the camera maker's apps (such as NX Tether or EOS Utility), then press Connect.";
+      case "IMAGE_NOT_JPEG":
+        return "The camera is saving RAW only. Set its image quality to JPEG or RAW + JPEG.";
       case "SDK_NOT_INSTALLED":
+        return error?.message || "USB camera support for this camera is not included in this version. The booth will use the webcam.";
       case "HELPER_NOT_FOUND":
         return "USB camera support for this camera is not included in this version. The booth will use the webcam.";
       case "TIMEOUT":

@@ -33,4 +33,17 @@
     <None Remove="sdk/**" />
   </ItemGroup>
 
+  <!--
+    Nikon Remote SDK v2 (Z series). Copied next to the helper, into nikon/, only when
+    the business's SDK has been unpacked under sdk/nikon; builds without it still
+    succeed and the Nikon backend reports the SDK as unavailable.
+  -->
+  <PropertyGroup>
+    <NikonSdkBin>sdk\nikon\S-SDKZ-200BF-ALLIN\Module\Win\BinaryFile\</NikonSdkBin>
+  </PropertyGroup>
+  <ItemGroup Condition="Exists('$(NikonSdkBin)ControlServiceLayer.dll')">
+    <NikonSdkFile Include="$(NikonSdkBin)ControlServiceLayer.dll;$(NikonSdkBin)NkdPTP.dll;$(NikonSdkBin)dnssd.dll;$(NikonSdkBin)NkRoyalmile.dll;$(NikonSdkBin)DC_PTP_Config.config;$(NikonSdkBin)MaidLayer.config;$(NikonSdkBin)RangeValue.config" />
+    <None Include="@(NikonSdkFile)" Link="nikon\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
+  </ItemGroup>
+
 </Project>

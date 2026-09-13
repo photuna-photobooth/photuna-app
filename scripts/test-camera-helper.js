@@ -22,6 +22,30 @@ if (!helperPath) {
 const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "camera-helper-test-"));
 const results = [];
 
+// With a real camera attached:  node scripts/test-camera-helper.js --hardware
+// Connects, prints status and settings, takes one photo and leaves it on disk.
+if (process.argv.includes("--hardware")) {
+  (async () => {
+    const h = new CameraHelper({ helperPath, simulate: false });
+    h.on("log", (line) => line && console.log(`  helper: ${line}`));
+    const step = async (label, fn) => {
+      const r = await fn();
+      console.log(`${r.ok ? "ok  " : "FAIL"}  ${label}\n${JSON.stringify(r, null, 2)}\n`);
+      return r;
+    };
+    await step("status", () => h.status());
+    const connected = await step("connect", () => h.connect());
+    if (connected.ok) {
+      await step("settings", () => h.getSettings());
+      const shot = await step("capture", () => h.capture({ directory: workDir, fileName: "hardware_test.jpg", timeoutMs: 15_000 }));
+      if (shot.ok) console.log(`Photo saved at ${shot.result.path} — open it to check it.`);
+      await step("disconnect", () => h.disconnect());
+    }
+    await h.stop();
+    process.exit(connected.ok ? 0 : 1);
+  })();
+}
+
 async function check(name, fn) {
   const started = Date.now();
   try {
@@ -36,7 +60,7 @@ function makeHelper(env = {}) {
   return new CameraHelper({ helperPath, simulate: true, env });
 }
 
-(async () => {
+if (!process.argv.includes("--hardware")) (async () => {
   // ── normal operation ─────────────────────────────────────────────────────
   await check("status before connect reports disconnected", async () => {
     const h = makeHelper();
@@ -182,14 +206,24 @@ function makeHelper(env = {}) {
     assert.strictEqual(r.error?.code, "HELPER_NOT_FOUND");
   });
 
-  await check("without the Canon SDK the real backend says so", async () => {
+  // Loads the real camera SDKs present in this build (Nikon's, once unpacked under
+  // sdk/) with no camera attached: they must answer cleanly, not crash or hang.
+  await check("the real camera backends answer sensibly with no camera attached", async () => {
     const h = new CameraHelper({ helperPath, simulate: false });
+    // SDKs print their own diagnostics; none of it may reach the protocol channel.
+    const strayOutput = [];
+    h.on("log", (line) => { if (/ignored non-JSON output/.test(line)) strayOutput.push(line); });
     const status = await h.status();
-    assert.strictEqual(status.ok, true);
-    assert.strictEqual(status.result.sdkAvailable, false);
+    assert.strictEqual(status.ok, true, JSON.stringify(status));
+    const started = Date.now();
     const r = await h.connect();
-    assert.strictEqual(r.error?.code, "SDK_NOT_INSTALLED");
+    const expected = status.result.sdkAvailable ? ["NO_CAMERA", "CAMERA_IN_USE"] : ["SDK_NOT_INSTALLED"];
+    assert.ok(expected.includes(r.error?.code), `sdkAvailable=${status.result.sdkAvailable}, got ${JSON.stringify(r)}`);
+    assert.ok(Date.now() - started < 15_000, "connect took too long to give up");
+    const after = await h.status();
+    assert.strictEqual(after.ok, true, "helper stopped answering after trying the real SDKs");
     await h.stop();
+    assert.deepStrictEqual(strayOutput, [], "an SDK wrote into the protocol channel");
   });
 
   // ── report ─────────────────────────────────────────────────────────────

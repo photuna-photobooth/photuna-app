@@ -16,7 +16,11 @@
 //     data URLs, and several 24-megapixel originals as base64 would exhaust the
 //     renderer's memory by the end of a session.
 //   - A camera that dropped its session (asleep between guests, a USB blip) is
-//     reconnected once, silently, before the shot is given up on.
+//     reconnected once, silently, before the shot is given up on. A camera that
+//     is not there at all is not looked for again on every shot: connecting to a
+//     missing camera takes seconds, and each would be a guest waiting for the
+//     webcam. After a failed connect, shots fail straight away for
+//     CONNECT_RETRY_COOLDOWN_MS; an explicit connect() always tries.
 
 const fs = require("fs");
 const path = require("path");
@@ -28,6 +32,8 @@ const BOOTH_COPY_QUALITY = 92;
 // request deadline is 5 s beyond this, so a wedged camera costs the guest at most
 // ~10 s before the webcam takes the shot.
 const SHOT_TIMEOUT_MS = 5_000;
+
+const CONNECT_RETRY_COOLDOWN_MS = 30_000;
 
 const RECONNECT_CODES = new Set(["NOT_CONNECTED", "DISCONNECTED"]);
 const MAX_SLOT_INDEX = 99;
@@ -44,8 +50,11 @@ function failure(code, message) {
  *                                       { buffer, width, height }; nativeImage in the
  *                                       app, a stand-in in tests
  * @param {Function} [options.log]
+ * @param {Function} [options.now]       clock, for tests
  */
-function createCameraCapture({ helper, resizeJpeg, log = () => {} }) {
+function createCameraCapture({ helper, resizeJpeg, log = () => {}, now = Date.now }) {
+  let lastConnectFailure = null; // { at, result }
+
   async function status() {
     const r = await helper.status();
     if (!r.ok) {
@@ -66,8 +75,10 @@ function createCameraCapture({ helper, resizeJpeg, log = () => {} }) {
     };
   }
 
-  function connect() {
-    return helper.connect();
+  async function connect() {
+    const r = await helper.connect();
+    lastConnectFailure = r.ok ? null : { at: now(), result: r };
+    return r;
   }
 
   function getSettings() {
@@ -102,8 +113,11 @@ function createCameraCapture({ helper, resizeJpeg, log = () => {} }) {
 
       let shot = await helper.capture(request);
       if (!shot.ok && RECONNECT_CODES.has(shot.error?.code)) {
+        if (lastConnectFailure && now() - lastConnectFailure.at < CONNECT_RETRY_COOLDOWN_MS) {
+          return lastConnectFailure.result;
+        }
         log(`camera not connected (${shot.error.code}); reconnecting before slot ${slotIndex}`);
-        const connected = await helper.connect();
+        const connected = await connect();
         if (!connected.ok) return connected;
         shot = await helper.capture(request);
       }
@@ -139,4 +153,4 @@ function createCameraCapture({ helper, resizeJpeg, log = () => {} }) {
   return { status, connect, getSettings, setSetting, captureStill };
 }
 
-module.exports = { createCameraCapture, BOOTH_COPY_MAX_EDGE, SHOT_TIMEOUT_MS };
+module.exports = { createCameraCapture, BOOTH_COPY_MAX_EDGE, SHOT_TIMEOUT_MS, CONNECT_RETRY_COOLDOWN_MS };

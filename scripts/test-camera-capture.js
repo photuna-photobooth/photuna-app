@@ -139,6 +139,29 @@ function freshCapturesDir(name) {
     await h.stop();
   });
 
+  await check("a missing camera does not slow every shot: reconnects are retried at most every 30 s", async () => {
+    let clock = 1_000_000;
+    const h = new CameraHelper({ helperPath, simulate: true, env: { PHOTUNA_CAMERA_SIM_FAIL: "connect" } });
+    let connects = 0;
+    const realConnect = h.connect.bind(h);
+    h.connect = () => { connects += 1; return realConnect(); };
+    const capture = createCameraCapture({ helper: h, resizeJpeg: fakeResizer().resizeJpeg, log: () => {}, now: () => clock });
+    const dir = freshCapturesDir("cooldown");
+
+    assert.strictEqual((await capture.captureStill({ capturesDir: dir, slotIndex: 0 })).error?.code, "NO_CAMERA");
+    assert.strictEqual((await capture.captureStill({ capturesDir: dir, slotIndex: 1 })).error?.code, "NO_CAMERA");
+    assert.strictEqual(connects, 1, "looked for the camera again on the very next shot");
+
+    clock += 31_000;
+    assert.strictEqual((await capture.captureStill({ capturesDir: dir, slotIndex: 2 })).error?.code, "NO_CAMERA");
+    assert.strictEqual(connects, 2, "never looked for the camera again after the cooldown");
+
+    // The operator pressing Connect always tries, whatever the cooldown.
+    await capture.connect();
+    assert.strictEqual(connects, 3);
+    await h.stop();
+  });
+
   await check("a build without the helper answers HELPER_NOT_FOUND", async () => {
     const helper = new CameraHelper({ helperPath: null, simulate: true });
     helper.helperPath = null;

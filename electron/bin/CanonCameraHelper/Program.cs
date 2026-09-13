@@ -1,7 +1,9 @@
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using Microsoft.Win32.SafeHandles;
 
 namespace CanonCameraHelper;
 
@@ -28,15 +30,18 @@ internal static class Program
     private static readonly Regex SafeFileName =
         new(@"^[A-Za-z0-9][A-Za-z0-9_\-]{0,79}\.jpe?g$", RegexOptions.CultureInvariant);
 
+    private static TextWriter _protocol = Console.Out;
+
     [STAThread]
     private static int Main(string[] args)
     {
         Console.InputEncoding = Encoding.UTF8;
         Console.OutputEncoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
+        _protocol = IsolateProtocolOutput();
 
         ICameraBackend backend = args.Contains("--simulate")
             ? new SimulatedBackend()
-            : new CanonBackend();
+            : new AutoBackend(new NikonBackend(), new CanonBackend());
 
         Log($"starting with backend {backend.Name}");
         Emit(new JsonObject
@@ -192,9 +197,63 @@ internal static class Program
 
     private static void Emit(JsonNode message)
     {
-        Console.Out.WriteLine(message.ToJsonString(JsonOptions));
-        Console.Out.Flush();
+        _protocol.Write(message.ToJsonString(JsonOptions));
+        _protocol.Write('\n');
+        _protocol.Flush();
     }
+
+    /// <summary>
+    /// Camera SDKs print their own diagnostics to stdout (Nikon's prints "InitializeSDK
+    /// Execution duration: …"), which could land in the middle of a protocol line. The
+    /// protocol keeps a private duplicate of the original stdout; the process's stdout —
+    /// both the Win32 handle and the C runtime's descriptor 1 that native code writes
+    /// through — is pointed at stderr for everyone else.
+    /// </summary>
+    private static TextWriter IsolateProtocolOutput()
+    {
+        try
+        {
+            var process = GetCurrentProcess();
+            var stdout = GetStdHandle(StdOutputHandle);
+            var stderr = GetStdHandle(StdErrorHandle);
+            if (!DuplicateHandle(process, stdout, process, out var protocolHandle, 0, false, DuplicateSameAccess))
+                return Console.Out;
+
+            var stream = new FileStream(new SafeFileHandle(protocolHandle, ownsHandle: true), FileAccess.Write, bufferSize: 1);
+            var writer = new StreamWriter(stream, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+
+            SetStdHandle(StdOutputHandle, stderr);
+            try { _dup2(2, 1); } catch (Exception ex) when (ex is DllNotFoundException or EntryPointNotFoundException) { }
+            Console.SetOut(Console.Error);
+
+            return writer;
+        }
+        catch (Exception ex)
+        {
+            Log($"could not separate protocol output from native output: {ex.Message}");
+            return Console.Out;
+        }
+    }
+
+    private const int StdOutputHandle = -11;
+    private const int StdErrorHandle = -12;
+    private const uint DuplicateSameAccess = 0x2;
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr GetStdHandle(int stdHandle);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool SetStdHandle(int stdHandle, IntPtr handle);
+
+    [DllImport("kernel32.dll")]
+    private static extern IntPtr GetCurrentProcess();
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool DuplicateHandle(IntPtr sourceProcess, IntPtr sourceHandle, IntPtr targetProcess,
+        out IntPtr targetHandle, uint desiredAccess, bool inheritHandle, uint options);
+
+    [DllImport("ucrtbase.dll", CallingConvention = CallingConvention.Cdecl)]
+    private static extern int _dup2(int sourceFd, int targetFd);
 
     private static void Log(string message)
     {
