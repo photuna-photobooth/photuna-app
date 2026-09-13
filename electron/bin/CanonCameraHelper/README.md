@@ -22,6 +22,26 @@ falls back to the webcam for that shot.
 Until the SDK is added, the real backend reports `sdkAvailable: false` and every
 call fails with `SDK_NOT_INSTALLED`. Nothing in the booth uses it yet.
 
+## Resuming: `PHOTUNA-CANON-PHASE1`
+
+Phase 1 is waiting on Canon approving the business's EDSDK application. When it
+is approved, start here, in this order:
+
+1. `node scripts/test-camera-helper.js` — all 14 checks must pass first.
+2. Put the SDK in `sdk/` (64-bit `EDSDK.dll`, `EdsImage.dll`, and Canon's C#
+   sample wrapper `EDSDK.cs`). It is git-ignored; keep it that way.
+3. Read the licence's redistribution terms before planning to bundle the DLLs.
+4. Check the test camera's model against the SDK's supported-camera list.
+5. Close EOS Webcam Utility and EOS Utility — they cannot share the camera.
+6. Implement `CanonBackend.cs`: initialise the SDK, open a session, save to host,
+   take a picture and download it to the requested path, read ISO / shutter /
+   aperture / white balance from their property descriptions, read battery, pump
+   messages on the STA thread, and map SDK errors to the existing error codes.
+7. Define `EDSDK` and copy the DLLs only when `sdk/` exists, so builds without
+   the SDK still succeed.
+8. Add a `--hardware` mode to the test script, run with the camera attached.
+9. Ship only the exe and DLLs via electron-builder `extraResources`.
+
 ## Canon EDSDK — licensing
 
 The EDSDK is licensed by Canon and is only available after registering with the
