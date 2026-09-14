@@ -14,7 +14,7 @@ falls back to the webcam for that shot.
 | Phase | What | State |
 |---|---|---|
 | 0 | Process, protocol, timeouts, restart limits, simulated camera | done |
-| 1 | A real camera backend: connect, full-resolution capture to the PC, battery | Canon, Nikon Z and Sony: built, **not yet tested with a camera** |
+| 1 | A real camera backend: connect, full-resolution capture to the PC, battery | Canon: **tested on an EOS M50 Mark II** (2026-09-14). Nikon Z and Sony: built, not yet tested with a camera |
 | 2 | ISO / shutter / aperture / white balance controls in the dashboard | done (Settings → Camera, from camera-reported values) |
 | 3 | Live view from the camera for preview and burst clips | done: `startLiveView` / `liveViewFrame` / `stopLiveView`; simulator-tested, not yet with a camera |
 | 4 | Booth flow integration with per-shot webcam fallback, beta flag | done (`cameraSource: "usb"`), simulator-tested |
@@ -144,9 +144,14 @@ has the text).
 
 `CanonEdsdkBackend.cs` (class `CanonBackend`) drives Canon's EOS Digital SDK
 (EDSDK 13.20.21) by P/Invoke; `CanonSdk.cs` holds the bindings. It was written from
-Canon's API reference, headers and C# sample. On a PC with no camera the SDK loads,
-initialises and connect answers `NO_CAMERA`. **Taking a real photo has not been
-tested yet** — first test camera: EOS M50 Mark II (supported since EDSDK 13.13.0).
+Canon's API reference, headers and C# sample.
+
+Tested on an **EOS M50 Mark II** (2026-09-14): connect in ~0.6 s with model and
+battery, first live view frame in ~0.2 s, a 5328×4000 JPEG downloaded in ~1.9 s,
+and in M mode ISO (26 values), shutter (52), aperture (17) and white balance (10)
+listed, changed and read back correctly. In Scene Intelligent Auto (A+) the camera
+offers only its current values — the helper logs the exposure mode on connect and
+the dashboard asks for the mode dial to be set to M (or Av / Tv).
 
 Setup:
 
