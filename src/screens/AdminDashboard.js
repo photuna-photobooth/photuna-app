@@ -2690,6 +2690,8 @@ This cannot be undone.`
         cameraWidth,
         cameraHeight,
         facingMode,
+        cameraSource,
+        usbCameraExposure,
         selectedPrinter,
         paperSize,
         printCopies,
@@ -7911,6 +7913,10 @@ This cannot be undone.`
       cameraWidth,
       cameraHeight,
       facingMode,
+      // Without these, sanitizeSettings fills in "webcam" and this auto-save undoes
+      // the operator choosing the USB camera.
+      cameraSource,
+      usbCameraExposure,
       selectedPrinter,
       paperSize,
       printCopies,
@@ -7982,6 +7988,8 @@ This cannot be undone.`
     cameraWidth,
     cameraHeight,
     facingMode,
+    cameraSource,
+    usbCameraExposure,
     selectedPrinter,
     paperSize,
     printCopies,
@@ -8520,6 +8528,8 @@ This cannot be undone.`
         }, ctx);
 
         await native?.setSettings?.({
+          cameraSource,
+          usbCameraExposure,
           countdown,
           retakeLimit,
           screenTimers,

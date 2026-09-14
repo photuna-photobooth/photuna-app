@@ -174,7 +174,9 @@ export default function PhotoScreen({
   // live view frame (or the webcam), so a guest never loses a shot.
   const usbCameraApi = (window.api ?? window.electron)?.camera;
   const useUsbCamera = !!usbCameraApi?.captureStill && isUsbLiveViewSupported()
-    && (event?.settings?.cameraSource ?? gs.cameraSource) === "usb";
+    // This booth's own setting first: it describes the PC the booth runs on, and an
+    // event's copy can be older.
+    && (gs.cameraSource ?? event?.settings?.cameraSource) === "usb";
   const usbPreviewCanvasRef = useRef(null);
   const usbPreviewStreamRef = useRef(null);
   const { active: usbPreviewActive } = useUsbLiveView(useUsbCamera, usbPreviewCanvasRef);

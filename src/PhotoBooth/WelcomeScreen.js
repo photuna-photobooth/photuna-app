@@ -38,7 +38,7 @@ export default function WelcomeScreen({ eventConfig = {}, event = null, onNext }
   // webcam only if that live view is unavailable.
   const [globalCameraSource, setGlobalCameraSource] = useState(null);
   useEffect(() => {
-    if (backgroundType !== "camera" || event?.settings?.cameraSource) return;
+    if (backgroundType !== "camera") return;
     (async () => {
       try {
         const s = await (window.api ?? window.electron)?.getSettings?.();
@@ -49,7 +49,8 @@ export default function WelcomeScreen({ eventConfig = {}, event = null, onNext }
 
   const useUsbBackground = backgroundType === "camera"
     && isUsbLiveViewSupported()
-    && (event?.settings?.cameraSource ?? globalCameraSource) === "usb";
+    // This booth's own setting first; an event's copy can be older.
+    && (globalCameraSource ?? event?.settings?.cameraSource) === "usb";
   const liveCanvasRef = useRef(null);
   const usbLive = useUsbLiveView(useUsbBackground, liveCanvasRef);
   const showUsbBackground = useUsbBackground && !usbLive.failed;

@@ -213,7 +213,7 @@ export default function TemplateScreen({
   // Photo source "usb": keep the USB camera's live view running while the guest picks
   // a template, so the photo screen's preview appears at once.
   const usbCameraSelected = isUsbLiveViewSupported()
-    && (event?.settings?.cameraSource ?? globalSettings?.cameraSource) === "usb";
+    && (globalSettings?.cameraSource ?? event?.settings?.cameraSource) === "usb";
   useUsbLiveView(usbCameraSelected, null);
 
   useEffect(() => {
