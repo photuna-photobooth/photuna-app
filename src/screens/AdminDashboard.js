@@ -9354,6 +9354,20 @@ This cannot be undone.`
 
         {/* --- Left Sidebar --- */}
         <aside className={`fixed xl:relative h-screen w-[280px] flex-shrink-0 border-r border-slate-200/80 dark:border-slate-700/80 bg-slate-50/80 dark:bg-slate-900/90 backdrop-blur-xl flex flex-col shadow-[10px_0_40px_rgba(15,23,42,0.06)] dark:shadow-[10px_0_40px_rgba(0,0,0,0.4)] z-40 transition-transform duration-300 ease-in-out ${sidebarOpen ? "translate-x-0" : "-translate-x-full xl:translate-x-0"}`}>
+          {/* Brand */}
+          <div className="flex items-center gap-2.5 px-5 pt-5 pb-1">
+            <img
+              src={process.env.PUBLIC_URL + "/logo512.png"}
+              alt=""
+              className="h-9 w-9 flex-shrink-0 dark:brightness-0 dark:invert"
+            />
+            <img
+              src={process.env.PUBLIC_URL + "/logo-dark.png"}
+              alt="Studio Photuna"
+              className="h-8 w-auto dark:brightness-0 dark:invert"
+            />
+          </div>
+
           {/* Account summary */}
           <div className="relative border-b border-slate-200/80 dark:border-slate-700/80 px-4 py-4">
             {/* Close button — mobile only */}

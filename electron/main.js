@@ -50,6 +50,10 @@ const APP_USER_AGENT = `${APP_NAME}/${APP_VERSION} (${os.type()} ${os.arch()} ${
 const APP_DATA_DIR = app.getPath("userData");
 const APP_IS_DEV = isDev;
 
+// Must match build.appId: Windows uses it to tie the running window and its
+// notifications to the installed shortcut, and so to the Photuna icon.
+if (process.platform === "win32") app.setAppUserModelId("com.photuna.app");
+
 function loadPrivateEnvironment() {
   const dotenv = require("dotenv");
   const candidates = [
@@ -2455,6 +2459,12 @@ function createWindow() {
     // Size used when leaving full screen.
     width: 1280,
     height: 900,
+    // The installed exe carries the Photuna icon itself (electron-builder writes
+    // assets/icon.ico into it); when running from source the window would
+    // otherwise show electron.exe's icon.
+    ...(fs.existsSync(path.join(__dirname, "..", "assets", "icon.ico"))
+      ? { icon: path.join(__dirname, "..", "assets", "icon.ico") }
+      : {}),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,

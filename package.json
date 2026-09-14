@@ -1,6 +1,6 @@
 {
   "name": "photuna-app",
-  "version": "0.4.11",
+  "version": "0.4.12",
   "private": true,
   "homepage": ".",
   "main": "electron/main.js",
@@ -111,6 +111,7 @@
       "icon": "assets/icon.ico",
       "signAndEditExecutable": false
     },
+    "afterPack": "scripts/after-pack-windows-icon.js",
     "nsis": {
       "oneClick": false,
       "perMachine": false,
@@ -155,6 +156,7 @@
     "electron": "^39.2.7",
     "electron-builder": "^26.0.12",
     "postcss": "^8.5.6",
+    "rcedit": "^5.0.2",
     "react-scripts": "5.0.1",
     "tailwindcss": "^3.4.18",
     "wait-on": "^9.0.1",
