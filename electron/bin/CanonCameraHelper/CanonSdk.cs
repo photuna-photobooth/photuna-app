@@ -16,6 +16,7 @@ internal static class CanonSdk
     public const uint ErrDeviceNotFound = 0x00000080;
     public const uint ErrDeviceBusy = 0x00000081;
     public const uint ErrDeviceInvalid = 0x00000082;
+    public const uint ErrCommPortIsInUse = 0x000000C0;
     public const uint ErrCommDisconnected = 0x000000C1;
     public const uint ErrCommUsbBusErr = 0x000000C4;
     public const uint ErrSessionNotOpen = 0x00002003;

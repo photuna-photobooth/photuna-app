@@ -1,3 +1,5 @@
+using System.Diagnostics;
+
 namespace CanonCameraHelper;
 
 /// <summary>
@@ -37,32 +39,65 @@ public sealed class AutoBackend : ICameraBackend
         if (_active is not null && _active.GetStatus().Connected) return _active.GetStatus();
         _active = null;
 
-        CameraException? firstRealError = null;
-        var triedAny = false;
+        var candidates = _backends.Where(b => b.GetStatus().SdkAvailable).ToList();
+        if (candidates.Count == 0)
+            throw new CameraException("SDK_NOT_INSTALLED", "No camera brand's SDK is included in this build. The booth will use the webcam.");
 
-        foreach (var backend in _backends.Where(b => b.GetStatus().SdkAvailable))
+        // Troubleshooting only: PHOTUNA_CAMERA_BACKENDS=canon,nikon limits the brands tried.
+        var only = Environment.GetEnvironmentVariable("PHOTUNA_CAMERA_BACKENDS");
+        if (!string.IsNullOrWhiteSpace(only))
         {
-            triedAny = true;
+            var names = new HashSet<string>(
+                only.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries),
+                StringComparer.OrdinalIgnoreCase);
+            candidates = candidates.Where(b => names.Contains(b.Name)).ToList();
+        }
+
+        // Only ask the SDKs of brands actually plugged in: probing is slow, and one
+        // brand's SDK enumerating another brand's camera can stall.
+        var attached = UsbCameraBrands.Detect();
+        if (attached is not null)
+        {
+            Log($"USB camera brands present: {(attached.Count == 0 ? "none" : string.Join(", ", attached))}");
+            if (attached.Count == 0)
+                throw new CameraException("NO_CAMERA", "No Canon, Nikon or Sony camera is connected by USB. Check the cable and that the camera is on.");
+            candidates = candidates.Where(b => attached.Contains(b.Name)).ToList();
+            if (candidates.Count == 0)
+                throw new CameraException("SDK_NOT_INSTALLED",
+                    $"Support for the connected camera ({string.Join(", ", attached)}) is not included in this build.");
+        }
+
+        CameraException? firstRealError = null;
+        foreach (var backend in candidates)
+        {
+            var stopwatch = Stopwatch.StartNew();
+            Log($"trying {backend.Name}");
             try
             {
                 var status = backend.Connect();
                 _active = backend;
+                Log($"{backend.Name} connected in {stopwatch.ElapsedMilliseconds} ms: {status.Model}");
                 return status;
             }
             catch (CameraException ex) when (ex.Code == "NO_CAMERA")
             {
-                // Not this brand; try the next.
+                Log($"{backend.Name}: no camera ({stopwatch.ElapsedMilliseconds} ms)");
             }
             catch (CameraException ex)
             {
+                Log($"{backend.Name}: {ex.Code} {ex.Message} ({stopwatch.ElapsedMilliseconds} ms)");
                 firstRealError ??= ex;
             }
         }
 
         if (firstRealError is not null) throw firstRealError;
-        throw triedAny
-            ? new CameraException("NO_CAMERA", "No supported camera found. Check the USB cable and that the camera is on.")
-            : new CameraException("SDK_NOT_INSTALLED", "No camera brand's SDK is included in this build. The booth will use the webcam.");
+        throw new CameraException("NO_CAMERA", "No supported camera found. Check the USB cable and that the camera is on.");
+    }
+
+    private static void Log(string message)
+    {
+        Console.Error.WriteLine($"[canon-camera-helper] auto: {message}");
+        Console.Error.Flush();
     }
 
     public void Disconnect()

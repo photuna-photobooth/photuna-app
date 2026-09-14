@@ -110,9 +110,11 @@ public sealed class CanonBackend : ICameraBackend
             rc = sdk.OpenSession(camera);
             if (rc != CanonSdk.Ok)
             {
-                throw rc is CanonSdk.ErrDeviceBusy or CanonSdk.ErrPtpDeviceBusy
+                // COMM_PORT_IS_IN_USE: another process already has a session with this
+                // camera — another Photuna window, EOS Utility or EOS Webcam Utility.
+                throw rc is CanonSdk.ErrDeviceBusy or CanonSdk.ErrPtpDeviceBusy or CanonSdk.ErrCommPortIsInUse
                     ? new CameraException("CAMERA_IN_USE",
-                        "The Canon camera is being used by another app. Close EOS Utility and EOS Webcam Utility, then try again.")
+                        "The Canon camera is being used by another app. Close other Photuna windows, EOS Utility and EOS Webcam Utility, then try again.")
                     : Map(rc, "CONNECT_FAILED", "The Canon camera did not accept the connection");
             }
 

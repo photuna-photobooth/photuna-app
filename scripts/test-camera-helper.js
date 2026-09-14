@@ -34,6 +34,7 @@ if (process.argv.includes("--hardware")) {
       return r;
     };
     await step("status", () => h.status());
+    console.log("connecting (can take up to 25 s)...\n");
     const connected = await step("connect", () => h.connect());
     if (connected.ok) {
       await step("settings", () => h.getSettings());
@@ -233,8 +234,14 @@ if (!process.argv.includes("--hardware")) (async () => {
     assert.strictEqual(status.ok, true, JSON.stringify(status));
     const started = Date.now();
     const r = await h.connect();
-    const expected = status.result.sdkAvailable ? ["NO_CAMERA", "CAMERA_IN_USE"] : ["SDK_NOT_INSTALLED"];
-    assert.ok(expected.includes(r.error?.code), `sdkAvailable=${status.result.sdkAvailable}, got ${JSON.stringify(r)}`);
+    if (r.ok) {
+      // A real camera is plugged into this PC: connecting is the right answer.
+      assert.ok(status.result.sdkAvailable, "connected without an SDK");
+      assert.strictEqual((await h.disconnect()).ok, true, "could not disconnect the real camera");
+    } else {
+      const expected = status.result.sdkAvailable ? ["NO_CAMERA", "CAMERA_IN_USE"] : ["SDK_NOT_INSTALLED"];
+      assert.ok(expected.includes(r.error?.code), `sdkAvailable=${status.result.sdkAvailable}, got ${JSON.stringify(r)}`);
+    }
     assert.ok(Date.now() - started < 25_000, "connect took too long to give up");
     const after = await h.status();
     assert.strictEqual(after.ok, true, "helper stopped answering after trying the real SDKs");
