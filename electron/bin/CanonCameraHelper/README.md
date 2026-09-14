@@ -14,7 +14,7 @@ falls back to the webcam for that shot.
 | Phase | What | State |
 |---|---|---|
 | 0 | Process, protocol, timeouts, restart limits, simulated camera | done |
-| 1 | A real camera backend: connect, full-resolution capture to the PC, battery | Nikon Z and Sony: built, **not yet tested with a camera**. Canon: waiting for the SDK |
+| 1 | A real camera backend: connect, full-resolution capture to the PC, battery | Canon, Nikon Z and Sony: built, **not yet tested with a camera** |
 | 2 | ISO / shutter / aperture / white balance controls in the dashboard | done (Settings → Camera, from camera-reported values) |
 | 3 | Live view from the camera for preview and burst clips | done: `startLiveView` / `liveViewFrame` / `stopLiveView`; simulator-tested, not yet with a camera |
 | 4 | Booth flow integration with per-shot webcam fallback, beta flag | done (`cameraSource: "usb"`), simulator-tested |
@@ -27,9 +27,10 @@ Until a backend has its SDK, the real backend reports `sdkAvailable: false`, the
 dashboard does not offer the USB camera option, and every call fails with
 `SDK_NOT_INSTALLED`.
 
-**Not shipped yet.** The helper is not in the installer: it is a self-contained
-.NET exe (the print helper is ~160 MB) and does nothing without a backend. Add it
-to `extraResources` in the release where the first real backend works.
+**Shipping.** `npm run dist:win` first runs `scripts/build-camera-helper.ps1`,
+which publishes a self-contained exe with whichever brands' SDKs the build PC has
+(plus `THIRD_PARTY_NOTICES.txt`) to `bin/publish`; electron-builder ships that folder
+as `resources/bin/camera-helper`. It has been in the installer since 0.4.11.
 
 Full-resolution originals are saved to the session's `originals/` folder, never
 `captures/` — `captures:list` and the booth pipeline treat every image there as
@@ -139,38 +140,44 @@ long as users are not led to think Sony made it. `CrAdapter/libusb-1.0.dll` is L
 `libssh2.dll` BSD — the installer must carry their notices (Sony's `RemoteCli/README.md`
 has the text).
 
-## Resuming: `PHOTUNA-CANON-PHASE1`
+## Canon (EOS)
 
-Phase 1 is waiting on Canon approving the business's EDSDK application. When it
-is approved, start here, in this order:
+`CanonEdsdkBackend.cs` (class `CanonBackend`) drives Canon's EOS Digital SDK
+(EDSDK 13.20.21) by P/Invoke; `CanonSdk.cs` holds the bindings. It was written from
+Canon's API reference, headers and C# sample. On a PC with no camera the SDK loads,
+initialises and connect answers `NO_CAMERA`. **Taking a real photo has not been
+tested yet** — first test camera: EOS M50 Mark II (supported since EDSDK 13.13.0).
 
-1. `node scripts/test-camera-helper.js` — all 14 checks must pass first.
-2. Put the SDK in `sdk/` (64-bit `EDSDK.dll`, `EdsImage.dll`, and Canon's C#
-   sample wrapper `EDSDK.cs`). It is git-ignored; keep it that way.
-3. Read the licence's redistribution terms before planning to bundle the DLLs.
-4. Check the test camera's model against the SDK's supported-camera list.
-5. Close EOS Webcam Utility and EOS Utility — they cannot share the camera.
-6. Implement `CanonBackend.cs`: initialise the SDK, open a session, save to host,
-   take a picture and download it to the requested path, read ISO / shutter /
-   aperture / white balance from their property descriptions, read battery, pump
-   messages on the STA thread, and map SDK errors to the existing error codes.
-7. Define `EDSDK` and copy the DLLs only when `sdk/` exists, so builds without
-   the SDK still succeed.
-8. Add a `--hardware` mode to the test script, run with the camera attached.
-9. Ship only the exe and DLLs via electron-builder `extraResources`.
+Setup:
 
-## Canon EDSDK — licensing
+- Unpack Canon's download under `sdk/canon/`. The build copies
+  `Windows/EDSDK_64/Dll/EDSDK.dll` and `EdsImage.dll` into `canon/` next to the
+  helper.
+- Close EOS Utility and EOS Webcam Utility before connecting: the camera answers
+  one app at a time (`CAMERA_IN_USE`).
 
-The EDSDK is licensed by Canon and is only available after registering with the
-Canon developer programme and accepting its licence. It must be obtained by the
-business, not downloaded or committed by a contributor.
+Behaviour:
 
-- Put it under `sdk/` in this folder. That directory is git-ignored; **never
-  commit Canon's DLLs or headers.**
-- Read the licence's redistribution terms before shipping: bundling `EDSDK.dll`
-  and `EdsImage.dll` with the installer must be permitted by the agreement you
-  accepted.
-- Use the 64-bit DLLs; the helper is `win-x64`.
+- The helper has no Windows message loop, so camera events are fetched with
+  `EdsGetEvent` (Canon's reference requires this for console applications) while
+  waiting for a photo, before each live view frame and on status checks.
+- On connect photos are sent to the PC (SaveTo = Host) and the SDK is told the PC
+  has free space (`EdsSetCapacity`), as Canon's sample does.
+- A shot is a full shutter press with autofocus, then the JPEG is downloaded when
+  the camera asks for the transfer. RAW or HEIF only fails with `IMAGE_NOT_JPEG`;
+  Canon's "AF failed" maps to `FOCUS_FAILED`. When the camera is about to power
+  off it is asked to stay on.
+- ISO, shutter speed, aperture and white balance list the values the camera
+  allows, labelled from Canon's API reference tables (`CanonValues`); Bulb is not
+  offered, as Canon does not allow setting it from a computer.
+- Live view is sent to the PC (Evf output device |= PC) and each frame is
+  downloaded on request.
+
+Licensing: the EDSDK is licensed to the business by Canon, which confirmed bundling
+`EDSDK.dll` and `EdsImage.dll` is allowed. Canon's readme requires stating that the
+software is based in part on the work of the Independent JPEG Group; the build
+writes that into `THIRD_PARTY_NOTICES.txt`. Keep the SDK under `sdk/` (git-ignored);
+**never commit Canon's DLLs, headers or sample code.**
 
 ## Building
 

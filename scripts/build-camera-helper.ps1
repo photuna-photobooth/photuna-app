@@ -23,6 +23,7 @@ if (-not ($sdks | Where-Object { [int]($_.Split('.')[0]) -ge 8 })) {
     throw '.NET SDK 8 or newer is not installed.'
 }
 
+$hasCanon = Test-Path (Join-Path $helper 'sdk\canon\Windows\EDSDK_64\Dll\EDSDK.dll')
 $hasNikon = Test-Path (Join-Path $helper 'sdk\nikon\S-SDKZ-200BF-ALLIN\Module\Win\BinaryFile\ControlServiceLayer.dll')
 $hasSony = Test-Path (Join-Path $helper 'sdk\sony\RemoteCli\external\crsdk\Cr_Core.lib')
 
@@ -39,8 +40,10 @@ $exe = Join-Path $publish 'canon-camera-helper.exe'
 if (-not (Test-Path $exe)) { throw "Build finished but $exe is missing." }
 
 $included = @()
+if (Test-Path (Join-Path $publish 'canon\EDSDK.dll')) { $included += 'Canon' }
 if (Test-Path (Join-Path $publish 'nikon\ControlServiceLayer.dll')) { $included += 'Nikon Z' }
 if (Test-Path (Join-Path $publish 'sony\photuna_sony_bridge.dll')) { $included += 'Sony' }
+if ($hasCanon -and -not ($included -contains 'Canon')) { throw 'Canon SDK is present but was not copied into the build.' }
 if ($hasNikon -and -not ($included -contains 'Nikon Z')) { throw 'Nikon SDK is present but was not copied into the build.' }
 if ($hasSony -and -not ($included -contains 'Sony')) { throw 'Sony SDK is present but was not copied into the build.' }
 
@@ -51,9 +54,17 @@ $notices = New-Object System.Collections.Generic.List[string]
 $notices.Add('Photuna Booth App - USB camera helper')
 $notices.Add('')
 $notices.Add('The camera helper uses camera makers'' software development kits. Photuna is not made,')
-$notices.Add('endorsed or supported by Nikon Corporation or Sony Group Corporation. Camera')
-$notices.Add('support is provided by Photuna, not by the camera makers.')
+$notices.Add('endorsed or supported by Canon Inc., Nikon Corporation or Sony Group Corporation.')
+$notices.Add('Camera support is provided by Photuna, not by the camera makers.')
 $notices.Add('')
+if ($included -contains 'Canon') {
+    # Required by the EDSDK readme for distributing its executable code.
+    $notices.Add('=' * 78)
+    $notices.Add('Canon EOS Digital SDK (canon\EDSDK.dll, canon\EdsImage.dll)')
+    $notices.Add('=' * 78)
+    $notices.Add('This software is based in part on the work of the Independent JPEG Group.')
+    $notices.Add('')
+}
 if ($included -contains 'Sony') {
     $sonyReadme = Join-Path $helper 'sdk\sony\RemoteCli\README.md'
     $lines = Get-Content $sonyReadme

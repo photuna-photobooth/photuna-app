@@ -47,6 +47,18 @@
   </ItemGroup>
 
   <!--
+    Canon EOS Digital SDK (EDSDK), 64-bit. Copied next to the helper, into canon/,
+    only when the business's SDK has been unpacked under sdk/canon.
+  -->
+  <PropertyGroup>
+    <CanonSdkBin>sdk\canon\Windows\EDSDK_64\Dll\</CanonSdkBin>
+  </PropertyGroup>
+  <ItemGroup Condition="Exists('$(CanonSdkBin)EDSDK.dll')">
+    <CanonSdkFile Include="$(CanonSdkBin)EDSDK.dll;$(CanonSdkBin)EdsImage.dll" />
+    <None Include="@(CanonSdkFile)" Link="canon\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
+  </ItemGroup>
+
+  <!--
     Sony Camera Remote SDK. Copied next to the helper, into sony/, only when both the
     business's SDK (sdk/sony/RemoteCli) and Photuna's bridge DLL (built by
     scripts/build-sony-bridge.ps1 into sdk/_build) are present.
