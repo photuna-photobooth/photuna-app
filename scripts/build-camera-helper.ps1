@@ -16,7 +16,10 @@ $ErrorActionPreference = 'Stop'
 
 $repo = Split-Path $PSScriptRoot -Parent
 $helper = Join-Path $repo 'electron\bin\CanonCameraHelper'
-$publish = Join-Path $helper 'bin\publish'
+# Its own folder, never one the app's resolveHelperPath uses: a dev app running at the
+# same time keeps its helper (and the camera SDK DLLs) open, which would block this
+# build from clearing the folder.
+$publish = Join-Path $helper 'bin\ship'
 
 $sdks = & dotnet --list-sdks 2>$null
 if (-not ($sdks | Where-Object { [int]($_.Split('.')[0]) -ge 8 })) {

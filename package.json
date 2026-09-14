@@ -99,7 +99,7 @@
         "to": "bin/photo-print-helper.exe"
       },
       {
-        "from": "electron/bin/CanonCameraHelper/bin/publish",
+        "from": "electron/bin/CanonCameraHelper/bin/ship",
         "to": "bin/camera-helper"
       }
     ],

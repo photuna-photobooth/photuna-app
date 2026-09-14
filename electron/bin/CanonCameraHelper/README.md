@@ -29,8 +29,9 @@ dashboard does not offer the USB camera option, and every call fails with
 
 **Shipping.** `npm run dist:win` first runs `scripts/build-camera-helper.ps1`,
 which publishes a self-contained exe with whichever brands' SDKs the build PC has
-(plus `THIRD_PARTY_NOTICES.txt`) to `bin/publish`; electron-builder ships that folder
-as `resources/bin/camera-helper`. It has been in the installer since 0.4.11.
+(plus `THIRD_PARTY_NOTICES.txt`) to `bin/ship`; electron-builder ships that folder
+as `resources/bin/camera-helper`. `bin/ship` is never used by a running dev app, so
+the dev app holding its helper open cannot block a release build. It has been in the installer since 0.4.11.
 
 Full-resolution originals are saved to the session's `originals/` folder, never
 `captures/` — `captures:list` and the booth pipeline treat every image there as
