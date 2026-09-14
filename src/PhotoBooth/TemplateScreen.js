@@ -6,6 +6,8 @@ import { normalizeToFileUrl } from "../utils/mediaUrl";
 import { loadGoogleFont } from "../utils/fontLoader";
 import { getBridge } from "../utils/bridge";
 import { useLayout } from "../utils/useLayout";
+import useUsbLiveView from "../hooks/useUsbLiveView";
+import { isUsbLiveViewSupported } from "../services/usbLiveView";
 
 /* --------------------------- Responsive SVG icons --------------------------- */
 const PhotoStripVertical = () => (
@@ -208,6 +210,12 @@ export default function TemplateScreen({
   const [activeIndex, setActiveIndex] = useState(0);
   const [itemsPerView, setItemsPerView] = useState(4);
 
+  // Photo source "usb": keep the USB camera's live view running while the guest picks
+  // a template, so the photo screen's preview appears at once.
+  const usbCameraSelected = isUsbLiveViewSupported()
+    && (event?.settings?.cameraSource ?? globalSettings?.cameraSource) === "usb";
+  useUsbLiveView(usbCameraSelected, null);
+
   useEffect(() => {
     let mounted = true;
     (async () => {
@@ -245,6 +253,9 @@ export default function TemplateScreen({
     const preloadCamera = async () => {
       try {
         if (cameraStreamRef?.current ?? window.__cameraStream) return;
+        // The USB camera's live view is the preview; the photo screen opens the webcam
+        // itself only if that live view is unavailable.
+        if (event?.settings?.cameraSource === "usb" && isUsbLiveViewSupported()) return;
 
         const deviceId = event?.settings?.selectedCameraId;
         const videoConstraints = deviceId

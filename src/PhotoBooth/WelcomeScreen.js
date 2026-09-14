@@ -5,6 +5,8 @@ import { normalizeToFileUrl } from "../utils/mediaUrl";
 import { loadGoogleFont } from "../utils/fontLoader";
 import { DEFAULT_APPEARANCE } from "../utils/appearance";
 import { useLayout } from "../utils/useLayout";
+import useUsbLiveView from "../hooks/useUsbLiveView";
+import { isUsbLiveViewSupported } from "../services/usbLiveView";
 
 /**
  * WelcomeScreen
@@ -32,8 +34,28 @@ export default function WelcomeScreen({ eventConfig = {}, event = null, onNext }
   const rawLogo = appearance?.logoPath ?? "";
   const rawPoster = appearance?.posterPath ?? "";
 
+  // Photo source "usb": the live background shows the USB camera's live view, and the
+  // webcam only if that live view is unavailable.
+  const [globalCameraSource, setGlobalCameraSource] = useState(null);
   useEffect(() => {
-    if (backgroundType !== "camera") return;
+    if (backgroundType !== "camera" || event?.settings?.cameraSource) return;
+    (async () => {
+      try {
+        const s = await (window.api ?? window.electron)?.getSettings?.();
+        if (mountedRef.current) setGlobalCameraSource(s?.cameraSource ?? null);
+      } catch { }
+    })();
+  }, [backgroundType, event?.settings?.cameraSource]);
+
+  const useUsbBackground = backgroundType === "camera"
+    && isUsbLiveViewSupported()
+    && (event?.settings?.cameraSource ?? globalCameraSource) === "usb";
+  const liveCanvasRef = useRef(null);
+  const usbLive = useUsbLiveView(useUsbBackground, liveCanvasRef);
+  const showUsbBackground = useUsbBackground && !usbLive.failed;
+
+  useEffect(() => {
+    if (backgroundType !== "camera" || showUsbBackground) return;
     let stream = null;
     (async () => {
       try {
@@ -48,7 +70,7 @@ export default function WelcomeScreen({ eventConfig = {}, event = null, onNext }
       }
     })();
     return () => { stream?.getTracks().forEach((t) => t.stop()); };
-  }, [backgroundType]);
+  }, [backgroundType, showUsbBackground]);
 
   const videoSrc = useMemo(() => normalizeToFileUrl(rawVideoSrc), [rawVideoSrc]);
   const logo = useMemo(() => normalizeToFileUrl(rawLogo), [rawLogo]);
@@ -171,7 +193,13 @@ export default function WelcomeScreen({ eventConfig = {}, event = null, onNext }
     </motion.div>
   );
 
-  const liveCameraBackground = backgroundType === "camera" ? (
+  const liveCameraBackground = backgroundType !== "camera" ? null : showUsbBackground ? (
+    <canvas
+      ref={liveCanvasRef}
+      className="absolute inset-0 w-full h-full object-cover pointer-events-none -scale-x-100"
+      aria-hidden="true"
+    />
+  ) : (
     <video
       ref={liveCamRef}
       autoPlay
@@ -180,7 +208,7 @@ export default function WelcomeScreen({ eventConfig = {}, event = null, onNext }
       className="absolute inset-0 w-full h-full object-cover pointer-events-none -scale-x-100"
       aria-hidden="true"
     />
-  ) : null;
+  );
 
   if (isUnsupported) {
     return (

@@ -5,6 +5,8 @@ import { motion } from "framer-motion";
 import { DEFAULT_APPEARANCE } from "../utils/appearance";
 import { useLayout } from "../utils/useLayout";
 import { normalizeToFileUrl } from "../utils/mediaUrl";
+import useUsbLiveView from "../hooks/useUsbLiveView";
+import { isUsbLiveViewSupported, pauseUsbLiveView } from "../services/usbLiveView";
 
 
 function normalizeTemplateGuide(templateSelection) {
@@ -164,97 +166,28 @@ export default function PhotoScreen({
       ? mirrorCamera
       : !!(event?.settings?.mirrorCamera ?? gs.mirrorCamera);
 
-  // "usb": photos come from a camera connected by USB (beta). Guests see the
-  // camera's own live view, drawn into usbPreviewCanvasRef, and motion clips are
-  // recorded from that canvas, so the preview matches the photos. The webcam is
-  // optional: if live view is unavailable or stops, the webcam preview takes over.
-  // A shot the USB camera misses is taken from its last live view frame (or the
-  // webcam), so a guest never loses a shot.
+  // "usb": photos come from a camera connected by USB (beta). Guests see the camera's
+  // own live view — shared with the welcome and template screens so it keeps running
+  // between them (services/usbLiveView.js) — drawn into usbPreviewCanvasRef, and
+  // motion clips are recorded from that canvas. If live view is unavailable or stops,
+  // the webcam preview takes over. A shot the USB camera misses is taken from its last
+  // live view frame (or the webcam), so a guest never loses a shot.
   const usbCameraApi = (window.api ?? window.electron)?.camera;
-  const useUsbCamera = !!usbCameraApi?.captureStill
+  const useUsbCamera = !!usbCameraApi?.captureStill && isUsbLiveViewSupported()
     && (event?.settings?.cameraSource ?? gs.cameraSource) === "usb";
   const usbPreviewCanvasRef = useRef(null);
   const usbPreviewStreamRef = useRef(null);
-  const usbCaptureBusyRef = useRef(false);
-  const [usbPreviewActive, setUsbPreviewActive] = useState(false);
+  const { active: usbPreviewActive } = useUsbLiveView(useUsbCamera, usbPreviewCanvasRef);
   const previewReady = cameraReady || usbPreviewActive;
 
+  // Stop the canvas stream used for motion clips when the camera's preview goes away.
   useEffect(() => {
-    if (!useUsbCamera || !usbCameraApi?.startLiveView) return undefined;
-    let cancelled = false;
-    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-    const FIRST_FRAME_DEADLINE_MS = 6000;
-    const MAX_FAILURES = 10;
-    const FRAME_INTERVAL_MS = 60; // about 15 frames a second at most
-
-    (async () => {
-      const started = await usbCameraApi.startLiveView().catch(() => null);
-      if (cancelled) return;
-      if (!started?.ok) {
-        console.warn("[PhotoScreen] USB camera live view unavailable; using the webcam preview:", started?.error?.code, started?.error?.message);
-        return;
-      }
-
-      const startedAt = Date.now();
-      let gotFrame = false;
-      let failures = 0;
-
-      while (!cancelled) {
-        if (usbCaptureBusyRef.current) {
-          await sleep(120);
-          continue;
-        }
-
-        const frame = await usbCameraApi.liveViewFrame().catch(() => null);
-        if (cancelled) break;
-
-        if (frame?.ok && frame.jpeg) {
-          try {
-            const bitmap = await createImageBitmap(new Blob([frame.jpeg], { type: "image/jpeg" }));
-            const canvas = usbPreviewCanvasRef.current;
-            if (canvas && !cancelled) {
-              if (canvas.width !== bitmap.width || canvas.height !== bitmap.height) {
-                canvas.width = bitmap.width;
-                canvas.height = bitmap.height;
-              }
-              canvas.getContext("2d").drawImage(bitmap, 0, 0);
-              if (!usbPreviewStreamRef.current && canvas.captureStream) {
-                usbPreviewStreamRef.current = canvas.captureStream(15);
-              }
-              if (!gotFrame) {
-                gotFrame = true;
-                setUsbPreviewActive(true);
-              }
-            }
-            bitmap.close?.();
-            failures = 0;
-          } catch {
-            failures += 1;
-          }
-          await sleep(FRAME_INTERVAL_MS);
-          continue;
-        }
-
-        const code = frame?.error?.code;
-        if (code !== "NO_FRAME" && code !== "BUSY") failures += 1;
-        const neverStarted = !gotFrame && Date.now() - startedAt > FIRST_FRAME_DEADLINE_MS;
-        if (failures >= MAX_FAILURES || neverStarted) {
-          console.warn("[PhotoScreen] USB camera live view stopped; using the webcam preview:", code, frame?.error?.message);
-          setUsbPreviewActive(false);
-          usbCameraApi.stopLiveView?.().catch?.(() => { });
-          break;
-        }
-        await sleep(code === "NO_FRAME" ? 40 : 250);
-      }
-    })();
-
+    if (!usbPreviewActive) return undefined;
     return () => {
-      cancelled = true;
       usbPreviewStreamRef.current?.getTracks?.().forEach((track) => track.stop());
       usbPreviewStreamRef.current = null;
-      usbCameraApi.stopLiveView?.().catch?.(() => { });
     };
-  }, [useUsbCamera]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [usbPreviewActive]);
 
   const sessionIdRef = useRef(session?.sessionId || null);
   useEffect(() => { sessionIdRef.current = session?.sessionId || null; }, [session]);
@@ -544,6 +477,9 @@ export default function PhotoScreen({
 
   const startPreShotRecording = (slotIndex, sessionId) => {
     try {
+      if (usbPreviewActive && !usbPreviewStreamRef.current && usbPreviewCanvasRef.current?.captureStream) {
+        usbPreviewStreamRef.current = usbPreviewCanvasRef.current.captureStream(15);
+      }
       const stream = (usbPreviewActive && usbPreviewStreamRef.current) || streamRef.current;
       console.log("[startPreShotRecording]", { slotIndex, sessionId, hasStream: !!stream });
       if (!stream || !sessionId) return;
@@ -655,11 +591,11 @@ export default function PhotoScreen({
       let saved = null;
       let usbFailure = null;
       if (useUsbCamera && session?.sessionId) {
-        usbCaptureBusyRef.current = true;
+        const resumeLiveView = pauseUsbLiveView();
         const shot = await usbCameraApi
           .captureStill({ sessionId: session.sessionId, slotIndex: slotIdx, eventId })
           .catch((err) => ({ ok: false, error: { code: "IPC_FAILED", message: err?.message } }))
-          .finally(() => { usbCaptureBusyRef.current = false; });
+          .finally(() => resumeLiveView());
         if (shot?.ok && shot.dataUrl) {
           saved = {
             dataUrl: shot.dataUrl,

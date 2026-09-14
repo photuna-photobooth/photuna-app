@@ -19,6 +19,8 @@ import { buildReceiptHtml, loadLogoDataUrl, formatReceiptMoney, formatReceiptDat
 import SubscriptionSummary from "../components/subscription/SubscriptionSummary";
 import TemplateEditor from "../components/TemplateEditor";
 import { initSettingsSync, pullSettings, pushSettings, pushSettingsNow, recordSettingsDeletion, onSettingsSynced } from "../services/settingsSync.js";
+import useUsbLiveView from "../hooks/useUsbLiveView";
+import { isUsbLiveViewSupported, pauseUsbLiveView } from "../services/usbLiveView";
 import AnalyticsDashboard from "../components/AnalyticsDashboard";
 import OnboardingTour from "../components/OnboardingTour";
 import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
@@ -1010,6 +1012,14 @@ export default function AdminDashboard({ onLogout, onStartPhotobooth, jumpToUpda
   const [usbTestShot, setUsbTestShot] = useState({ busy: false, dataUrl: null, info: "", error: "" });
   const usbCameraApi = typeof window !== "undefined" ? (window.api ?? window.electron)?.camera : null;
 
+  // Branding's "Live Camera" preview shows the USB camera's live view when it is the
+  // photo source, and the webcam otherwise or if that live view is unavailable.
+  const brandingUsbPreviewRef = useRef(null);
+  const brandingUsbPreviewEnabled = activeMain === "dashboard" && activeSub === "branding"
+    && backgroundType === "camera" && cameraSource === "usb" && isUsbLiveViewSupported();
+  const brandingUsbLive = useUsbLiveView(brandingUsbPreviewEnabled, brandingUsbPreviewRef);
+  const showBrandingUsbPreview = brandingUsbPreviewEnabled && !brandingUsbLive.failed;
+
   // Shown while the camera is not connected, for the brands this build supports.
   const USB_CAMERA_SETUP_TIPS = [
     { brand: "nikon", text: "Nikon Z: turn the camera on, and close NX Tether, Camera Control Pro and Nikon Transfer — the camera works with one app at a time." },
@@ -1091,8 +1101,11 @@ export default function AdminDashboard({ onLogout, onStartPhotobooth, jumpToUpda
   const takeUsbTestShot = async () => {
     if (!usbCameraApi?.testShot) return;
     setUsbTestShot({ busy: true, dataUrl: null, info: "", error: "" });
+    // A live preview elsewhere must not pull frames while the camera takes the photo.
+    const resumeLiveView = pauseUsbLiveView();
     const result = await usbCameraApi.testShot()
-      .catch((err) => ({ ok: false, error: { code: "IPC_FAILED", message: err?.message } }));
+      .catch((err) => ({ ok: false, error: { code: "IPC_FAILED", message: err?.message } }))
+      .finally(() => resumeLiveView());
     if (result?.ok) {
       const size = result.fullWidth ? `${result.fullWidth} × ${result.fullHeight}` : `${result.width} × ${result.height}`;
       const took = result.elapsedMs != null ? ` · taken in ${(result.elapsedMs / 1000).toFixed(1)} s` : "";
@@ -12955,6 +12968,13 @@ This cannot be undone.`
                         >
                           {backgroundType === "camera" ? (
                             <div className="absolute inset-0">
+                              {showBrandingUsbPreview ? (
+                                <canvas
+                                  ref={brandingUsbPreviewRef}
+                                  className="w-full h-full object-cover -scale-x-100"
+                                  aria-hidden="true"
+                                />
+                              ) : (
                               <video
                                 ref={(el) => {
                                   if (!el) return;
@@ -12972,6 +12992,7 @@ This cannot be undone.`
                                 autoPlay muted playsInline
                                 className="w-full h-full object-cover -scale-x-100"
                               />
+                              )}
                               <div className="absolute inset-0 bg-black/30" />
                             </div>
                           ) : backgroundMediaPath ? (
