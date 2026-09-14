@@ -32,6 +32,7 @@ internal static class CanonSdk
     public const uint PropBatteryLevel = 0x00000008;
     public const uint PropSaveTo = 0x0000000b;
     public const uint PropWhiteBalance = 0x00000106;
+    public const uint PropAeMode = 0x00000400;
     public const uint PropIsoSpeed = 0x00000402;
     public const uint PropAv = 0x00000405;
     public const uint PropTv = 0x00000406;

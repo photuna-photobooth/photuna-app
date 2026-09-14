@@ -139,6 +139,11 @@ public sealed class CanonBackend : ICameraBackend
                 Log($"could not set SaveTo=Host (0x{saveTo:X}); photos may only go to the card");
             }
 
+            // In automatic modes the camera picks exposure itself and offers only the
+            // current ISO / shutter / aperture, so the mode explains a locked dashboard.
+            if (TryGetUInt(CanonSdk.PropAeMode, out var aeMode))
+                Log($"exposure mode: {CanonValues.ExposureMode(aeMode)} (0x{aeMode:X})");
+
             return GetStatus();
         }
         finally
@@ -716,6 +721,22 @@ internal static class CanonValues
         [6] = "Custom", [8] = "Shade", [9] = "Color temperature", [10] = "PC-1", [11] = "PC-2", [12] = "PC-3",
         [15] = "Custom 2", [16] = "Custom 3", [18] = "Custom 4", [19] = "Custom 5", [20] = "PC-4", [21] = "PC-5",
         [23] = "Auto (white priority)",
+    };
+
+    /// <summary>kEdsPropID_AEMode, for logs: the modes where the PC can set exposure are named.</summary>
+    public static string ExposureMode(uint mode) => mode switch
+    {
+        0x00 => "Program (P)",
+        0x01 => "Shutter priority (Tv)",
+        0x02 => "Aperture priority (Av)",
+        0x03 => "Manual (M)",
+        0x04 => "Bulb",
+        0x07 => "Custom",
+        0x13 => "Creative Auto",
+        0x14 => "Movie",
+        0x16 => "Scene Intelligent Auto (A+)",
+        0x19 => "Scene (SCN)",
+        _ => "automatic or scene mode",
     };
 
     public static string? Format(string key, uint code) => key switch

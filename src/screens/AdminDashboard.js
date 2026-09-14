@@ -10598,6 +10598,14 @@ This cannot be undone.`
                                         </SettingRow>
                                       );
                                     })}
+                                    {/* Every setting offering only its current value means the camera
+                                        is in an automatic mode and picks exposure itself. */}
+                                    {Object.values(usbCameraSettings).length > 0 &&
+                                      Object.values(usbCameraSettings).every((setting) => (setting?.allowed?.length ?? 0) <= 1) && (
+                                      <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                                        The camera is choosing these itself, so they can&apos;t be changed from here. Set its mode dial to M (manual) — or Av / Tv to change only aperture or shutter speed — then press Reconnect.
+                                      </div>
+                                    )}
                                     <div className="text-xs text-gray-500 dark:text-slate-400 mt-2">
                                       Applied to the camera straight away. Save settings to keep them — they are set again whenever the camera connects.
                                     </div>
